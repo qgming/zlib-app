@@ -248,6 +248,18 @@
 
 ---
 
+## ADR-023：下载先解析 JSON `file.downloadLink`
+
+**状态**：接受（2026-11-22 实测）
+
+**背景**：`/eapi/book/{id}/{hash}/file` 在 z-lib.gl 返回 `200 application/json`：`{"success":1,"file":{"downloadLink":"…","allowDownload":true,…}}`，而不是文档假设的 302。直接按文件流写入会把 477 字节 JSON 当成 EPUB 并标为完成。
+
+**决策**：下载先请求 file 端点；若响应为 JSON，解析 `file.downloadLink`（兼容 `file` 字符串/对象、`downloadUrl`/`url`/`link`），再对链接发第二个 GET，携带 Range；仍走凭据剥离拦截器。`allowDownload=false`、无链接或响应不是 HTTPS 均失败。写入前做 EPUB/PDF/FB2 魔数校验，失败不标完成。
+
+**后果**：适配两种镜像行为；JSON 错误页不再污染书架。签名链接只存在于内存，不落盘、不记日志。
+
+---
+
 ## ADR-021：分享直接使用 SAF 文档 URI
 
 **状态**：接受

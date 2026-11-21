@@ -46,7 +46,7 @@ class DownloadNotifications @Inject constructor(
 
     fun completed(item: DownloadEntity, bytes: Long, total: Long?) {
         manager.notify(
-            NOTIFICATION_ID,
+            COMPLETED_ID,
             builder(item.copy(state = "COMPLETED", bytesWritten = bytes, totalBytes = total), true)
                 .setOngoing(false)
                 .setAutoCancel(true)
@@ -57,7 +57,7 @@ class DownloadNotifications @Inject constructor(
 
     fun failed(item: DownloadEntity, code: String) {
         manager.notify(
-            NOTIFICATION_ID,
+            COMPLETED_ID,
             builder(item, true)
                 .setOngoing(false)
                 .setAutoCancel(true)
@@ -132,5 +132,6 @@ class DownloadNotifications @Inject constructor(
     companion object {
         const val CHANNEL_ID = "zlib_downloads"
         const val NOTIFICATION_ID = 1001
+        const val COMPLETED_ID = 1002
     }
 }

@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -80,7 +82,11 @@ fun ZlibAppShell(
             selectedIndex = selectedTab,
             onSelect = onTabSelected,
             backdrop = backdrop,
-            modifier = Modifier.align(Alignment.BottomCenter),
+            defaultWindowInsetsPadding = false,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
         )
     }
 }

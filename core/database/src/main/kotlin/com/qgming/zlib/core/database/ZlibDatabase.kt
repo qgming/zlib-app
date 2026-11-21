@@ -41,6 +41,9 @@ interface DownloadDao {
     @Query("UPDATE download_queue SET state = 'QUEUED' WHERE state IN ('RESOLVING','DOWNLOADING')")
     suspend fun resetInterrupted()
 
+    @Query("UPDATE download_queue SET state = 'FAILED', error = 'invalid' WHERE state = 'COMPLETED' AND bytesWritten < 1024")
+    suspend fun invalidateTinyCompleted()
+
     @Query("SELECT * FROM download_queue WHERE id = :id")
     fun observe(id: String): Flow<DownloadEntity?>
 }

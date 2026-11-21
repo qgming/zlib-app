@@ -82,7 +82,9 @@ Cookie:   粘贴 JSON / 导入 Netscape cookies.txt → 解析 → 校验
 用户点下载 → DownloadRepository.enqueue(book)
   → Room: download_queue(QUEUED)
   → DownloadService.start()
-  → RESOLVING: GET /eapi/book/{id}/{hash}/file（不自动跟随？跟随但剥离凭据）
+  → RESOLVING: GET /eapi/book/{id}/{hash}/file
+    → 若 302：跟随 CDN，剥离凭据
+    → 若 200 JSON：解析 file.downloadLink，再 GET CDN（Range 续传）
   → DOWNLOADING: 写入 SAF .part，Range 续传，进度写 Room + 通知
   → COMPLETED: rename → 入库 books → 通知 → 可选分享
   → FAILED/PAUSED/CANCELLED: 保留 .part，等待恢复/重试

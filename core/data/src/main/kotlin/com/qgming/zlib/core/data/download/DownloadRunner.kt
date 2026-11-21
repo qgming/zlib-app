@@ -3,6 +3,7 @@ package com.qgming.zlib.core.data.download
 import com.qgming.zlib.core.common.AppDispatchers
 import com.qgming.zlib.core.common.AppError
 import com.qgming.zlib.core.common.AppResult
+import com.qgming.zlib.core.common.SafeLog
 import com.qgming.zlib.core.database.DownloadStates
 import com.qgming.zlib.core.database.ZlibDatabase
 import javax.inject.Inject
@@ -22,6 +23,7 @@ class DownloadRunner @Inject constructor(
         val dao = database.downloadDao()
         val books = database.bookDao()
         dao.resetInterrupted()
+        dao.invalidateTinyCompleted()
 
         while (true) {
             val item = dao.nextActive() ?: break
@@ -56,19 +58,21 @@ class DownloadRunner @Inject constructor(
                     is AppResult.Success -> {
                         dao.update(item.id, DownloadStates.COMPLETED, lastBytes, lastTotal, null, now())
                         books.setLocalFile(item.bookId, result.value, now(), now())
+                        SafeLog.d("Download", "completed ${item.id} bytes=$lastBytes uri=${result.value}")
                         notifications.completed(current, lastBytes, lastTotal)
                         break
                     }
 
                     is AppResult.Failure -> {
                         val error = result.error
-                        if (isRetryable(error) && attempt < 3) {
+                        if (isRetryable(error) && attempt < 4) {
                             dao.updateState(item.id, DownloadStates.QUEUED, null, now())
                             delay(1_000L shl (attempt - 1))
                             attempt++
                             continue
                         }
                         dao.update(item.id, DownloadStates.FAILED, lastBytes, lastTotal, errorCode(error), now())
+                        SafeLog.w("Download", "failed ${item.id} code=${errorCode(error)} detail=$error")
                         notifications.failed(current, errorCode(error))
                         break
                     }

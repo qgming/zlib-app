@@ -121,6 +121,11 @@ GET /eapi/book/{id}/{hash}/file
 ```
 
 - 通常 302 到 CDN；必须跟随，但**离开 allowlist 的每一跳都要剥离** `Cookie`、`remix-userid`、`remix-userkey`。
+- **部分镜像（2026-11 实测 z-lib.gl）返回 200 JSON 而不是 302**：
+  ```json
+  {"success":1,"file":{"downloadLink":"https://cdn.../book.epub?token=...","description":"","author":"","extension":"epub","allowDownload":true}}
+  ```
+  客户端必须先解析 `file.downloadLink`，再对 CDN 地址发 GET；`allowDownload=false` 或无链接视为失败。不要记录/持久化带签名的完整 URL。
 - 文件名优先 `Content-Disposition: filename=...`，其次 URL 末段；清洗 `../`、控制字符、Windows 非法字符。
 - 支持 `Range: bytes=<written>-`；206 继续，200 重新开始。
 - 错误：4xx 不重试；网络/502/503/504 指数退避最多 3 次；`daily limit` 不重试。
