@@ -1,0 +1,31 @@
+Zlib
+Copyright (c) 2026 qgming
+
+This project is an independent, unofficial Android client. It is not
+affiliated with, endorsed by, or sponsored by Z-Library.
+
+Third-party software and references
+-----------------------------------
+
+1. heartleo/zlib
+   https://github.com/heartleo/zlib
+   MIT License. The EAPI request/response behavior, domain policy, download
+   redirect rules, ISBN normalization, and several UX decisions in this
+   project were derived from this CLI. See its LICENSE for the full text.
+
+2. compose-miuix-ui/miuix
+   https://github.com/compose-miuix-ui/miuix
+   Apache License 2.0. Used as the UI component library (Miuix 0.9.5-beta03).
+   Miuix is experimental; its APIs may change without notice.
+
+3. baroxyton/zlibrary-eapi-documentation
+   https://github.com/baroxyton/zlibrary-eapi-documentation
+   Referenced for endpoint documentation. No code is copied from it.
+
+4. Z-Library EAPI
+   The EAPI is not a public, stable, or officially authorized contract. This
+   project talks to it directly at the user's request and may stop working when
+   upstream changes fields, authentication, or domains.
+
+No Z-Library name, logo, or other trademark is claimed by this project. The
+"Zlib" name is used only to describe the client's purpose.
