@@ -6,7 +6,9 @@
 
 ## 状态
 
-**早期骨架阶段。** 方案与文档已定稿；v0.1 可构建空壳（Miuix 主题 + 4 tab）已通过 `assembleDebug`/`lint`。当前优先实现登录、域名体检、会话与搜索。
+**v0.2 进行中。** v0.1 空壳已通过 `assembleDebug`/`lint`。当前已落地：EAPI 请求管线（MockWebServer 覆盖登录/配额/搜索映射/重试）、域名 allowlist/并发体检/自动切换、密码 + WebView + Cookie 三种登录入口、Android Keystore + DataStore 会话加密、账号/配额页、域名与设置页。搜索/详情 UI 与下载队列在 v0.3/v0.4 接入。
+
+Hilt + KSP spike 已在 AGP 9.5.2 / Kotlin 2.4.21 / KSP 2.3.12 上通过并在真机启动；Room 在下载队列落地时接入。
 
 ## 功能范围（v1）
 

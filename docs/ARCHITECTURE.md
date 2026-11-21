@@ -159,17 +159,22 @@ domains(host TEXT PK, status, last_checked, detail)
 
 ```kotlin
 sealed interface AppError {
+  data object NoDomain : AppError
   data object NotLoggedIn : AppError
   data object SessionExpired : AppError
+  data class AuthFailed(val message: String?) : AppError
   data class Quota(val remaining: Int, val resetHint: String?) : AppError
   data class DomainBlocked(val status: DomainStatus) : AppError
   data class Network(val cause: Throwable) : AppError
   data class Server(val code: Int, val message: String) : AppError
   data class Storage(val cause: Throwable) : AppError
   data class Parse(val message: String) : AppError
+  data class Unsupported(val message: String) : AppError
   data class Unknown(val cause: Throwable) : AppError
 }
 ```
+
+`DomainStatus` 定义在 `:core:common`（纯枚举），`:core:model` 的 `DomainCheck` 复用它，避免 core 反向依赖。
 
 UI 只消费 `AppError` 的用户可读映射；恢复动作由 feature 决定（切域、重登、等待配额、重试、换目录）。
 

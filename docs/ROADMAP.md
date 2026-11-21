@@ -14,14 +14,14 @@
 
 ## v0.2 — 登录与域名
 
-- [ ] `EapiClient` 基础请求管线（form/JSON/envelope/错误分类）
-- [ ] 密码登录 + 加密会话（Keystore + DataStore）
-- [ ] WebView 登录 + Cookie 提取
-- [ ] 粘贴/Netscape Cookie 导入
-- [ ] 域名 allowlist + 并发体检 + 自动切换 + 自定义镜像
-- [ ] 账号页：昵称/邮箱/配额
+- [x] `EapiClient` 基础请求管线（form/JSON/envelope/错误分类）
+- [x] 密码登录 + 加密会话（Keystore + DataStore）
+- [x] WebView 登录 + Cookie 提取
+- [x] 粘贴/Netscape Cookie 导入
+- [x] 域名 allowlist + 并发体检 + 自动切换 + 自定义镜像
+- [x] 账号页：昵称/邮箱/配额
 
-**验收**：三种登录方式都能进入主界面；切换域名后会话仍有效；DiamWall/配额错误有可行动提示。
+**验收**：密码登录与 Cookie 导入需要真实账号手测；WebView 登录待真实登录页验证。域名体检/自动选择/会话加密已在真机（Xiaomi HyperOS，Android 16）启动路径验证，`test lint assembleDebug` 通过。
 
 ## v0.3 — 搜索与详情
 

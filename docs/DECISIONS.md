@@ -118,14 +118,15 @@
 
 ## ADR-010：Hilt + Room + KSP，1 天 spike，失败回退手写 DI
 
-**状态**：接受（待 spike）
+**状态**：接受（Hilt/KSP spike 已通过，Room 待 v0.4 接入）
 
 **背景**：AGP 9.5.2 + Kotlin 2.4.21 + KSP 2.3.12 是前沿组合；Room+KSP 有本机先例，Hilt 未验证。
 
 **决策**：先按 Hilt + Room + KSP 搭；第一天做最小 spike（Application + 一个 ViewModel + 一个 DAO）。失败则回退 `AppContainer` 构造注入，Room 保留。禁止两套 DI 混用。
 
-**后果**：Hilt 失败会多一天；回退后 ViewModel 工厂需要手写。
+**验证（2026-11-21）**：`:app` 与 `:core:data` 已启用 Hilt 2.60.1 Gradle 插件 + KSP 2.3.12，`@HiltAndroidApp`、`@AndroidEntryPoint`、跨模块 `@Inject`/`@Provides`、`@HiltViewModel` 均编译通过并在真机启动；`SecretCipher`、DataStore、Repository 由 Hilt 装配。Room 在 v0.4 下载队列落地时再加，不自造第二套 DI。
 
+**后果**：Hilt 失败会多一天；回退后 ViewModel 工厂需要手写。当前无需回退。
 ---
 
 ## ADR-011：裸 OkHttp + 前台 Service 下载
@@ -220,4 +221,29 @@
 - 取消收藏不影响本地文件。
 
 **后果**：多设备行为可预测；本地删除不会误删云端记录。
+
+---
+
+## ADR-019：会话加密使用 Android Keystore + DataStore 自实现
+
+**状态**：接受
+
+**背景**：`androidx.security:security-crypto` 长期停留在 alpha 且已弃用；只需要保存一个会话 blob。
+
+**决策**：`SecretCipher` 接口 + `KeystoreSecretCipher`（AES-256-GCM，密钥别名 `zlib.session.v1`，IV 前置）；密文 Base64 后写入 Preferences DataStore。密钥失效/解密失败视为未登录，不崩溃。
+
+**后果**：无额外依赖；单元测试通过 `SecretCipher` 假实现覆盖 `SessionManager`，Keystore 本身留仪器测试。会话不参与备份（`allowBackup=false` + data extraction rules）。
+
+---
+
+## ADR-020：单元测试统一 JUnit4 + kotlin.test
+
+**状态**：接受
+
+**背景**：`docs/TESTING.md` 最初写 JUnit5；Android Gradle 默认 runner 与 JUnit5 需要额外插件，收益不足。
+
+**决策**：JVM 单测用 JUnit4 `4.13.2` + `kotlin-test-junit`；网络用 MockWebServer；协程用 `kotlinx-coroutines-test`。Compose/仪器测试后续单独接入。
+
+**后果**：`test` 任务零额外配置；JUnit5 专属特性不可用。
+
 

@@ -4,7 +4,7 @@
 
 | 层 | 范围 | 工具 |
 |---|---|---|
-| 单元 | ISBN、域名策略、错误映射、EAPI JSON 映射、文件名清洗 | JUnit5 + kotlin.test |
+| 单元 | ISBN、域名策略、错误映射、EAPI JSON 映射、文件名清洗 | JUnit4 + kotlin.test |
 | 集成 | 登录/搜索/下载重定向/错误 envelope | MockWebServer + OkHttp |
 | 数据库 | Entity/DAO、Migration | Room + `MigrationTestHelper` |
 | UI | 登录、搜索、下载、书架、元数据 | Compose UI Test |
