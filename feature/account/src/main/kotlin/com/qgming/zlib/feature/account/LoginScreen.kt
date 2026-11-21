@@ -30,8 +30,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.qgming.zlib.core.designsystem.ZlibCard
 import top.yukonga.miuix.kmp.basic.Button
-import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
@@ -76,7 +76,7 @@ fun LoginScreen(viewModel: LoginViewModel = hiltViewModel()) {
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
             )
 
-            Card {
+            ZlibCard {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -138,7 +138,7 @@ fun LoginScreen(viewModel: LoginViewModel = hiltViewModel()) {
             )
 
             if (state.showCookieImport) {
-                Card {
+                ZlibCard {
                     Text(
                         text = "支持三种格式：浏览器请求头里的 Cookie、Netscape cookies.txt、或 {\"remix_userid\":…} JSON。",
                         style = MiuixTheme.textStyles.footnote1,

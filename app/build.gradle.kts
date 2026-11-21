@@ -82,6 +82,8 @@ dependencies {
     implementation(project(":core:data"))
     implementation(project(":feature:account"))
     implementation(project(":feature:settings"))
+    implementation(project(":feature:search"))
+    implementation(project(":feature:detail"))
 
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.ktx)
@@ -89,6 +91,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.coil.network.okhttp)
 
     implementation(libs.hilt.android)
     implementation(libs.hilt.navigation.compose)

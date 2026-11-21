@@ -94,9 +94,19 @@ class EapiClient(
 
     suspend fun profile(session: Session? = null): AppResult<Account> {
         val auth = session ?: sessionProvider() ?: return AppResult.Failure(AppError.NotLoggedIn)
-        return execute(EapiEndpoints.PROFILE, FormBody.Builder().build(), auth)
+        return execute(EapiEndpoints.PROFILE, form = null, auth, isGet = true)
             .mapCatching { exchange -> mapAccount(exchange.root, auth) }
     }
+
+    suspend fun recommended(): AppResult<List<Book>> =
+        bookList(EapiEndpoints.RECOMMENDED, sessionProvider())
+
+    suspend fun mostPopular(): AppResult<List<Book>> =
+        bookList(EapiEndpoints.MOST_POPULAR, sessionProvider())
+
+    private suspend fun bookList(path: String, session: Session?): AppResult<List<Book>> =
+        execute(path, form = null, session = session, isGet = true)
+            .mapCatching { exchange -> BookMapper.listFrom(exchange.root) }
 
     // ---------------------------------------------------------------- domains
 

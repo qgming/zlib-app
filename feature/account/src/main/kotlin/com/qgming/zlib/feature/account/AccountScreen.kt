@@ -23,8 +23,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qgming.zlib.core.designsystem.label
+import com.qgming.zlib.core.designsystem.ZlibCard
 import top.yukonga.miuix.kmp.basic.Button
-import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
@@ -51,7 +51,7 @@ fun AccountScreen(
     ) {
             item {
                 notice?.let { message ->
-                    Card {
+                    ZlibCard {
                         Text(
                             text = message,
                             style = MiuixTheme.textStyles.footnote1,
@@ -64,7 +64,7 @@ fun AccountScreen(
             }
 
             item {
-                Card {
+                ZlibCard {
                     val account = state.account
                     if (account == null) {
                         if (state.error != null) {
@@ -114,7 +114,7 @@ fun AccountScreen(
             }
 
             item {
-                Card {
+                ZlibCard {
                     Text("当前域名", style = MiuixTheme.textStyles.body2)
                     Text(
                         text = state.currentHost ?: "未选择",
@@ -143,7 +143,7 @@ fun AccountScreen(
             }
 
             items(state.checks.filter { it.host != state.currentHost }) { check ->
-                Card {
+                ZlibCard {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,

@@ -23,8 +23,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qgming.zlib.core.designsystem.label
+import com.qgming.zlib.core.designsystem.ZlibCard
 import top.yukonga.miuix.kmp.basic.Button
-import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
@@ -70,7 +70,7 @@ fun SettingsScreen(
         ) {
             notice?.let { message ->
                 item {
-                    Card {
+                    ZlibCard {
                         Text(
                             text = message,
                             style = MiuixTheme.textStyles.footnote1,
@@ -83,7 +83,7 @@ fun SettingsScreen(
             }
 
             item {
-                Card {
+                ZlibCard {
                     Text("域名体检", style = MiuixTheme.textStyles.body2)
                     Text(
                         text = state.currentHost ?: "尚未选择域名",
@@ -124,7 +124,7 @@ fun SettingsScreen(
             }
 
             items(state.checks) { check ->
-                Card {
+                ZlibCard {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -159,7 +159,7 @@ fun SettingsScreen(
             }
 
             item {
-                Card {
+                ZlibCard {
                     Text("添加自定义镜像", style = MiuixTheme.textStyles.body2)
                     Text(
                         text = "只接受 HTTPS 主机名，不能带端口、路径或 IP；只信任精确主机。",
@@ -187,7 +187,7 @@ fun SettingsScreen(
             }
 
             item {
-                Card {
+                ZlibCard {
                     Text("外观", style = MiuixTheme.textStyles.body2)
                     SettingSwitch(
                         title = "玻璃效果",

@@ -25,8 +25,11 @@ import com.qgming.zlib.core.designsystem.ZlibAppShell
 import com.qgming.zlib.core.designsystem.ZlibPlaceholder
 import com.qgming.zlib.core.designsystem.ZlibTab
 import com.qgming.zlib.core.designsystem.userMessage
+import com.qgming.zlib.core.model.Book
 import com.qgming.zlib.feature.account.AccountScreen
 import com.qgming.zlib.feature.account.LoginScreen
+import com.qgming.zlib.feature.detail.DetailScreen
+import com.qgming.zlib.feature.search.SearchScreen
 import com.qgming.zlib.feature.settings.SettingsScreen
 import kotlinx.serialization.Serializable
 import top.yukonga.miuix.kmp.basic.Button
@@ -52,6 +55,9 @@ private sealed interface Route : NavKey {
 
     @Serializable
     data object SettingsRoute : Route
+
+    @Serializable
+    data class BookDetail(val id: String, val hash: String) : Route
 }
 
 @Composable
@@ -169,16 +175,29 @@ private fun MainShell() {
         onBack = { nav.pop() },
     ) {
         entry<Route.Home> {
-            HomeTabs(onOpenSettings = { nav.push(Route.SettingsRoute) })
+            HomeTabs(
+                onOpenBook = { book -> nav.push(Route.BookDetail(book.id, book.hash)) },
+                onOpenSettings = { nav.push(Route.SettingsRoute) },
+            )
         }
         entry<Route.SettingsRoute> {
             SettingsScreen(onBack = { nav.pop() })
+        }
+        entry<Route.BookDetail> { route ->
+            DetailScreen(
+                id = route.id,
+                hash = route.hash,
+                onBack = { nav.pop() },
+            )
         }
     }
 }
 
 @Composable
-private fun HomeTabs(onOpenSettings: () -> Unit) {
+private fun HomeTabs(
+    onOpenBook: (Book) -> Unit,
+    onOpenSettings: () -> Unit,
+) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val tabs = remember {
         listOf(
@@ -196,10 +215,9 @@ private fun HomeTabs(onOpenSettings: () -> Unit) {
         onTabSelected = { selectedTab = it },
     ) { padding ->
         when (selectedTab) {
-            0 -> ZlibPlaceholder(
-                title = "搜索",
-                body = "登录已就绪。搜索与详情将在 v0.3 接入。",
+            0 -> SearchScreen(
                 padding = padding,
+                onOpenBook = onOpenBook,
             )
 
             1 -> ZlibPlaceholder(

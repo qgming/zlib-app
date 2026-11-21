@@ -128,6 +128,10 @@ class EapiClientTest {
         assertEquals(10, account.quota.allowed)
         assertEquals(7, account.quota.remaining)
         assertTrue(account.quota.known)
+
+        val request = server.takeRequest()
+        assertEquals("GET", request.method)
+        assertEquals("/eapi/user/profile", request.path)
     }
 
     @Test

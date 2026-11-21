@@ -6,9 +6,9 @@
 
 ## 状态
 
-**v0.2 进行中。** v0.1 空壳已通过 `assembleDebug`/`lint`。当前已落地：EAPI 请求管线（MockWebServer 覆盖登录/配额/搜索映射/重试）、域名 allowlist/并发体检/自动切换、密码 + WebView + Cookie 三种登录入口、Android Keystore + DataStore 会话加密、账号/配额页、域名与设置页。搜索/详情 UI 与下载队列在 v0.3/v0.4 接入。
+**v0.3 进行中。** v0.2 已落地 EAPI 管线、域名体检/切换、密码 + WebView + Cookie 登录、加密会话、账号/配额页。v0.3 已接入搜索（关键词/语言/格式/年份/精确/排序/分页）、详情页、热门/推荐、Coil 封面缓存；下载/分享/收藏写入等 v0.4。
 
-Hilt + KSP spike 已在 AGP 9.5.2 / Kotlin 2.4.21 / KSP 2.3.12 上通过并在真机启动；Room 在下载队列落地时接入。
+`/eapi/user/profile` 已修正为 GET（此前误用 POST 导致部分域名返回 404）；镜像缺该接口时会体检并切换一次域名。
 
 ## 功能范围（v1）
 

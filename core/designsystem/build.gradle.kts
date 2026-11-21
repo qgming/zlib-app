@@ -31,6 +31,8 @@ dependencies {
     api(project(":core:common"))
     api(project(":core:model"))
 
+    api(libs.coil.compose)
+
     api(libs.miuix.ui)
     api(libs.miuix.preference)
     api(libs.miuix.icons)

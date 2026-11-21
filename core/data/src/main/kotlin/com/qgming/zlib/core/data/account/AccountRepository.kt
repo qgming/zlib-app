@@ -3,6 +3,7 @@ package com.qgming.zlib.core.data.account
 import com.qgming.zlib.core.common.AppDispatchers
 import com.qgming.zlib.core.common.AppError
 import com.qgming.zlib.core.common.AppResult
+import com.qgming.zlib.core.data.domain.DomainRepository
 import com.qgming.zlib.core.data.session.SessionManager
 import com.qgming.zlib.core.model.Account
 import com.qgming.zlib.core.network.EapiClient
@@ -17,6 +18,7 @@ import kotlinx.coroutines.withContext
 class AccountRepository @Inject constructor(
     private val api: EapiClient,
     private val sessionManager: SessionManager,
+    private val domainRepository: DomainRepository,
     private val dispatchers: AppDispatchers,
 ) {
     private val _account = MutableStateFlow<Account?>(null)
@@ -25,7 +27,14 @@ class AccountRepository @Inject constructor(
     suspend fun refresh(): AppResult<Account> {
         if (sessionManager.current() == null) return AppResult.Failure(AppError.NotLoggedIn)
         return withContext(dispatchers.io) {
-            val result = api.profile()
+            var result = api.profile()
+            // Some mirrors expose login/search but not /eapi/user/profile. Try one healthy
+            // alternative before surfacing "接口不存在" (keeps cookies, ADR-013).
+            val firstError = (result as? AppResult.Failure)?.error
+            if (firstError is AppError.Server && firstError.code == 404) {
+                domainRepository.probeAll(switchToBest = true)
+                result = api.profile()
+            }
             when (result) {
                 is AppResult.Success -> _account.value = result.value
                 is AppResult.Failure -> if (result.error == AppError.SessionExpired) {
