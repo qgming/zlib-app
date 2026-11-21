@@ -64,6 +64,9 @@ class StartupCoordinator @Inject constructor(
 
     suspend fun retry() {
         completed = false
+        withContext(dispatchers.io) {
+            domainRepository.probeAll(switchToBest = true)
+        }
         start()
     }
 

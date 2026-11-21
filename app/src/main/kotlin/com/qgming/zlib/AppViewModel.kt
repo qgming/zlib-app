@@ -6,10 +6,13 @@ import com.qgming.zlib.core.data.auth.AuthRepository
 import com.qgming.zlib.core.data.domain.DomainRepository
 import com.qgming.zlib.core.data.startup.StartupCoordinator
 import com.qgming.zlib.core.data.startup.StartupState
+import com.qgming.zlib.core.designsystem.userMessage
 import com.qgming.zlib.core.model.Session
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 @HiltViewModel
@@ -21,6 +24,9 @@ class AppViewModel @Inject constructor(
 
     val startupState: StateFlow<StartupState> = startupCoordinator.state
     val session: StateFlow<Session?> = authRepository.session
+
+    private val _message = MutableStateFlow<String?>(null)
+    val message: StateFlow<String?> = _message.asStateFlow()
 
     init {
         start()
@@ -41,8 +47,16 @@ class AppViewModel @Inject constructor(
 
     fun addCustomHost(raw: String) {
         viewModelScope.launch {
-            domainRepository.addCustomHost(raw)
-            startupCoordinator.retry()
+            when (val result = domainRepository.addCustomHost(raw)) {
+                is com.qgming.zlib.core.common.AppResult.Success -> {
+                    _message.value = null
+                    startupCoordinator.retry()
+                }
+
+                is com.qgming.zlib.core.common.AppResult.Failure -> {
+                    _message.value = result.error.userMessage()
+                }
+            }
         }
     }
 }

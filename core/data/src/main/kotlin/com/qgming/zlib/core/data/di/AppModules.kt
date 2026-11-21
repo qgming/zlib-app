@@ -16,6 +16,7 @@ import com.qgming.zlib.core.network.DomainPolicy
 import com.qgming.zlib.core.network.DomainProbe
 import com.qgming.zlib.core.network.EapiClient
 import com.qgming.zlib.core.network.EapiJson
+import com.qgming.zlib.core.network.EapiRedirectGuardInterceptor
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -50,7 +51,8 @@ object AppModule {
         .writeTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true)
         .followSslRedirects(true)
-        .addNetworkInterceptor(CredentialStripInterceptor { url -> registry.isAllowed(url.host) })
+        .addNetworkInterceptor(EapiRedirectGuardInterceptor(isAllowedUrl = { url -> url.isHttps && registry.isAllowed(url.host) }))
+        .addNetworkInterceptor(CredentialStripInterceptor(isAllowedUrl = { url -> registry.isAllowed(url.host) }))
         .build()
 
     @Provides

@@ -38,7 +38,7 @@ class CredentialStripInterceptorTest {
     fun `credentials are stripped when the target is not allowed`() {
         server.enqueue(MockResponse().setBody("{}"))
         val client = OkHttpClient.Builder()
-            .addNetworkInterceptor(CredentialStripInterceptor { false })
+            .addNetworkInterceptor(CredentialStripInterceptor(isAllowedUrl = { false }))
             .build()
 
         client.newCall(requestWithCredentials(server.url("/file").toString())).execute().close()
@@ -53,7 +53,7 @@ class CredentialStripInterceptorTest {
     fun `credentials are kept on the first allowed host`() {
         server.enqueue(MockResponse().setBody("{}"))
         val client = OkHttpClient.Builder()
-            .addNetworkInterceptor(CredentialStripInterceptor { true })
+            .addNetworkInterceptor(CredentialStripInterceptor(isAllowedUrl = { true }, requireHttps = false))
             .build()
 
         client.newCall(requestWithCredentials(server.url("/file").toString())).execute().close()
@@ -70,7 +70,7 @@ class CredentialStripInterceptorTest {
 
         val allowed = server.port
         val client = OkHttpClient.Builder()
-            .addNetworkInterceptor(CredentialStripInterceptor { url -> url.port == allowed })
+            .addNetworkInterceptor(CredentialStripInterceptor(isAllowedUrl = { url -> url.port == allowed }, requireHttps = false))
             .build()
 
         client.newCall(requestWithCredentials(server.url("/file").toString())).execute().close()
@@ -90,7 +90,7 @@ class CredentialStripInterceptorTest {
         server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", cdn.url("/x").toString()))
         cdn.enqueue(MockResponse().setBody("{}"))
         val client = OkHttpClient.Builder()
-            .addNetworkInterceptor(CredentialStripInterceptor { true })
+            .addNetworkInterceptor(CredentialStripInterceptor(isAllowedUrl = { true }, requireHttps = false))
             .build()
 
         client.newCall(requestWithCredentials(server.url("/start").toString())).execute().close()

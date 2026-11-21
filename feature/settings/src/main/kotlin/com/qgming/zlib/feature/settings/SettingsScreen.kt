@@ -99,7 +99,7 @@ fun SettingsScreen(
                         onClick = viewModel::probeAll,
                         enabled = !state.probing,
                     ) {
-                        Text(if (state.probing) "体检中…" else "重新体检 8 个域名")
+                        Text(if (state.probing) "体检中…" else "重新体检可用域名")
                     }
                     Spacer(Modifier.height(8.dp))
                     Row(
@@ -178,7 +178,6 @@ fun SettingsScreen(
                     Button(
                         onClick = {
                             viewModel.addCustomHost(customHost)
-                            customHost = ""
                         },
                         enabled = customHost.isNotBlank(),
                     ) {

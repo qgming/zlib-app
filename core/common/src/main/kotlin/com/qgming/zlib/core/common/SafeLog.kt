@@ -33,12 +33,15 @@ object SafeLog {
     }
 
     fun w(tag: String, message: String, throwable: Throwable? = null) {
-        Log.w(tag, redactText(message), throwable)
+        Log.w(tag, redactText(message) + throwableSuffix(throwable))
     }
 
     fun e(tag: String, message: String, throwable: Throwable? = null) {
-        Log.e(tag, redactText(message), throwable)
+        Log.e(tag, redactText(message) + throwableSuffix(throwable))
     }
+
+    private fun throwableSuffix(throwable: Throwable?): String =
+        throwable?.let { "\n" + redactText(it.stackTraceToString()) }.orEmpty()
 
     /** Keeps scheme/host/path, drops user-info and the whole query string. */
     fun redactUrl(raw: String): String {
@@ -54,7 +57,9 @@ object SafeLog {
                 if (hadQuery) append("?<redacted>")
             }
         }.getOrElse {
-            raw.substringBefore('?').substringBefore('#')
+            raw.substringBefore('?')
+                .substringBefore('#')
+                .replace(Regex("//[^/@]+@"), "//")
         }
     }
 

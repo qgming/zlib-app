@@ -20,6 +20,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,7 +46,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 @Composable
 fun LoginScreen(viewModel: LoginViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var showWebView by remember { mutableStateOf(false) }
+    var showWebView by rememberSaveable { mutableStateOf(false) }
 
     if (showWebView && state.domain != null) {
         WebViewLoginScreen(
@@ -259,8 +260,16 @@ private fun rememberWebView(
                     return !(target.scheme == "https" && isAllowedUrl(target.toString()))
                 }
 
+                override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                    // Redirects and page-initiated navigations bypass shouldOverrideUrlLoading.
+                    if (!isAllowedUrl(url)) {
+                        view.stopLoading()
+                        view.loadUrl("https://$host/")
+                    }
+                }
+
                 override fun onPageFinished(view: WebView, url: String) {
-                    onPageFinished(url)
+                    if (isAllowedUrl(url)) onPageFinished(url)
                 }
             }
             loadUrl("https://$host/")

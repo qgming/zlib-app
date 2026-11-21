@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -32,7 +33,8 @@ data class AccountUiState(
     val currentHost: String? = null,
     val checks: List<DomainCheck> = emptyList(),
     val probing: Boolean = false,
-    val refreshing: Boolean = false,
+    val loading: Boolean = false,
+    val error: String? = null,
 )
 
 @HiltViewModel
@@ -43,7 +45,9 @@ class AccountViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
-    private val refreshing = MutableStateFlow(false)
+    private data class RequestState(val loading: Boolean = false, val error: String? = null)
+
+    private val requestState = MutableStateFlow(RequestState())
 
     private val domainState = combine(
         domainRepository.currentHost,
@@ -54,16 +58,17 @@ class AccountViewModel @Inject constructor(
     val state: StateFlow<AccountUiState> = combine(
         accountRepository.account,
         authRepository.session,
-        refreshing,
+        requestState,
         domainState,
-    ) { account, session, isRefreshing, domain ->
+    ) { account, session, request, domain ->
         AccountUiState(
             account = account,
             session = session,
             currentHost = domain.first,
             checks = domain.second,
             probing = domain.third,
-            refreshing = isRefreshing,
+            loading = request.loading,
+            error = request.error,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AccountUiState())
 
@@ -75,17 +80,18 @@ class AccountViewModel @Inject constructor(
     }
 
     fun refresh() {
-        if (refreshing.value) return
+        if (requestState.value.loading) return
         viewModelScope.launch {
-            refreshing.value = true
-            try {
+            requestState.value = RequestState(loading = true)
+            val state = try {
                 when (val result = accountRepository.refresh()) {
-                    is AppResult.Failure -> _events.send(result.error.userMessage())
-                    is AppResult.Success -> Unit
+                    is AppResult.Failure -> RequestState(error = result.error.userMessage())
+                    is AppResult.Success -> RequestState()
                 }
             } finally {
-                refreshing.value = false
+                requestState.value = requestState.value.copy(loading = false)
             }
+            requestState.value = state
         }
     }
 
@@ -106,8 +112,7 @@ class AccountViewModel @Inject constructor(
         viewModelScope.launch {
             withContext(Dispatchers.Main) {
                 val cookieManager = CookieManager.getInstance()
-                cookieManager.removeAllCookies(null)
-                cookieManager.flush()
+                cookieManager.removeAllCookies { cookieManager.flush() }
             }
             authRepository.logout()
             accountRepository.clear()

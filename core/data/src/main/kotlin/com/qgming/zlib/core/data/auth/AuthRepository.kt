@@ -52,13 +52,17 @@ class AuthRepository @Inject constructor(
      * endpoint and then persists it. [host] defaults to the current domain.
      */
     suspend fun importCookies(raw: String, host: String? = null): AppResult<Session> {
-        val target = host?.let(DomainPolicy::normalizeHostInput)
-            ?: domainRepository.currentHostOrNull()
-            ?: run {
-                ensureDomain()
-                domainRepository.currentHostOrNull()
-            }
-            ?: return AppResult.Failure(AppError.NoDomain)
+        val target = if (host != null) {
+            DomainPolicy.normalizeHostInput(host)
+                ?: return AppResult.Failure(AppError.Parse("WebView 登录域名无效"))
+        } else {
+            domainRepository.currentHostOrNull()
+                ?: run {
+                    ensureDomain()
+                    domainRepository.currentHostOrNull()
+                }
+                ?: return AppResult.Failure(AppError.NoDomain)
+        }
 
         if (!registry.isAllowed(target)) {
             return AppResult.Failure(AppError.Parse("域名不在允许列表"))

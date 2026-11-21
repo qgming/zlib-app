@@ -131,7 +131,7 @@ SAF 选择文件 → 复制到 cache（避免直接改 Provider 流）
 4. 先读 body，解析 envelope；HTTP 非 2xx 但 envelope 有 `success:0` 时保留服务端 error；
 5. 识别 `Invalid credentials`/`Please login` → `SessionExpired`；
 6. 识别 513/517/HTML DiamWall → `DomainBlocked`；
-7. 重定向由 OkHttp 跟随，`Interceptor` 在离开 allowlist 时剥离凭据。
+7. EAPI 重定向：网络拦截器在跟随前拒绝离开 allowlist（或非 HTTPS）的重定向，避免 307/308 把登录表单体重放到别的 host；下载请求不加此限制，按目标 host 剥离凭据。
 
 ## 6. 数据模型（Room）
 

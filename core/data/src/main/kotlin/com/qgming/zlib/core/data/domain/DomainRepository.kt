@@ -84,28 +84,28 @@ class DomainRepository @Inject constructor(
         }
     }
 
-    suspend fun probeHost(host: String): DomainCheck {
+    suspend fun probeHost(host: String): DomainCheck = mutex.withLock {
         val normalized = DomainPolicy.normalizeHostInput(host)
-            ?: return DomainCheck(host = host, status = DomainStatus.INVALID, detail = "域名格式无效")
+            ?: return@withLock DomainCheck(host = host, status = DomainStatus.INVALID, detail = "域名格式无效")
         val check = withContext(dispatchers.io) { probe.probe(normalized) }
         val updated = _checks.value.filterNot { it.host == normalized } + check
         _checks.value = updated.sortedBy { hostOrder(it.host) }
-        return check
+        check
     }
 
-    suspend fun setCurrentHost(host: String): AppResult<String> {
+    suspend fun setCurrentHost(host: String): AppResult<String> = mutex.withLock {
         val normalized = DomainPolicy.normalizeHostInput(host)
-            ?: return AppResult.Failure(AppError.Parse("域名格式无效"))
+            ?: return@withLock AppResult.Failure(AppError.Parse("域名格式无效"))
         if (!registry.isAllowed(normalized)) {
-            return AppResult.Failure(AppError.Parse("域名不在允许列表"))
+            return@withLock AppResult.Failure(AppError.Parse("域名不在允许列表"))
         }
         applyHost(normalized)
-        return AppResult.Success(normalized)
+        AppResult.Success(normalized)
     }
 
-    suspend fun addCustomHost(raw: String): AppResult<String> {
+    suspend fun addCustomHost(raw: String): AppResult<String> = mutex.withLock {
         val host = when (val validation = DomainPolicy.validateCustomHost(raw)) {
-            is AppResult.Failure -> return validation
+            is AppResult.Failure -> return@withLock validation
             is AppResult.Success -> validation.value
         }
         val hosts = currentSettings().customHosts + host
@@ -116,39 +116,46 @@ class DomainRepository @Inject constructor(
         val check = withContext(dispatchers.io) { probe.probe(host) }
         _checks.value = (_checks.value.filterNot { it.host == host } + check).sortedBy { hostOrder(it.host) }
 
-        if (check.status == DomainStatus.HEALTHY && (_currentHost.value == null || !isHealthy(_currentHost.value!!))) {
+        if (check.status == DomainStatus.HEALTHY &&
+            _settings.value.lockedHost == null &&
+            (_currentHost.value == null || !isHealthy(_currentHost.value!!))
+        ) {
             applyHost(host)
         }
-        return AppResult.Success(host)
+        AppResult.Success(host)
     }
 
-    suspend fun removeCustomHost(host: String): AppResult<Unit> {
+    suspend fun removeCustomHost(host: String): AppResult<Unit> = mutex.withLock {
         val normalized = DomainPolicy.normalizeHostInput(host)
-            ?: return AppResult.Failure(AppError.Parse("域名格式无效"))
+            ?: return@withLock AppResult.Failure(AppError.Parse("域名格式无效"))
         val hosts = currentSettings().customHosts - normalized
         settingsStore.setCustomHosts(hosts)
         registry.updateCustomHosts(hosts)
         _settings.value = currentSettings().copy(customHosts = hosts)
         _checks.value = _checks.value.filterNot { it.host == normalized }
+        if (_settings.value.lockedHost == normalized) {
+            settingsStore.setLockedHost(null)
+            _settings.value = currentSettings().copy(lockedHost = null)
+        }
         if (_currentHost.value == normalized) {
             _currentHost.value = null
-            probeAll(switchToBest = true)
+            probeInternal(switchToBest = true)
         }
-        return AppResult.Success(Unit)
+        AppResult.Success(Unit)
     }
 
-    suspend fun setLockedHost(host: String?): AppResult<Unit> {
+    suspend fun setLockedHost(host: String?): AppResult<Unit> = mutex.withLock {
         val normalized = host?.let(DomainPolicy::normalizeHostInput)
         if (host != null && normalized == null) {
-            return AppResult.Failure(AppError.Parse("域名格式无效"))
+            return@withLock AppResult.Failure(AppError.Parse("域名格式无效"))
         }
         if (normalized != null && !registry.isAllowed(normalized)) {
-            return AppResult.Failure(AppError.Parse("域名不在允许列表"))
+            return@withLock AppResult.Failure(AppError.Parse("域名不在允许列表"))
         }
         settingsStore.setLockedHost(normalized)
         _settings.value = currentSettings().copy(lockedHost = normalized)
         if (normalized != null) applyHost(normalized)
-        return AppResult.Success(Unit)
+        AppResult.Success(Unit)
     }
 
     suspend fun setGlassEnabled(enabled: Boolean) {
@@ -162,9 +169,9 @@ class DomainRepository @Inject constructor(
     }
 
     /** Called after a successful login/cookie import so the session domain becomes current. */
-    suspend fun adoptSessionHost(host: String) {
-        val normalized = DomainPolicy.normalizeHostInput(host) ?: return
-        if (!registry.isAllowed(normalized)) return
+    suspend fun adoptSessionHost(host: String) = mutex.withLock {
+        val normalized = DomainPolicy.normalizeHostInput(host) ?: return@withLock
+        if (!registry.isAllowed(normalized)) return@withLock
         applyHost(normalized)
     }
 
@@ -181,6 +188,9 @@ class DomainRepository @Inject constructor(
         }
         _checks.value = results.sortedBy { hostOrder(it.host) }
         if (switchToBest) {
+            // An explicit lock wins over automatic failover (ADR-013).
+            if (_settings.value.lockedHost != null) return results
+
             val current = _currentHost.value
             val best = when {
                 current != null && results.any { it.host == current && it.status == DomainStatus.HEALTHY } -> current
@@ -192,10 +202,24 @@ class DomainRepository @Inject constructor(
     }
 
     private suspend fun applyHost(host: String) {
+        val session = sessionManager.current()
+        val lockNeedsUpdate = _settings.value.lockedHost != null && _settings.value.lockedHost != host
+        if (_currentHost.value == host &&
+            _settings.value.currentHost == host &&
+            session?.domain == host &&
+            !lockNeedsUpdate
+        ) {
+            return
+        }
+
         if (_currentHost.value != host) _currentHost.value = host
         settingsStore.setCurrentHost(host)
         _settings.value = currentSettings().copy(currentHost = host)
-        val session = sessionManager.current()
+        // Manual selection follows the lock so a later probe cannot undo it.
+        if (lockNeedsUpdate) {
+            settingsStore.setLockedHost(host)
+            _settings.value = currentSettings().copy(lockedHost = host)
+        }
         if (session != null && session.domain != host) {
             sessionManager.save(session.withDomain(host))
         }

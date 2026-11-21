@@ -13,13 +13,14 @@ import okhttp3.Response
  */
 class CredentialStripInterceptor(
     private val isAllowedUrl: (HttpUrl) -> Boolean = { DomainPolicy.isAllowed(it.host) },
+    private val requireHttps: Boolean = true,
 ) : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
         val originHost = chain.call().request().url.host
         val targetHost = request.url.host
-        if (targetHost == originHost && isAllowedUrl(request.url)) {
+        if ((!requireHttps || request.url.isHttps) && targetHost == originHost && isAllowedUrl(request.url)) {
             return chain.proceed(request)
         }
         val clean = request.newBuilder()

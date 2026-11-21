@@ -41,7 +41,7 @@ class EapiClient(
     private val dispatchers: AppDispatchers = DefaultAppDispatchers(),
     private val baseUrlForHost: (String) -> String = { DomainPolicy.baseUrl(it) },
     private val sleeper: suspend (Long) -> Unit = { delay(it) },
-    private val maxAttempts: Int = 3,
+    private val maxAttempts: Int = 4,
 ) {
 
     // ---------------------------------------------------------------- auth
@@ -147,6 +147,9 @@ class EapiClient(
     }
 
     suspend fun bookDetail(id: String, hash: String): AppResult<Book> {
+        if (!BookMapper.isSafeRef(id, hash)) {
+            return AppResult.Failure(AppError.Parse("图书 ID 或 hash 无效"))
+        }
         val auth = sessionProvider()
         return execute(EapiEndpoints.detail(id, hash), null, auth, isGet = true)
             .mapCatching { exchange ->
@@ -158,6 +161,7 @@ class EapiClient(
     /** Resolves the current download URL. Signed query strings must never be persisted/logged. */
     fun downloadUrl(id: String, hash: String, session: Session? = sessionProvider()): String? {
         val auth = session ?: return null
+        if (!BookMapper.isSafeRef(id, hash)) return null
         return "${baseUrlForHost(auth.domain).trimEnd('/')}${EapiEndpoints.file(id, hash)}"
     }
 
@@ -173,12 +177,17 @@ class EapiClient(
         val url = base.trimEnd('/') + path
         var attempt = 1
         var lastError: AppError? = null
+        var expiredRetried = false
 
         while (attempt <= maxAttempts.coerceAtLeast(1)) {
             val outcome = try {
                 withContext(dispatchers.io) { executeOnce(url, form, session, isGet) }
             } catch (cancellation: CancellationException) {
                 throw cancellation
+            } catch (blocked: BlockedRedirectException) {
+                Outcome.Err(AppError.DomainBlocked(DomainStatus.INVALID), retryable = false)
+            } catch (illegal: IllegalArgumentException) {
+                Outcome.Err(AppError.Parse("请求参数无效"), retryable = false)
             } catch (io: IOException) {
                 Outcome.Err(AppError.Network(io), retryable = true)
             }
@@ -186,6 +195,11 @@ class EapiClient(
                 is Outcome.Ok -> return AppResult.Success(outcome.exchange)
                 is Outcome.Err -> {
                     lastError = outcome.error
+                    // ADR-016: a session-expired response gets one retry on the same domain.
+                    if (outcome.error == AppError.SessionExpired && !expiredRetried) {
+                        expiredRetried = true
+                        continue
+                    }
                     if (!outcome.retryable || attempt >= maxAttempts) break
                     sleeper(1_000L shl (attempt - 1))
                     attempt++
@@ -195,11 +209,8 @@ class EapiClient(
         return AppResult.Failure(lastError ?: AppError.Unknown(IllegalStateException("EAPI request failed")))
     }
 
-    private fun baseUrlFor(session: Session?): String? {
-        val auth = session ?: sessionProvider()
-        return auth?.domain?.takeIf { it.isNotBlank() }?.let(baseUrlForHost)
-            ?: baseUrlProvider()
-    }
+    private fun baseUrlFor(session: Session?): String? =
+        session?.domain?.takeIf { it.isNotBlank() }?.let(baseUrlForHost) ?: baseUrlProvider()
 
     private fun executeOnce(
         url: String,
@@ -208,7 +219,7 @@ class EapiClient(
         isGet: Boolean,
     ): Outcome {
         SafeLog.d(TAG, "request ${SafeLog.redactUrl(url)}")
-        val builder = Request.Builder().url(url)
+        val builder = Request.Builder().url(url).markEapi()
         if (isGet) {
             builder.get()
         } else {
@@ -248,7 +259,7 @@ class EapiClient(
                 return Outcome.Err(AppError.Server(code, "服务暂时不可用（HTTP $code）"), retryable = true)
             }
             if (code == 401 || code == 403) {
-                return Outcome.Err(AppError.SessionExpired, retryable = false)
+                return Outcome.Err(AppError.DomainBlocked(DomainStatus.CHALLENGED), retryable = false)
             }
             return Outcome.Err(
                 error = if (code in 200..299) {
@@ -327,7 +338,7 @@ internal fun parseSetCookies(headers: List<String>): Map<String, String> = heade
     if (index <= 0) return@mapNotNull null
     val name = pair.substring(0, index).trim()
     val value = pair.substring(index + 1).trim().removeSurrounding("\"")
-    if (name.isEmpty() || value.isEmpty()) null else name to value
+    if (name.isEmpty() || value.isEmpty() || value.any { it.isISOControl() }) null else name to value
 }.toMap()
 
 /** Shared JSON configuration for all EAPI parsing. */

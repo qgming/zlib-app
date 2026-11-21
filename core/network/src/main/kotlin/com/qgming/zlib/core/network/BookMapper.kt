@@ -6,15 +6,23 @@ import kotlinx.serialization.json.JsonObject
 /** Maps one `books[]` entry. Entries without a hash are dropped by the caller. */
 internal object BookMapper {
 
+    private val idPattern = Regex("[A-Za-z0-9]{1,32}")
+    private val hashPattern = Regex("[A-Za-z0-9]{1,64}")
+
+    fun isSafeRef(id: String, hash: String): Boolean =
+        idPattern.matches(id) && hashPattern.matches(hash)
+
     fun fromJson(obj: JsonObject): Book? {
         val id = obj.stringOrNull("id") ?: obj.intOrNull("id")?.toString() ?: return null
         val hash = obj.stringOrNull("hash") ?: return null
-        if (hash.isBlank()) return null
+        if (!isSafeRef(id, hash)) return null
 
         val identifier = obj.stringOrNull("identifier").orEmpty()
         val isbnRaw = obj.stringOrNull("isbn").orEmpty()
         val explicit13 = com.qgming.zlib.core.common.Isbn.normalize(obj.stringOrNull("isbn13"))
+            ?.takeIf { it.length == 13 }
         val explicit10 = com.qgming.zlib.core.common.Isbn.normalize(obj.stringOrNull("isbn10"))
+            ?.takeIf { it.length == 10 }
         val extracted = com.qgming.zlib.core.common.Isbn.extract(
             listOf(identifier, isbnRaw, obj.stringOrNull("isbn13").orEmpty(), obj.stringOrNull("isbn10").orEmpty())
                 .filter { it.isNotBlank() }
@@ -29,7 +37,8 @@ internal object BookMapper {
             ?: isbn13?.let { com.qgming.zlib.core.common.Isbn.toIsbn10(it) }
 
         val categories = obj.array("categories")?.asStringList().orEmpty().ifEmpty {
-            obj.stringOrNull("category")?.let(::listOf).orEmpty()
+            obj.stringOrNull("categories")?.split(',', ';')?.map(String::trim)?.filter(String::isNotEmpty)
+                ?: obj.stringOrNull("category")?.let(::listOf).orEmpty()
         }
 
         return Book(

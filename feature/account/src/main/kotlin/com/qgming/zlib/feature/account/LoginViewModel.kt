@@ -63,7 +63,7 @@ class LoginViewModel @Inject constructor(
             val result = authRepository.loginWithPassword(current.email, current.password)
             when (result) {
                 is com.qgming.zlib.core.common.AppResult.Success -> {
-                    _state.update { it.copy(loading = false, password = "", error = null) }
+                    _state.update { it.copy(loading = false, password = "", cookieText = "", error = null) }
                 }
 
                 is com.qgming.zlib.core.common.AppResult.Failure -> {
@@ -93,7 +93,7 @@ class LoginViewModel @Inject constructor(
             val result = authRepository.importCookies(raw, host)
             when (result) {
                 is com.qgming.zlib.core.common.AppResult.Success -> {
-                    _state.update { it.copy(loading = false, error = null) }
+                    _state.update { it.copy(loading = false, password = "", cookieText = "", error = null) }
                 }
 
                 is com.qgming.zlib.core.common.AppResult.Failure -> {

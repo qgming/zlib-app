@@ -58,12 +58,14 @@ private sealed interface Route : NavKey {
 fun ZlibRoot(viewModel: AppViewModel = hiltViewModel()) {
     val startup by viewModel.startupState.collectAsStateWithLifecycle()
     val session by viewModel.session.collectAsStateWithLifecycle()
+    val message by viewModel.message.collectAsStateWithLifecycle()
 
     when (val state = startup) {
         StartupState.Loading -> SplashScreen()
 
         is StartupState.Failed -> StartupFailedScreen(
             message = state.error.userMessage(),
+            actionError = message,
             onRetry = viewModel::retry,
             onAddHost = viewModel::addCustomHost,
         )
@@ -100,6 +102,7 @@ private fun SplashScreen() {
 @Composable
 private fun StartupFailedScreen(
     message: String,
+    actionError: String?,
     onRetry: () -> Unit,
     onAddHost: (String) -> Unit,
 ) {
@@ -136,11 +139,18 @@ private fun StartupFailedScreen(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                actionError?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = it,
+                        style = MiuixTheme.textStyles.footnote1,
+                        color = MiuixTheme.colorScheme.error,
+                    )
+                }
                 Spacer(Modifier.height(8.dp))
                 Button(
                     onClick = {
                         if (host.isNotBlank()) onAddHost(host)
-                        host = ""
                     },
                     enabled = host.isNotBlank(),
                 ) {

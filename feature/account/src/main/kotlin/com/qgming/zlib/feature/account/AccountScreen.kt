@@ -67,7 +67,17 @@ fun AccountScreen(
                 Card {
                     val account = state.account
                     if (account == null) {
-                        Text("正在加载账号信息…", style = MiuixTheme.textStyles.body2)
+                        if (state.error != null) {
+                            Text(
+                                text = state.error!!,
+                                style = MiuixTheme.textStyles.footnote1,
+                                color = MiuixTheme.colorScheme.error,
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            TextButton(text = "重试", onClick = viewModel::refresh)
+                        } else {
+                            Text("正在加载账号信息…", style = MiuixTheme.textStyles.body2)
+                        }
                     } else {
                         Text(
                             text = account.name.ifBlank { "Z-Library 用户" },
@@ -94,9 +104,9 @@ fun AccountScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
                             onClick = viewModel::refresh,
-                            enabled = !state.refreshing,
+                            enabled = !state.loading,
                         ) {
-                            Text(if (state.refreshing) "刷新中…" else "刷新")
+                            Text(if (state.loading) "刷新中…" else "刷新")
                         }
                         TextButton(text = "退出登录", onClick = { confirmLogout = true })
                     }

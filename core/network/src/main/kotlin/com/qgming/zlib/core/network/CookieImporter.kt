@@ -7,7 +7,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonObject
 
 /**
  * Accepts three shapes of user-supplied cookies (ADR-012):
@@ -67,7 +66,7 @@ object CookieImporter {
                 val name = (obj["name"] as? JsonPrimitive)?.content
                     ?: (obj["key"] as? JsonPrimitive)?.content
                 val value = (obj["value"] as? JsonPrimitive)?.content
-                if (name.isNullOrBlank() || value.isNullOrBlank()) null else name to value
+                safePair(name, value)
             }.toMap()
 
             else -> emptyMap()
@@ -80,8 +79,16 @@ object CookieImporter {
             is JsonObject -> (element["value"] as? JsonPrimitive)?.content
             else -> null
         }
-        if (name.isBlank() || value.isNullOrBlank()) null else name to value
+        safePair(name, value)
     }.toMap()
+
+    private fun safePair(name: String?, value: String?): Pair<String, String>? {
+        val n = name?.trim()
+        val v = value?.trim()
+        if (n.isNullOrEmpty() || v.isNullOrEmpty()) return null
+        if (n.any { it.isISOControl() } || v.any { it.isISOControl() }) return null
+        return n to v
+    }
 
     private fun parseNetscape(text: String, expectedHost: String?): Map<String, String> {
         val result = mutableMapOf<String, String>()
@@ -94,7 +101,7 @@ object CookieImporter {
             if (expectedHost != null && !matchesHost(domain, expectedHost)) return@forEach
             val name = parts[5].trim()
             val value = parts[6].trim()
-            if (name.isNotEmpty() && value.isNotEmpty()) result[name] = value
+            safePair(name, value)?.let { (n, v) -> result[n] = v }
         }
         return result
     }
@@ -115,7 +122,7 @@ object CookieImporter {
             val name = piece.substring(0, index).trim()
             if (name.lowercase() in attributeNames) return@forEach
             val value = piece.substring(index + 1).trim().removeSurrounding("\"")
-            if (name.isNotEmpty() && value.isNotEmpty()) result[name] = value
+            safePair(name, value)?.let { (n, v) -> result[n] = v }
         }
         return result
     }

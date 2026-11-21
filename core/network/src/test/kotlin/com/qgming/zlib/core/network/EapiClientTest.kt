@@ -31,7 +31,7 @@ class EapiClientTest {
         server.shutdown()
     }
 
-    private fun client(session: Session? = null, maxAttempts: Int = 3): EapiClient {
+    private fun client(session: Session? = null, maxAttempts: Int = 4): EapiClient {
         val base = server.url("/").toString().trimEnd('/')
         return EapiClient(
             client = OkHttpClient.Builder().build(),
@@ -96,10 +96,11 @@ class EapiClientTest {
     }
 
     @Test
-    fun `session expired envelope is detected`() {
-        server.enqueue(enqueueJson("""{"success":0,"error":"Please login"}""", code = 400))
+    fun `session expired envelope is retried once`() {
+        repeat(2) { server.enqueue(enqueueJson("""{"success":0,"error":"Please login"}""", code = 400)) }
         val result = kotlinx.coroutines.runBlocking { client(session()).profile() }
         assertEquals(AppError.SessionExpired, assertIs<AppResult.Failure>(result).error)
+        assertEquals(2, server.requestCount)
     }
 
     @Test
@@ -195,11 +196,11 @@ class EapiClientTest {
 
     @Test
     fun `503 is retried with backoff then fails`() {
-        repeat(3) { server.enqueue(MockResponse().setResponseCode(503).setBody("busy")) }
+        repeat(4) { server.enqueue(MockResponse().setResponseCode(503).setBody("busy")) }
         val result = kotlinx.coroutines.runBlocking { client(session()).profile() }
         val error = assertIs<AppError.Server>(assertIs<AppResult.Failure>(result).error)
         assertEquals(503, error.code)
-        assertEquals(3, server.requestCount)
+        assertEquals(4, server.requestCount)
     }
 
     @Test
