@@ -35,14 +35,14 @@
 | `:app` | `ZlibApplication`、`MainActivity`、根导航、Hilt 入口、全局错误宿主 |
 | `:core:common` | `AppError`、`Result`、`DispatcherProvider`、文本/ISBN/文件名工具 |
 | `:core:model` | 领域模型与 UI 共享模型，不依赖 Android 框架（除可空注解） |
-| `:core:designsystem` | Miuix 主题、颜色、排版、`ZlibScaffold`、`ZlibTopBar`、玻璃开关 |
+| `:core:designsystem` | Miuix 深浅色主题、玻璃导航壳 `ZlibAppShell` / `ZlibPage`、统一弹层、图书网格、设置分组 |
 | `:core:network` | OkHttp、`EapiClient`、Cookie/重定向策略、域名 allowlist/probe |
 | `:core:database` | Room entities/DAO/DB、迁移、FTS（如需） |
 | `:core:data` | Repository、下载队列、会话加密、设置、元数据仓储 |
-| `:feature:search` | 搜索输入、筛选、分页、结果列表 |
+| `:feature:search` | 热门与推荐首页、独立搜索页、筛选与结果分页 |
 | `:feature:detail` | 详情、下载按钮、分享、收藏 |
 | `:feature:downloads` | 队列列表、暂停/取消/重试、前台服务状态 |
-| `:feature:library` | 已下载、收藏、历史、书单入口、本地搜索/排序 |
+| `:feature:library` | 已下载、收藏、历史切换；本地文件分享与删除 |
 | `:feature:account` | 密码登录、WebView 登录、Cookie 导入、配额 |
 | `:feature:settings` | 域名、下载目录、主题、备份/恢复 |
 | `:feature:metadata` | 文件选择、EPUB/FB2/DOCX 解析、查源、编辑、重命名、嵌封面 |
@@ -72,9 +72,11 @@ Cookie:   粘贴 JSON / 导入 Netscape cookies.txt → 解析 → 校验
 
 ### 4.3 搜索
 
-`SearchQuery`（关键词、语言、格式、年份、精确、排序）→ `SearchRepository.search(page)` → `EapiClient.search` → `SearchResult(books, page, totalPages)` → `SearchUiState`。
+`SearchQuery`（关键词、语言、格式、年份、精确、排序）→ `BookRepository.search(page)` → `EapiClient.search` → `BookPage(books, page, totalPages)` → `SearchUiState`。
 
 搜索状态：`Idle / Loading / Content / Empty / Error`；分页用 `Paging` 或手写 `page` 状态，二者只选一个（见 ADR）。
+
+搜索栏固定在顶栏下方；右上角筛选按钮打开玻璃底部面板，应用后以新条件从第 1 页搜索。分页使用上一次提交的请求，不受未提交的关键词或筛选草稿影响。
 
 ### 4.4 下载
 
@@ -188,14 +190,19 @@ UI 只消费 `AppError` 的用户可读映射；恢复动作由 feature 决定�
 
 ```
 MainScaffold
-├── SearchTab        → SearchScreen → BookDetail
-├── LibraryTab       → LibraryScreen (Downloaded/Favorites/History/Booklists)
-├── DownloadsTab     → DownloadsScreen
-└── MeTab            → AccountScreen / SettingsScreen
-Routes: login, domain-doctor, metadata-editor, booklist/{id}, detail/{id}:{hash}
+├── PopularTab       → PopularScreen → BookDetail
+│                    → SearchScreen → BookDetail
+│                    → DownloadsScreen (任务、进度与记录)
+├── LibraryTab       → LibraryScreen (已下载 / 收藏 / 历史) → BookDetail
+└── SettingsTab      → SettingsScreen → AccountScreen / DomainSettingsScreen
+Routes: login, search, downloads, account, domain-doctor, metadata-editor, booklist/{id}, detail/{id}:{hash}
 ```
 
-`miuix-nav` 管理返回栈；底部 tab 保留各自栈（每 tab 一个 `NavHost` 或 `saveState/restoreState`）。深链只支持 `zlib://book/{id}:{hash}`（v1.1）。
+`miuix-nav` 管理返回栈，主 tab 和书架内部分组分别保留滚动位置。搜索和下载管理从热门页顶栏进入，返回后回到原来的热门位置。深链只支持 `zlib://book/{id}:{hash}`（v1.1）。
+
+顶栏和浮动底栏采样页面内容；滚动容器使用实测栏高和系统安全区做内容内边距，不裁掉首尾卡片。玻璃样式按深浅色使用同版本 Miuix 示例默认材质，不跟随壁纸；支持的设备始终启用。固定配色和玻璃样式见 ADR-026 至 ADR-028。等待加载使用与书架下拉刷新同款的 Miuix 环形游点；可计量的下载继续显示字节进度。
+
+书架分组是玻璃顶栏的一部分，分组下方的内容可滚入顶栏的渐进模糊区域。玻璃筛选、确认框和外观菜单由设计系统统一封装，采样完整页面但不采样弹层及遮罩，见 ADR-029。
 
 ## 9. DI 与并发
 

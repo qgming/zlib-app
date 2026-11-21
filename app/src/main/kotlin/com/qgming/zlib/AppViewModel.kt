@@ -12,11 +12,8 @@ import com.qgming.zlib.core.model.Session
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 @HiltViewModel
@@ -33,9 +30,7 @@ class AppViewModel @Inject constructor(
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
-    val glassEnabled: StateFlow<Boolean> = domainRepository.settings
-        .map { it.glassEnabled }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+    val settings = domainRepository.settings
 
     init {
         start()

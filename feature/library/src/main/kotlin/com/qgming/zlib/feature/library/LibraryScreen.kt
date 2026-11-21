@@ -2,111 +2,175 @@ package com.qgming.zlib.feature.library
 
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.qgming.zlib.core.designsystem.ZlibCard
-import com.qgming.zlib.core.designsystem.ZlibCover
+import com.qgming.zlib.core.designsystem.ZlibBookCard
+import com.qgming.zlib.core.designsystem.ZlibBookGrid
+import com.qgming.zlib.core.designsystem.ZlibConfirmDialog
+import com.qgming.zlib.core.designsystem.ZlibLoading
+import com.qgming.zlib.core.designsystem.ZlibStateCard
+import com.qgming.zlib.core.designsystem.ZlibTopBarTabs
+import com.qgming.zlib.core.designsystem.fullWidthItem
 import com.qgming.zlib.core.model.Book
-import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.theme.MiuixTheme
+
+private val SectionTitles = LibrarySection.entries.map { it.title }
+
+@Composable
+fun LibraryTabs(selected: LibrarySection, onSelect: (LibrarySection) -> Unit) {
+    ZlibTopBarTabs(
+        tabs = SectionTitles,
+        selectedIndex = selected.ordinal,
+        onSelect = { onSelect(LibrarySection.entries[it]) },
+    )
+}
 
 @Composable
 fun LibraryScreen(
     padding: PaddingValues,
+    section: LibrarySection,
     onOpenBook: (Book) -> Unit,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
+    val stateHolder = rememberSaveableStateHolder()
+    LaunchedEffect(viewModel, section) { viewModel.onSectionShown(section) }
+
+    stateHolder.SaveableStateProvider(section.name) {
+        if (section == LibrarySection.Downloaded) {
+            LocalBooks(padding, onOpenBook, viewModel)
+        } else {
+            val states by viewModel.remote.collectAsStateWithLifecycle()
+            RemoteBooks(
+                padding = padding,
+                section = section,
+                state = states[section] ?: RemoteLibraryState(),
+                onRefresh = { viewModel.refresh(section) },
+                onLoadMore = { viewModel.loadMore(section) },
+                onOpenBook = onOpenBook,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LocalBooks(padding: PaddingValues, onOpenBook: (Book) -> Unit, viewModel: LibraryViewModel) {
     val books by viewModel.books.collectAsStateWithLifecycle()
+    val loadedBooks = books
     var notice by remember { mutableStateOf<String?>(null) }
+    var bookToDelete by remember { mutableStateOf<Book?>(null) }
     val context = LocalContext.current
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(viewModel) {
         viewModel.events.collect { notice = it }
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(padding),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
+    ZlibBookGrid(padding = padding) {
         notice?.let { message ->
-            item {
-                ZlibCard {
-                    Text(message, style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.error)
-                    TextButton(text = "知道了", onClick = { notice = null })
-                }
+            fullWidthItem("library-notice") {
+                ZlibStateCard(
+                    title = "书架提示",
+                    message = message,
+                    actionLabel = "知道了",
+                    onAction = { notice = null },
+                )
             }
         }
 
-        if (books.isEmpty()) {
-            item {
-                ZlibCard {
-                    Text("书架还是空的", style = MiuixTheme.textStyles.body2)
-                    Text(
-                        "下载完成的书会出现在这里，可以直接分享给阅读器。",
-                        style = MiuixTheme.textStyles.footnote1,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        when {
+            loadedBooks == null -> fullWidthItem("library-loading") { ZlibLoading() }
+            loadedBooks.isEmpty() -> fullWidthItem("library-empty") {
+                ZlibStateCard(title = "暂无已下载图书", message = "下载到此设备的图书会出现在这里。")
+            }
+
+            else -> items(loadedBooks, key = { it.ref }) { book ->
+                ZlibBookCard(book = book, onClick = { onOpenBook(book) }) {
+                    TextButton(
+                        text = "分享",
+                        onClick = { shareBook(context, book) },
+                        enabled = book.localUri != null,
+                        insideMargin = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
+                    )
+                    TextButton(
+                        text = "删除",
+                        onClick = { bookToDelete = book },
+                        insideMargin = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
                     )
                 }
             }
-        } else {
-            items(books, key = { it.id }) { book ->
-                ZlibCard(onClick = { onOpenBook(book) }) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        ZlibCover(
-                            url = book.coverUrl,
-                            modifier = Modifier.width(56.dp).height(80.dp),
-                            contentDescription = book.title,
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(book.title, style = MiuixTheme.textStyles.body2)
-                            if (book.authors.isNotBlank()) {
-                                Text(
-                                    book.authors,
-                                    style = MiuixTheme.textStyles.footnote1,
-                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                )
-                            }
-                            Text(
-                                book.extension.uppercase(),
-                                style = MiuixTheme.textStyles.footnote2,
-                                color = MiuixTheme.colorScheme.primary,
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(
-                            text = "分享",
-                            onClick = { shareBook(context, book) },
-                            enabled = book.localUri != null,
-                        )
-                        TextButton(text = "删除本地", onClick = { viewModel.deleteLocal(book) })
-                    }
-                }
+        }
+    }
+
+    ZlibConfirmDialog(
+        show = bookToDelete != null,
+        title = "删除本地文件？",
+        summary = "仅删除此设备上的文件，不影响收藏或下载历史。",
+        confirmLabel = "删除",
+        onDismiss = { bookToDelete = null },
+        onConfirm = {
+            val book = bookToDelete
+            bookToDelete = null
+            book?.let(viewModel::deleteLocal)
+        },
+        destructive = true,
+    )
+}
+
+@Composable
+private fun RemoteBooks(
+    padding: PaddingValues,
+    section: LibrarySection,
+    state: RemoteLibraryState,
+    onRefresh: () -> Unit,
+    onLoadMore: () -> Unit,
+    onOpenBook: (Book) -> Unit,
+) {
+    val page = state.page
+    ZlibBookGrid(padding = padding, refreshing = state.request == LibraryRequest.Refresh, onRefresh = onRefresh) {
+        when {
+            page == null && state.error == null -> {
+                if (state.request != LibraryRequest.Refresh) fullWidthItem("remote-loading") { ZlibLoading() }
+            }
+            page == null -> fullWidthItem("remote-error") {
+                ZlibStateCard("无法加载${section.title}", state.error.orEmpty(), onAction = onRefresh)
+            }
+
+            page.books.isEmpty() -> fullWidthItem("remote-empty") {
+                ZlibStateCard(
+                    title = if (section == LibrarySection.Saved) "暂无收藏" else "暂无下载历史",
+                    message = if (section == LibrarySection.Saved) "这里显示 Z-Library 账号中的收藏。" else "这里显示 Z-Library 账号的下载记录。",
+                )
+            }
+
+            else -> items(page.books, key = { it.ref }) { book ->
+                ZlibBookCard(book = book, onClick = { onOpenBook(book) }, supportingText = book.historyDate)
+            }
+        }
+        if (page != null && state.error != null) {
+            fullWidthItem("remote-update-error") { ZlibStateCard("未能更新${section.title}", state.error) }
+        }
+        if (state.request == LibraryRequest.Append) {
+            fullWidthItem("remote-more-loading") { ZlibLoading() }
+        } else if (page?.hasNext == true) {
+            fullWidthItem("remote-more") {
+                TextButton(
+                    text = "加载更多",
+                    onClick = onLoadMore,
+                    enabled = state.request == null,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
     }

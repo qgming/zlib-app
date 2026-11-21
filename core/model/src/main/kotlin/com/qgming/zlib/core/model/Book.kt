@@ -26,6 +26,7 @@ data class Book(
     val href: String = "",
     val localUri: String? = null,
     val downloadedAt: Long? = null,
+    val historyDate: String? = null,
 ) {
     /** Canonical reference used across routes, Room and download state. */
     val ref: String get() = "$id:$hash"
@@ -33,6 +34,14 @@ data class Book(
     companion object {
         fun refOf(id: String, hash: String): String = "$id:$hash"
     }
+}
+
+data class BookPage(
+    val books: List<Book>,
+    val page: Int,
+    val totalPages: Int,
+) {
+    val hasNext: Boolean get() = page < totalPages
 }
 
 /** Parses/validates `id:hash` references. Hash is required for downloads. */

@@ -1,6 +1,7 @@
 package com.qgming.zlib.feature.account
 
 import android.webkit.CookieManager
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -12,12 +13,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -31,16 +31,13 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qgming.zlib.core.designsystem.ZlibCard
+import com.qgming.zlib.core.designsystem.ZlibCardList
+import com.qgming.zlib.core.designsystem.ZlibLoadingStatus
+import com.qgming.zlib.core.designsystem.ZlibPage
 import top.yukonga.miuix.kmp.basic.Button
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
-import top.yukonga.miuix.kmp.basic.TopAppBar
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
@@ -52,6 +49,7 @@ fun LoginScreen(viewModel: LoginViewModel = hiltViewModel()) {
         WebViewLoginScreen(
             host = state.domain!!,
             isAllowedUrl = viewModel::isAllowedUrl,
+            signingIn = state.loading,
             error = state.error,
             onCookie = { host, cookie -> viewModel.importFromWebView(host, cookie) },
             onBack = { showWebView = false },
@@ -59,17 +57,22 @@ fun LoginScreen(viewModel: LoginViewModel = hiltViewModel()) {
         return
     }
 
-    Scaffold(
-        topBar = { TopAppBar(title = "登录 Zlib", expandable = false) },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
+    ZlibPage(title = "登录 Zlib") { padding ->
+        ZlibCardList(padding) {
+            item {
+                LoginForm(state = state, viewModel = viewModel, onWebView = { showWebView = true })
+            }
+        }
+    }
+}
+
+@Composable
+private fun LoginForm(
+    state: LoginUiState,
+    viewModel: LoginViewModel,
+    onWebView: () -> Unit,
+) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
                 text = "登录后才能搜索、下载和管理书架。密码只用于本次登录，不会写入磁盘。",
                 style = MiuixTheme.textStyles.body2,
@@ -82,7 +85,7 @@ fun LoginScreen(viewModel: LoginViewModel = hiltViewModel()) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Column(modifier = Modifier.padding(end = 12.dp)) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                         Text("当前域名", style = MiuixTheme.textStyles.body2)
                         Text(
                             text = state.domain ?: "尚未检测到可用域名",
@@ -90,11 +93,11 @@ fun LoginScreen(viewModel: LoginViewModel = hiltViewModel()) {
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         )
                     }
-                    TextButton(
-                        text = if (state.probing) "体检中…" else "换一批",
-                        onClick = viewModel::probeDomains,
-                        enabled = !state.probing,
-                    )
+                    if (state.probing) {
+                        ZlibLoadingStatus("体检中…")
+                    } else {
+                        TextButton(text = "换一批", onClick = viewModel::probeDomains)
+                    }
                 }
             }
 
@@ -129,8 +132,10 @@ fun LoginScreen(viewModel: LoginViewModel = hiltViewModel()) {
                 enabled = !state.loading && state.email.isNotBlank() && state.password.isNotBlank(),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(if (state.loading) "登录中…" else "登录")
+                Text("登录")
             }
+
+            if (state.loading) ZlibLoadingStatus("正在验证登录…")
 
             TextButton(
                 text = if (state.showCookieImport) "收起 Cookie 导入" else "使用 Cookie 导入",
@@ -166,61 +171,64 @@ fun LoginScreen(viewModel: LoginViewModel = hiltViewModel()) {
 
             TextButton(
                 text = "WebView 登录（账号密码被拒时使用）",
-                onClick = { showWebView = true },
+                onClick = onWebView,
                 enabled = state.domain != null,
             )
 
-            Spacer(Modifier.height(24.dp))
             Text(
                 text = "Zlib 是非官方客户端，不保存密码、不上传任何数据。",
                 style = MiuixTheme.textStyles.footnote1,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
             )
         }
-    }
 }
 
 @Composable
 private fun WebViewLoginScreen(
     host: String,
     isAllowedUrl: (String) -> Boolean,
+    signingIn: Boolean,
     error: String?,
     onCookie: (String, String) -> Unit,
     onBack: () -> Unit,
 ) {
     val url = "https://$host/"
-    var finalUrl by remember { mutableStateOf(url) }
-    val webView = rememberWebView(host, isAllowedUrl) { finalUrl = it }
+    var finalUrl by remember(host) { mutableStateOf(url) }
+    var progress by remember(host) { mutableIntStateOf(0) }
+    val webView = rememberWebView(
+        host,
+        isAllowedUrl,
+        onPageFinished = { finalUrl = it },
+        onProgressChanged = { progress = it },
+    )
 
     DisposableEffect(webView) {
         onDispose { webView.destroy() }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = "登录 $host",
-                expandable = false,
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(MiuixIcons.Back, contentDescription = "返回")
-                    }
-                },
-                actions = {
-                    TextButton(
-                        text = "完成",
-                        onClick = {
-                            val cookieUrl = finalUrl
-                            val cookieHost = runCatching { java.net.URI(cookieUrl).host }.getOrNull() ?: host
-                            val cookie = CookieManager.getInstance().getCookie(cookieUrl)
-                            onCookie(cookieHost, cookie.orEmpty())
-                        },
-                    )
+    ZlibPage(
+        title = "登录 $host",
+        onBack = onBack,
+        actions = {
+            TextButton(
+                text = "完成",
+                enabled = !signingIn,
+                onClick = {
+                    val cookieUrl = finalUrl
+                    val cookieHost = runCatching { java.net.URI(cookieUrl).host }.getOrNull() ?: host
+                    val cookie = CookieManager.getInstance().getCookie(cookieUrl)
+                    onCookie(cookieHost, cookie.orEmpty())
                 },
             )
         },
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            if (signingIn || progress < 100) {
+                ZlibLoadingStatus(
+                    if (signingIn) "正在验证登录…" else "正在加载登录页…",
+                    Modifier.padding(vertical = 8.dp),
+                )
+            }
             error?.let {
                 Text(
                     text = it,
@@ -243,6 +251,7 @@ private fun rememberWebView(
     host: String,
     isAllowedUrl: (String) -> Boolean,
     onPageFinished: (String) -> Unit,
+    onProgressChanged: (Int) -> Unit,
 ): WebView {
     val context = androidx.compose.ui.platform.LocalContext.current
     return remember(host) {
@@ -254,6 +263,11 @@ private fun rememberWebView(
             settings.setSupportMultipleWindows(false)
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
+            webChromeClient = object : WebChromeClient() {
+                override fun onProgressChanged(view: WebView, newProgress: Int) {
+                    onProgressChanged(newProgress)
+                }
+            }
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val target = request.url

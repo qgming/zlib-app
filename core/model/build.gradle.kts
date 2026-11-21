@@ -28,6 +28,8 @@ kotlin {
 
 dependencies {
     api(project(":core:common"))
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlin.test.junit)
 }
 
 

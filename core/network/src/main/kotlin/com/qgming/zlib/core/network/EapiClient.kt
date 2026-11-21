@@ -6,14 +6,13 @@ import com.qgming.zlib.core.common.AppError
 import com.qgming.zlib.core.common.AppResult
 import com.qgming.zlib.core.common.DefaultAppDispatchers
 import com.qgming.zlib.core.common.DomainStatus
-import com.qgming.zlib.core.common.Isbn
 import com.qgming.zlib.core.common.SafeLog
 import com.qgming.zlib.core.common.mapCatching
 import com.qgming.zlib.core.model.Account
 import com.qgming.zlib.core.model.Book
+import com.qgming.zlib.core.model.BookPage
 import com.qgming.zlib.core.model.Quota
 import com.qgming.zlib.core.model.SearchQuery
-import com.qgming.zlib.core.model.SearchResult
 import com.qgming.zlib.core.model.Session
 import java.io.IOException
 import java.net.URI
@@ -23,7 +22,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import okhttp3.FormBody
-import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -104,6 +102,24 @@ class EapiClient(
     suspend fun mostPopular(): AppResult<List<Book>> =
         bookList(EapiEndpoints.MOST_POPULAR, sessionProvider())
 
+    suspend fun savedBooks(page: Int): AppResult<BookPage> =
+        accountBooks(EapiEndpoints.SAVED, page, includeHistoryDate = false)
+
+    suspend fun downloadHistory(page: Int): AppResult<BookPage> =
+        accountBooks(EapiEndpoints.DOWNLOADED, page, includeHistoryDate = true)
+
+    private suspend fun accountBooks(path: String, page: Int, includeHistoryDate: Boolean): AppResult<BookPage> {
+        val auth = sessionProvider() ?: return AppResult.Failure(AppError.NotLoggedIn)
+        val requestedPage = page.coerceAtLeast(1)
+        return execute("$path?page=$requestedPage&limit=50", form = null, session = auth, isGet = true)
+            .mapCatching { exchange ->
+                if (exchange.root.array("books") == null) {
+                    throw AppErrorException(AppError.Parse("响应缺少 books 字段"))
+                }
+                exchange.root.toBookPage(requestedPage, includeHistoryDate)
+            }
+    }
+
     private suspend fun bookList(path: String, session: Session?): AppResult<List<Book>> =
         execute(path, form = null, session = session, isGet = true)
             .mapCatching { exchange -> BookMapper.listFrom(exchange.root) }
@@ -130,13 +146,14 @@ class EapiClient(
 
     // ---------------------------------------------------------------- books
 
-    suspend fun search(query: SearchQuery, page: Int = 1, limit: Int = 50): AppResult<SearchResult> {
+    suspend fun search(query: SearchQuery, page: Int = 1, limit: Int = 50): AppResult<BookPage> {
         if (query.message.isBlank()) {
             return AppResult.Failure(AppError.Parse("搜索关键词不能为空"))
         }
+        val requestedPage = page.coerceAtLeast(1)
         val builder = FormBody.Builder()
             .add("message", query.message.trim())
-            .add("page", page.coerceAtLeast(1).toString())
+            .add("page", requestedPage.toString())
             .add("limit", limit.coerceIn(1, 50).toString())
         if (query.exact) builder.add("e", "1")
         query.yearFrom?.let { builder.add("yearFrom", it.toString()) }
@@ -146,14 +163,16 @@ class EapiClient(
         query.extensions.forEach { builder.add("extensions[]", it.lowercase()) }
 
         return execute(EapiEndpoints.SEARCH, builder.build(), sessionProvider())
-            .mapCatching { exchange ->
-                val pagination = exchange.root.obj("pagination")
-                SearchResult(
-                    books = BookMapper.listFrom(exchange.root),
-                    page = pagination?.intOrNull("current") ?: page,
-                    totalPages = pagination?.intOrNull("total_pages") ?: 1,
-                )
-            }
+            .mapCatching { exchange -> exchange.root.toBookPage(requestedPage) }
+    }
+
+    private fun JsonObject.toBookPage(requestedPage: Int, includeHistoryDate: Boolean = false): BookPage {
+        val pagination = obj("pagination")
+        return BookPage(
+            books = BookMapper.listFrom(this, includeHistoryDate),
+            page = pagination?.intOrNull("current")?.takeIf { it > 0 } ?: requestedPage,
+            totalPages = pagination?.intOrNull("total_pages") ?: 1,
+        )
     }
 
     suspend fun bookDetail(id: String, hash: String): AppResult<Book> {

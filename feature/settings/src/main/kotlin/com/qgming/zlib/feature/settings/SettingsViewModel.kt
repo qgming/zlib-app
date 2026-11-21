@@ -3,10 +3,13 @@ package com.qgming.zlib.feature.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qgming.zlib.core.common.AppResult
+import com.qgming.zlib.core.data.account.AccountRepository
 import com.qgming.zlib.core.data.domain.DomainRepository
 import com.qgming.zlib.core.data.download.DownloadRepository
 import com.qgming.zlib.core.designsystem.userMessage
+import com.qgming.zlib.core.model.Account
 import com.qgming.zlib.core.model.DomainCheck
+import com.qgming.zlib.core.model.ThemeMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.channels.Channel
@@ -24,23 +27,23 @@ data class SettingsUiState(
     val probing: Boolean = false,
     val customHosts: Set<String> = emptySet(),
     val lockedHost: String? = null,
-    val glassEnabled: Boolean = true,
-    val dynamicColor: Boolean = true,
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val directory: String? = null,
+    val account: Account? = null,
 )
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val domainRepository: DomainRepository,
     private val downloadRepository: DownloadRepository,
+    accountRepository: AccountRepository,
 ) : ViewModel() {
 
     private val directory = MutableStateFlow<String?>(null)
 
     init {
         viewModelScope.launch {
-            downloadRepository.directoryStore.ensureLoaded()
-            directory.value = downloadRepository.directoryStore.currentUri()?.toString()
+            directory.value = downloadRepository.downloadDirectoryName()
         }
     }
 
@@ -49,19 +52,18 @@ class SettingsViewModel @Inject constructor(
         domainRepository.currentHost,
         domainRepository.probing,
         domainRepository.settings,
-        directory,
-    ) { checks, current, probing, settings, dir ->
+    ) { checks, current, probing, settings ->
         SettingsUiState(
             checks = checks,
             currentHost = current,
             probing = probing,
             customHosts = settings.customHosts,
             lockedHost = settings.lockedHost,
-            glassEnabled = settings.glassEnabled,
-            dynamicColor = settings.dynamicColor,
-            directory = dir,
+            themeMode = settings.themeMode,
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
+    }.combine(directory) { settings, name -> settings.copy(directory = name) }
+        .combine(accountRepository.account) { settings, account -> settings.copy(account = account) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
     private val _events = Channel<String>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
@@ -112,19 +114,15 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun setGlassEnabled(enabled: Boolean) {
-        viewModelScope.launch { domainRepository.setGlassEnabled(enabled) }
-    }
-
-    fun setDynamicColor(enabled: Boolean) {
-        viewModelScope.launch { domainRepository.setDynamicColor(enabled) }
+    fun setThemeMode(mode: ThemeMode) {
+        viewModelScope.launch { domainRepository.setThemeMode(mode) }
     }
 
     fun setDownloadDirectory(uri: android.net.Uri) {
         viewModelScope.launch {
             when (val result = downloadRepository.setDownloadDirectory(uri)) {
                 is AppResult.Success -> {
-                    directory.value = uri.toString()
+                    directory.value = downloadRepository.downloadDirectoryName()
                     _events.send("下载目录已保存")
                 }
 

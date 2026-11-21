@@ -64,8 +64,16 @@ internal object BookMapper {
         )
     }
 
-    fun listFrom(root: JsonObject, key: String = "books"): List<Book> {
-        val array = root.array(key) ?: return emptyList()
-        return array.mapNotNull { (it as? JsonObject)?.let(::fromJson) }
+    fun listFrom(root: JsonObject, includeHistoryDate: Boolean = false): List<Book> {
+        val array = root.array("books") ?: return emptyList()
+        return array.mapNotNull { element ->
+            val item = element as? JsonObject ?: return@mapNotNull null
+            val book = fromJson(item) ?: return@mapNotNull null
+            if (includeHistoryDate) {
+                book.copy(historyDate = item.stringOrNull("date") ?: item.stringOrNull("downloaded_at"))
+            } else {
+                book
+            }
+        }
     }
 }

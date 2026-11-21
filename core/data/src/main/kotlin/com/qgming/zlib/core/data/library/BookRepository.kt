@@ -2,8 +2,8 @@ package com.qgming.zlib.core.data.library
 
 import com.qgming.zlib.core.common.AppResult
 import com.qgming.zlib.core.model.Book
+import com.qgming.zlib.core.model.BookPage
 import com.qgming.zlib.core.model.SearchQuery
-import com.qgming.zlib.core.model.SearchResult
 import com.qgming.zlib.core.network.EapiClient
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -12,7 +12,7 @@ import javax.inject.Singleton
 class BookRepository @Inject constructor(
     private val api: EapiClient,
 ) {
-    suspend fun search(query: SearchQuery, page: Int): AppResult<SearchResult> =
+    suspend fun search(query: SearchQuery, page: Int): AppResult<BookPage> =
         api.search(query, page)
 
     suspend fun detail(id: String, hash: String): AppResult<Book> =

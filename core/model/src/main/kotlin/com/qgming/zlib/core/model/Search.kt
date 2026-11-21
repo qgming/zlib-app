@@ -13,14 +13,6 @@ data class SearchQuery(
     val canSearch: Boolean get() = message.isNotBlank()
 }
 
-data class SearchResult(
-    val books: List<Book>,
-    val page: Int,
-    val totalPages: Int,
-) {
-    val hasNext: Boolean get() = page < totalPages
-}
-
 enum class DownloadState {
     QUEUED,
     RESOLVING,

@@ -4,8 +4,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -13,42 +16,97 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.SmallTitle
+import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.ContactsBook
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-/** Miuix card with the standard 16dp inside margin and full width on a page. */
 @Composable
 fun ZlibCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
+    insideMargin: PaddingValues = PaddingValues(16.dp),
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val inside = PaddingValues(16.dp)
-    if (onClick != null) {
-        Card(
-            modifier = modifier.fillMaxWidth(),
-            insideMargin = inside,
-            onClick = onClick,
-            content = content,
-        )
-    } else {
-        Card(
-            modifier = modifier.fillMaxWidth(),
-            insideMargin = inside,
-            content = content,
-        )
-    }
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        insideMargin = insideMargin,
+        onClick = onClick,
+        showIndication = onClick != null,
+        content = content,
+    )
 }
 
 @Composable
 fun ZlibSectionTitle(text: String, modifier: Modifier = Modifier) {
-    SmallTitle(text = text, modifier = modifier)
+    SmallTitle(
+        text = text,
+        modifier = modifier,
+        textColor = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        insideMargin = PaddingValues(start = 4.dp, top = 6.dp, bottom = 2.dp),
+    )
+}
+
+@Composable
+fun ZlibLoading() {
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 28.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        ZlibLoadingIndicator()
+    }
+}
+
+@Composable
+fun ZlibLoadingIndicator(modifier: Modifier = Modifier) {
+    InfiniteProgressIndicator(
+        modifier = modifier.semantics { progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate },
+    )
+}
+
+@Composable
+fun ZlibLoadingStatus(text: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZlibLoadingIndicator()
+        Text(text, style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+    }
+}
+
+@Composable
+fun ZlibStateCard(
+    title: String,
+    message: String,
+    actionLabel: String = "重试",
+    onAction: (() -> Unit)? = null,
+) {
+    ZlibCard {
+        Text(title, style = MiuixTheme.textStyles.title4)
+        Text(
+            text = message,
+            modifier = Modifier.padding(top = 4.dp),
+            style = MiuixTheme.textStyles.footnote1,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        )
+        if (onAction != null) {
+            Button(onClick = onAction, modifier = Modifier.padding(top = 12.dp)) {
+                Text(actionLabel)
+            }
+        }
+    }
 }
 
 /** Cover with a neutral placeholder so rows keep their height before Coil loads. */
@@ -57,6 +115,7 @@ fun ZlibCover(
     url: String?,
     modifier: Modifier = Modifier,
     contentDescription: String? = null,
+    contentScale: ContentScale = ContentScale.Crop,
 ) {
     Box(
         modifier = modifier
@@ -64,18 +123,17 @@ fun ZlibCover(
             .background(MiuixTheme.colorScheme.secondaryContainer),
         contentAlignment = Alignment.Center,
     ) {
-        if (url.isNullOrBlank()) {
-            Icon(
-                imageVector = MiuixIcons.ContactsBook,
-                contentDescription = contentDescription,
-                modifier = Modifier.size(24.dp),
-                tint = MiuixTheme.colorScheme.onSecondaryContainerVariant,
-            )
-        } else {
+        Icon(
+            imageVector = MiuixIcons.ContactsBook,
+            contentDescription = if (url.isNullOrBlank()) contentDescription else null,
+            modifier = Modifier.size(24.dp),
+            tint = MiuixTheme.colorScheme.onSecondaryContainerVariant,
+        )
+        if (!url.isNullOrBlank()) {
             AsyncImage(
                 model = url,
                 contentDescription = contentDescription,
-                contentScale = ContentScale.Crop,
+                contentScale = contentScale,
                 modifier = Modifier.fillMaxSize(),
             )
         }

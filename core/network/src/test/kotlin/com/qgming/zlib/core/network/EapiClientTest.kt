@@ -2,12 +2,14 @@ package com.qgming.zlib.core.network
 
 import com.qgming.zlib.core.common.AppError
 import com.qgming.zlib.core.common.AppResult
+import com.qgming.zlib.core.model.BookPage
 import com.qgming.zlib.core.model.SearchQuery
 import com.qgming.zlib.core.model.Session
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -162,7 +164,7 @@ class EapiClientTest {
             exact = true,
             order = "popular",
         )
-        val result = assertIs<AppResult.Success<com.qgming.zlib.core.model.SearchResult>>(
+        val result = assertIs<AppResult.Success<BookPage>>(
             kotlinx.coroutines.runBlocking { client(session()).search(query, page = 2) },
         ).value
 
@@ -196,6 +198,60 @@ class EapiClientTest {
         assertTrue(body.contains("order=popular"))
         assertEquals("7", request.getHeader("remix-userid"))
         assertEquals("key", request.getHeader("remix-userkey"))
+    }
+
+    @Test
+    fun `saved books use an authenticated paged GET`() {
+        server.enqueue(
+            enqueueJson(
+                """{"success":1,"pagination":{"current":"1","total_pages":"3"},
+                    "books":[{"id":7,"hash":"abc","title":"Saved book"},{"id":8,"title":"Missing hash"}]}""",
+            ),
+        )
+        val result = assertIs<AppResult.Success<BookPage>>(
+            kotlinx.coroutines.runBlocking { client(session()).savedBooks(page = 0) },
+        ).value
+        assertEquals(listOf("7:abc"), result.books.map { it.ref })
+        assertEquals(1, result.page)
+        assertEquals(3, result.totalPages)
+        assertTrue(result.hasNext)
+
+        val request = server.takeRequest()
+        assertEquals("GET", request.method)
+        assertEquals("/eapi/user/book/saved?page=1&limit=50", request.path)
+        assertEquals("7", request.getHeader(EapiHeaders.REMIX_USER_ID))
+        assertEquals("key", request.getHeader(EapiHeaders.REMIX_USER_KEY))
+        assertEquals("remix_userid=7; remix_userkey=key", request.getHeader("Cookie"))
+    }
+
+    @Test
+    fun `download history maps date fields without assigning a local file`() {
+        server.enqueue(
+            enqueueJson(
+                """{"success":1,"pagination":{"current":2,"total_pages":2},"books":[
+                    {"id":7,"hash":"abc","date":"2026-11-20","downloaded_at":"ignored"},
+                    {"id":8,"hash":"def","date":"","downloaded_at":"2026-11-17"}]}""",
+            ),
+        )
+        val result = assertIs<AppResult.Success<BookPage>>(
+            kotlinx.coroutines.runBlocking { client(session()).downloadHistory(page = 2) },
+        ).value
+        assertEquals(listOf("2026-11-20", "2026-11-17"), result.books.map { it.historyDate })
+        assertTrue(result.books.all { it.localUri == null && it.downloadedAt == null })
+        assertFalse(result.hasNext)
+        val request = server.takeRequest()
+        assertEquals("GET", request.method)
+        assertEquals("/eapi/user/book/downloaded?page=2&limit=50", request.path)
+    }
+
+    @Test
+    fun `account book lists require a session`() {
+        val anonymous = client()
+        kotlinx.coroutines.runBlocking {
+            assertEquals(AppResult.Failure(AppError.NotLoggedIn), anonymous.savedBooks(page = 1))
+            assertEquals(AppResult.Failure(AppError.NotLoggedIn), anonymous.downloadHistory(page = 1))
+        }
+        assertEquals(0, server.requestCount)
     }
 
     @Test

@@ -165,8 +165,8 @@ z-library.website, zlib.bz
 - 所有 Miuix 依赖与主题封装在 `:core:designsystem`；feature 只通过 `ZlibTheme`、设计系统组件使用，不直接 import Miuix 的内部实现。
 - MVVM + `StateFlow`；`UiState` 不可变；Composable 不做业务逻辑与网络请求。
 - 每个 feature 一个 `ViewModel`（必要时拆分）；一次性事件用 `Channel`/`SharedFlow`，不要塞进 `UiState`。
-- 导航用 `miuix-nav`；底部 4 tab：搜索 / 书架 / 下载 / 我的；详情、登录、域名体检、元数据编辑、书单为二级路由。
-- 支持深色/浅色跟随系统 + Monet 动态取色；玻璃效果默认开，设置可关，低端机自动降级。
+- 导航用 `miuix-nav`；底部 3 tab：热门 / 书架 / 设置；搜索、下载管理从热门页顶栏进入，账号和域名体检从设置进入。
+- 外观默认跟随系统，也可手动选浅色或深色；不根据壁纸取色。支持的设备始终开启玻璃效果，不提供设置开关；不支持材质或低内存时自动降级。
 
 ### 6.3 DI 与持久化
 

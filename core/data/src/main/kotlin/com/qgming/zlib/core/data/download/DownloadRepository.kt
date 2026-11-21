@@ -31,7 +31,7 @@ object DownloadServiceActions {
 class DownloadRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     database: ZlibDatabase,
-    val directoryStore: DownloadDirectoryStore,
+    private val directoryStore: DownloadDirectoryStore,
     private val dispatchers: AppDispatchers,
 ) {
     private val downloads = database.downloadDao()
@@ -117,6 +117,11 @@ class DownloadRepository @Inject constructor(
 
     suspend fun setDownloadDirectory(uri: android.net.Uri): AppResult<Unit> =
         directoryStore.setTree(uri)
+
+    suspend fun downloadDirectoryName(): String? = withContext(dispatchers.io) {
+        if (directoryStore.ensureLoaded() == null) return@withContext null
+        runCatching { directoryStore.tree()?.name }.getOrNull()?.takeIf(String::isNotBlank) ?: "已选择文件夹"
+    }
 
     suspend fun resumePendingIfAny() = withContext(dispatchers.io) {
         if (downloads.nextActive() != null) startService(DownloadServiceActions.START)

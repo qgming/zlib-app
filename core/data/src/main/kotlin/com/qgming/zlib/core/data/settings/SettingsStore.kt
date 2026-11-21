@@ -3,13 +3,13 @@ package com.qgming.zlib.core.data.settings
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.qgming.zlib.core.common.AppDispatchers
+import com.qgming.zlib.core.model.ThemeMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
 import javax.inject.Inject
@@ -26,8 +26,7 @@ data class AppSettings(
     val customHosts: Set<String> = emptySet(),
     val currentHost: String? = null,
     val lockedHost: String? = null,
-    val glassEnabled: Boolean = true,
-    val dynamicColor: Boolean = true,
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val downloadTreeUri: String? = null,
 )
 
@@ -37,8 +36,7 @@ interface SettingsStore {
     suspend fun setCurrentHost(host: String?)
     suspend fun setCustomHosts(hosts: Set<String>)
     suspend fun setLockedHost(host: String?)
-    suspend fun setGlassEnabled(enabled: Boolean)
-    suspend fun setDynamicColor(enabled: Boolean)
+    suspend fun setThemeMode(mode: ThemeMode)
     suspend fun setDownloadTreeUri(uri: String?)
 }
 
@@ -73,12 +71,8 @@ class DataStoreSettingsStore @Inject constructor(
         if (host.isNullOrBlank()) prefs.remove(LOCKED_HOST) else prefs[LOCKED_HOST] = host
     }
 
-    override suspend fun setGlassEnabled(enabled: Boolean) = edit { prefs ->
-        prefs[GLASS_ENABLED] = enabled
-    }
-
-    override suspend fun setDynamicColor(enabled: Boolean) = edit { prefs ->
-        prefs[DYNAMIC_COLOR] = enabled
+    override suspend fun setThemeMode(mode: ThemeMode) = edit { prefs ->
+        prefs[THEME_MODE] = mode.name
     }
 
     override suspend fun setDownloadTreeUri(uri: String?) = edit { prefs ->
@@ -93,8 +87,7 @@ class DataStoreSettingsStore @Inject constructor(
         customHosts = this[CUSTOM_HOSTS].orEmpty(),
         currentHost = this[CURRENT_HOST]?.takeIf { it.isNotBlank() },
         lockedHost = this[LOCKED_HOST]?.takeIf { it.isNotBlank() },
-        glassEnabled = this[GLASS_ENABLED] ?: true,
-        dynamicColor = this[DYNAMIC_COLOR] ?: true,
+        themeMode = ThemeMode.fromPreference(this[THEME_MODE]),
         downloadTreeUri = this[DOWNLOAD_TREE],
     )
 
@@ -102,8 +95,7 @@ class DataStoreSettingsStore @Inject constructor(
         private val CUSTOM_HOSTS = stringSetPreferencesKey("custom_hosts")
         private val CURRENT_HOST = stringPreferencesKey("current_host")
         private val LOCKED_HOST = stringPreferencesKey("locked_host")
-        private val GLASS_ENABLED = booleanPreferencesKey("glass_enabled")
-        private val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
+        private val THEME_MODE = stringPreferencesKey("theme_mode")
         private val DOWNLOAD_TREE = stringPreferencesKey("download_tree")
     }
 }

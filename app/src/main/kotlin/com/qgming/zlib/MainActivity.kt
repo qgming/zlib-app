@@ -7,7 +7,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import com.qgming.zlib.core.designsystem.ZlibTheme
 import com.qgming.zlib.ui.ZlibRoot
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -21,10 +20,6 @@ class MainActivity : ComponentActivity() {
         ) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
         }
-        setContent {
-            ZlibTheme {
-                ZlibRoot()
-            }
-        }
+        setContent { ZlibRoot() }
     }
 }

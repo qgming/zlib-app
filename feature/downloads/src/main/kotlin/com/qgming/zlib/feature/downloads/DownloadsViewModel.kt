@@ -1,6 +1,5 @@
 package com.qgming.zlib.feature.downloads
 
-import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qgming.zlib.core.common.AppResult
@@ -21,8 +20,8 @@ class DownloadsViewModel @Inject constructor(
     private val repository: DownloadRepository,
 ) : ViewModel() {
 
-    val queue: StateFlow<List<DownloadItem>> = repository.queue
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val queue: StateFlow<List<DownloadItem>?> = repository.queue
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private val _events = Channel<String>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
@@ -55,14 +54,5 @@ class DownloadsViewModel @Inject constructor(
 
     fun remove(id: String) {
         viewModelScope.launch { repository.remove(id) }
-    }
-
-    fun setDirectory(uri: Uri) {
-        viewModelScope.launch {
-            when (val result = repository.setDownloadDirectory(uri)) {
-                is AppResult.Success -> _events.send("下载目录已保存")
-                is AppResult.Failure -> _events.send(result.error.userMessage())
-            }
-        }
     }
 }

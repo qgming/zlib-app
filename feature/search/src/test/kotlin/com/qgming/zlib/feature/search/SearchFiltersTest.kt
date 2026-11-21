@@ -38,4 +38,15 @@ class SearchFiltersTest {
 
         assertFalse(SearchFilters(yearFrom = "2024", yearTo = "2000").yearRangeValid)
     }
+
+    @Test
+    fun `filter chips toggle independently and year fields keep four digits`() {
+        val filters = SearchFilters().toggleLanguage("chinese").toggleExtension("epub").withYearFrom("1a9807")
+
+        assertTrue(filters.isActive)
+        assertEquals("1980", filters.yearFrom)
+        assertEquals(setOf("epub"), filters.toggleLanguage("chinese").extensions)
+        assertFalse(SearchFilters().toggleLanguage("chinese").toggleLanguage("chinese").isActive)
+        assertTrue(SearchFilters(exact = true).isActive)
+    }
 }

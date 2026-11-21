@@ -9,6 +9,8 @@ import com.qgming.zlib.core.common.AppResult
 import com.qgming.zlib.core.data.download.toBook
 import com.qgming.zlib.core.database.ZlibDatabase
 import com.qgming.zlib.core.model.Book
+import com.qgming.zlib.core.model.BookPage
+import com.qgming.zlib.core.network.EapiClient
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -21,11 +23,16 @@ class LibraryRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     database: ZlibDatabase,
     private val dispatchers: AppDispatchers,
+    private val api: EapiClient,
 ) {
     private val books = database.bookDao()
 
     val downloaded: Flow<List<Book>> = books.observeDownloaded()
         .map { entities -> entities.map { it.toBook() } }
+
+    suspend fun saved(page: Int): AppResult<BookPage> = api.savedBooks(page)
+
+    suspend fun history(page: Int): AppResult<BookPage> = api.downloadHistory(page)
 
     suspend fun deleteLocal(book: Book): AppResult<Unit> = withContext(dispatchers.io) {
         val uri = book.localUri?.let(Uri::parse)

@@ -10,6 +10,10 @@ data class SearchFilters(
     val exact: Boolean = false,
     val order: String? = null,
 ) {
+    val isActive: Boolean
+        get() = exact || languages.isNotEmpty() || extensions.isNotEmpty() ||
+            yearFrom.toIntOrNull() != null || yearTo.toIntOrNull() != null || order != null
+
     val yearRangeValid: Boolean
         get() {
             val from = yearFrom.toIntOrNull()
@@ -26,4 +30,14 @@ data class SearchFilters(
         exact = exact,
         order = order,
     )
+
+    fun toggleLanguage(language: String): SearchFilters = copy(languages = languages.toggled(language))
+
+    fun toggleExtension(extension: String): SearchFilters = copy(extensions = extensions.toggled(extension))
+
+    fun withYearFrom(value: String): SearchFilters = copy(yearFrom = value.filter(Char::isDigit).take(4))
+
+    fun withYearTo(value: String): SearchFilters = copy(yearTo = value.filter(Char::isDigit).take(4))
 }
+
+private fun Set<String>.toggled(item: String): Set<String> = if (item in this) this - item else this + item
