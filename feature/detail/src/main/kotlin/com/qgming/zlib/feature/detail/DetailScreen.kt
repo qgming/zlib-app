@@ -79,6 +79,8 @@ fun DetailScreen(
 
             state.book != null -> DetailContent(
                 book = state.book!!,
+                message = state.message,
+                onDownload = viewModel::download,
                 padding = padding,
             )
         }
@@ -86,7 +88,12 @@ fun DetailScreen(
 }
 
 @Composable
-private fun DetailContent(book: Book, padding: PaddingValues) {
+private fun DetailContent(
+    book: Book,
+    message: String?,
+    onDownload: () -> Unit,
+    padding: PaddingValues,
+) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
         contentPadding = PaddingValues(16.dp),
@@ -130,12 +137,20 @@ private fun DetailContent(book: Book, padding: PaddingValues) {
         item {
             ZlibCard {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = {}, enabled = false) { Text("下载（v0.4）") }
+                    Button(onClick = onDownload) { Text("下载") }
                     TextButton(text = "分享（下载后）", onClick = {}, enabled = false)
+                }
+                message?.let {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        it,
+                        style = MiuixTheme.textStyles.footnote2,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "下载队列、分享与收藏写入在后续里程碑接入。",
+                    "首次使用请先在「下载」页选择 SAF 目录；收藏写入在后续里程碑接入。",
                     style = MiuixTheme.textStyles.footnote2,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 )

@@ -2,6 +2,8 @@ package com.qgming.zlib.feature.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -45,6 +47,9 @@ fun SettingsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     var notice by remember { mutableStateOf<String?>(null) }
     var customHost by remember { mutableStateOf("") }
+    val directoryPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri?.let(viewModel::setDownloadDirectory)
+    }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { notice = it }
@@ -182,6 +187,21 @@ fun SettingsScreen(
                         enabled = customHost.isNotBlank(),
                     ) {
                         Text("添加并体检")
+                    }
+                }
+            }
+
+            item {
+                ZlibCard {
+                    Text("下载目录", style = MiuixTheme.textStyles.body2)
+                    Text(
+                        text = state.directory ?: "尚未选择（下载前必须设置）",
+                        style = MiuixTheme.textStyles.footnote1,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Button(onClick = { directoryPicker.launch(null) }) {
+                        Text("选择 SAF 目录")
                     }
                 }
             }

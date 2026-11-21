@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qgming.zlib.core.common.AppResult
 import com.qgming.zlib.core.data.domain.DomainRepository
+import com.qgming.zlib.core.data.download.DownloadRepository
 import com.qgming.zlib.core.designsystem.userMessage
 import com.qgming.zlib.core.model.DomainCheck
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -12,6 +13,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -24,19 +26,31 @@ data class SettingsUiState(
     val lockedHost: String? = null,
     val glassEnabled: Boolean = true,
     val dynamicColor: Boolean = true,
+    val directory: String? = null,
 )
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val domainRepository: DomainRepository,
+    private val downloadRepository: DownloadRepository,
 ) : ViewModel() {
+
+    private val directory = MutableStateFlow<String?>(null)
+
+    init {
+        viewModelScope.launch {
+            downloadRepository.directoryStore.ensureLoaded()
+            directory.value = downloadRepository.directoryStore.currentUri()?.toString()
+        }
+    }
 
     val state: StateFlow<SettingsUiState> = combine(
         domainRepository.checks,
         domainRepository.currentHost,
         domainRepository.probing,
         domainRepository.settings,
-    ) { checks, current, probing, settings ->
+        directory,
+    ) { checks, current, probing, settings, dir ->
         SettingsUiState(
             checks = checks,
             currentHost = current,
@@ -45,6 +59,7 @@ class SettingsViewModel @Inject constructor(
             lockedHost = settings.lockedHost,
             glassEnabled = settings.glassEnabled,
             dynamicColor = settings.dynamicColor,
+            directory = dir,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
@@ -103,5 +118,18 @@ class SettingsViewModel @Inject constructor(
 
     fun setDynamicColor(enabled: Boolean) {
         viewModelScope.launch { domainRepository.setDynamicColor(enabled) }
+    }
+
+    fun setDownloadDirectory(uri: android.net.Uri) {
+        viewModelScope.launch {
+            when (val result = downloadRepository.setDownloadDirectory(uri)) {
+                is AppResult.Success -> {
+                    directory.value = uri.toString()
+                    _events.send("下载目录已保存")
+                }
+
+                is AppResult.Failure -> _events.send(result.error.userMessage())
+            }
+        }
     }
 }

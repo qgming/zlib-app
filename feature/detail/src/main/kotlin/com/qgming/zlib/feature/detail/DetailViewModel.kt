@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qgming.zlib.core.common.AppResult
 import com.qgming.zlib.core.data.library.BookRepository
+import com.qgming.zlib.core.data.download.DownloadRepository
 import com.qgming.zlib.core.designsystem.userMessage
 import com.qgming.zlib.core.model.Book
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -18,11 +19,13 @@ data class DetailUiState(
     val book: Book? = null,
     val loading: Boolean = false,
     val error: String? = null,
+    val message: String? = null,
 )
 
 @HiltViewModel
 class DetailViewModel @Inject constructor(
     private val bookRepository: BookRepository,
+    private val downloadRepository: DownloadRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(DetailUiState())
@@ -57,5 +60,15 @@ class DetailViewModel @Inject constructor(
         val hash = lastHash ?: return
         _state.update { it.copy(book = null) }
         load(id, hash)
+    }
+
+    fun download() {
+        val book = _state.value.book ?: return
+        viewModelScope.launch {
+            when (val result = downloadRepository.enqueue(book)) {
+                is AppResult.Success -> _state.update { it.copy(message = "已加入下载队列") }
+                is AppResult.Failure -> _state.update { it.copy(message = result.error.userMessage()) }
+            }
+        }
     }
 }

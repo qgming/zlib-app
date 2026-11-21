@@ -40,6 +40,10 @@ data class DownloadItem(
     val bytesWritten: Long,
     val totalBytes: Long?,
     val error: String? = null,
+    val title: String = "",
+    val authors: String = "",
+    val coverUrl: String = "",
+    val extension: String = "",
 ) {
     val progress: Float?
         get() {

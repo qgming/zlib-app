@@ -11,6 +11,7 @@ import com.qgming.zlib.core.data.session.SessionManager
 import com.qgming.zlib.core.data.session.SessionStore
 import com.qgming.zlib.core.data.settings.DataStoreSettingsStore
 import com.qgming.zlib.core.data.settings.SettingsStore
+import com.qgming.zlib.core.database.ZlibDatabase
 import com.qgming.zlib.core.network.CredentialStripInterceptor
 import com.qgming.zlib.core.network.DomainPolicy
 import com.qgming.zlib.core.network.DomainProbe
@@ -21,10 +22,13 @@ import dagger.Binds
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 import kotlinx.serialization.json.Json
+import android.content.Context
+import androidx.room.Room
 import okhttp3.OkHttpClient
 
 @Module
@@ -42,6 +46,17 @@ object AppModule {
     @Provides
     @Singleton
     fun secretCipher(): SecretCipher = KeystoreSecretCipher()
+
+    @Provides
+    @Singleton
+    fun database(@ApplicationContext context: Context): ZlibDatabase =
+        Room.databaseBuilder(context, ZlibDatabase::class.java, ZlibDatabase.NAME).build()
+
+    @Provides
+    fun downloadDao(database: ZlibDatabase) = database.downloadDao()
+
+    @Provides
+    fun bookDao(database: ZlibDatabase) = database.bookDao()
 
     @Provides
     @Singleton

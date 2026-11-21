@@ -3,7 +3,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -27,9 +27,12 @@ kotlin {
     }
 }
 
-dependencies {
-    implementation(project(":core:common"))
-    implementation(project(":core:model"))
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
-
+dependencies {
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
+}

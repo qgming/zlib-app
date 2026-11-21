@@ -28,6 +28,7 @@ data class AppSettings(
     val lockedHost: String? = null,
     val glassEnabled: Boolean = true,
     val dynamicColor: Boolean = true,
+    val downloadTreeUri: String? = null,
 )
 
 interface SettingsStore {
@@ -38,6 +39,7 @@ interface SettingsStore {
     suspend fun setLockedHost(host: String?)
     suspend fun setGlassEnabled(enabled: Boolean)
     suspend fun setDynamicColor(enabled: Boolean)
+    suspend fun setDownloadTreeUri(uri: String?)
 }
 
 @Singleton
@@ -79,6 +81,10 @@ class DataStoreSettingsStore @Inject constructor(
         prefs[DYNAMIC_COLOR] = enabled
     }
 
+    override suspend fun setDownloadTreeUri(uri: String?) = edit { prefs ->
+        if (uri.isNullOrBlank()) prefs.remove(DOWNLOAD_TREE) else prefs[DOWNLOAD_TREE] = uri
+    }
+
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         withContext(dispatchers.io) { dataStore.edit(block) }
     }
@@ -89,6 +95,7 @@ class DataStoreSettingsStore @Inject constructor(
         lockedHost = this[LOCKED_HOST]?.takeIf { it.isNotBlank() },
         glassEnabled = this[GLASS_ENABLED] ?: true,
         dynamicColor = this[DYNAMIC_COLOR] ?: true,
+        downloadTreeUri = this[DOWNLOAD_TREE],
     )
 
     companion object {
@@ -97,5 +104,6 @@ class DataStoreSettingsStore @Inject constructor(
         private val LOCKED_HOST = stringPreferencesKey("locked_host")
         private val GLASS_ENABLED = booleanPreferencesKey("glass_enabled")
         private val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
+        private val DOWNLOAD_TREE = stringPreferencesKey("download_tree")
     }
 }

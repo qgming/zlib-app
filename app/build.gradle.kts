@@ -84,6 +84,8 @@ dependencies {
     implementation(project(":feature:settings"))
     implementation(project(":feature:search"))
     implementation(project(":feature:detail"))
+    implementation(project(":feature:downloads"))
+    implementation(project(":feature:library"))
 
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.ktx)

@@ -22,13 +22,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qgming.zlib.AppViewModel
 import com.qgming.zlib.core.data.startup.StartupState
 import com.qgming.zlib.core.designsystem.ZlibAppShell
-import com.qgming.zlib.core.designsystem.ZlibPlaceholder
 import com.qgming.zlib.core.designsystem.ZlibTab
 import com.qgming.zlib.core.designsystem.userMessage
 import com.qgming.zlib.core.model.Book
 import com.qgming.zlib.feature.account.AccountScreen
 import com.qgming.zlib.feature.account.LoginScreen
 import com.qgming.zlib.feature.detail.DetailScreen
+import com.qgming.zlib.feature.downloads.DownloadsScreen
+import com.qgming.zlib.feature.library.LibraryScreen
 import com.qgming.zlib.feature.search.SearchScreen
 import com.qgming.zlib.feature.settings.SettingsScreen
 import kotlinx.serialization.Serializable
@@ -65,6 +66,7 @@ fun ZlibRoot(viewModel: AppViewModel = hiltViewModel()) {
     val startup by viewModel.startupState.collectAsStateWithLifecycle()
     val session by viewModel.session.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
+    val glass by viewModel.glassEnabled.collectAsStateWithLifecycle()
 
     when (val state = startup) {
         StartupState.Loading -> SplashScreen()
@@ -79,7 +81,7 @@ fun ZlibRoot(viewModel: AppViewModel = hiltViewModel()) {
         StartupState.Ready -> if (session == null) {
             LoginScreen()
         } else {
-            MainShell()
+            MainShell(glass = glass)
         }
     }
 }
@@ -168,7 +170,7 @@ private fun StartupFailedScreen(
 }
 
 @Composable
-private fun MainShell() {
+private fun MainShell(glass: Boolean) {
     val nav = rememberNavController<Route>(Route.Home)
     NavDisplay(
         navController = nav,
@@ -176,6 +178,7 @@ private fun MainShell() {
     ) {
         entry<Route.Home> {
             HomeTabs(
+                glass = glass,
                 onOpenBook = { book -> nav.push(Route.BookDetail(book.id, book.hash)) },
                 onOpenSettings = { nav.push(Route.SettingsRoute) },
             )
@@ -195,6 +198,7 @@ private fun MainShell() {
 
 @Composable
 private fun HomeTabs(
+    glass: Boolean,
     onOpenBook: (Book) -> Unit,
     onOpenSettings: () -> Unit,
 ) {
@@ -213,6 +217,7 @@ private fun HomeTabs(
         tabs = tabs,
         selectedTab = selectedTab,
         onTabSelected = { selectedTab = it },
+        glass = glass,
     ) { padding ->
         when (selectedTab) {
             0 -> SearchScreen(
@@ -220,17 +225,12 @@ private fun HomeTabs(
                 onOpenBook = onOpenBook,
             )
 
-            1 -> ZlibPlaceholder(
-                title = "书架",
-                body = "已下载、收藏和历史会汇总到这里。",
+            1 -> LibraryScreen(
                 padding = padding,
+                onOpenBook = onOpenBook,
             )
 
-            2 -> ZlibPlaceholder(
-                title = "下载",
-                body = "下载队列、进度和失败重试会显示在这里。",
-                padding = padding,
-            )
+            2 -> DownloadsScreen(padding = padding)
 
             else -> AccountScreen(
                 padding = padding,

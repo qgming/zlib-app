@@ -92,7 +92,9 @@ Cookie:   粘贴 JSON / 导入 Netscape cookies.txt → 解析 → 校验
 
 ### 4.5 分享
 
-`BookDetail` → “打开/分享” → `FileProvider.getUriForFile` → `Intent.ACTION_SEND` + `type`（EPUB/MOBI/PDF…）→ 系统分享面板（微信读书、阅读器）。不申请 `REQUEST_INSTALL_PACKAGES`，不直接调微信 SDK。
+`BookDetail` → “打开/分享” → 使用 SAF 文件 URI + `FLAG_GRANT_READ_URI_PERMISSION` → `Intent.ACTION_SEND` + `type`（EPUB/MOBI/PDF…）→ 系统分享面板（微信读书、阅读器）。不申请 `REQUEST_INSTALL_PACKAGES`，不直接调微信 SDK。
+
+> 分享策略见 ADR-021：直接授予 SAF 文档 URI，不经过 `FileProvider`。
 
 ### 4.6 元数据编辑
 
@@ -150,6 +152,8 @@ booklists(id TEXT PK, name, description, created_at)
 booklist_items(booklist_id, book_id, added_at, PRIMARY KEY(booklist_id, book_id))
 domains(host TEXT PK, status, last_checked, detail)
 ```
+
+> 列名概念上如上；v1 实现使用 Kotlin camelCase 列名，见 ADR-022。
 
 - `books.local_uri` 为空 = 未下载；`favorite` 为冗余列，便于书架过滤，收藏表仍是真相。
 - 下载队列与 `books` 分离；完成后更新 `books.local_uri/downloaded_at`。

@@ -246,4 +246,28 @@
 
 **后果**：`test` 任务零额外配置；JUnit5 专属特性不可用。
 
+---
+
+## ADR-021：分享直接使用 SAF 文档 URI
+
+**状态**：接受
+
+**背景**：下载只写用户选择的 SAF 目录树（ADR-006）。`FileProvider` 只能暴露应用私有目录，把 SAF 文件复制到 cache 再分享会多一次 IO 和一份临时副本。
+
+**决策**：`ACTION_SEND` 的 `EXTRA_STREAM` 直接使用 SAF `content://` URI，并加 `FLAG_GRANT_READ_URI_PERMISSION`；不引入 `FileProvider`。
+
+**后果**：接收方可直接读取文档；无临时文件与清理逻辑。若后续需要分享应用内生成的非 SAF 文件（如改好的元数据缓存），再单独加 `FileProvider`。
+
+---
+
+## ADR-022：Room 列名使用 Kotlin camelCase
+
+**状态**：接受
+
+**背景**：`docs/ARCHITECTURE.md` 的 schema 用 snake_case 示例；Room 默认按属性名生成列名。
+
+**决策**：v1 schema 直接用 camelCase 列名（`bytesWritten`、`localUri` 等），表名仍为 `books` / `download_queue`；查询与迁移以 `core/database/schemas/1.json` 为准。
+
+**后果**：少一层 `@ColumnInfo` 噪声；文档中的 snake_case 仅作概念示意。
+
 

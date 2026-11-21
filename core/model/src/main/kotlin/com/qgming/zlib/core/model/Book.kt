@@ -24,6 +24,8 @@ data class Book(
     val pages: Int? = null,
     val rating: Double? = null,
     val href: String = "",
+    val localUri: String? = null,
+    val downloadedAt: Long? = null,
 ) {
     /** Canonical reference used across routes, Room and download state. */
     val ref: String get() = "$id:$hash"
