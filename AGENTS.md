@@ -22,8 +22,8 @@
 - 许可证：MIT + `NOTICE` 归属声明
 - 隐私：零遥测、零统计、零广告
 
-**范围**：登录、域名体检/切换、搜索、详情、下载队列/续传、书架、收藏/历史、书单、元数据编辑（EPUB/FB2/DOCX）、系统分享。
-**不做**：内置阅读器、Kindle、微信读书导入、多书源、MCP、TUI、静默自更新。
+**范围**：登录、域名体检/切换、搜索、详情、下载队列/续传、Z-Library“我的图书馆”（云端已下载、收藏、书单）、云端下载记录删除、系统分享。
+**不做**：应用备份/恢复、独立本地书库/书单及其导入导出、本地电子书元数据编辑及第三方查源、内置阅读器、Kindle、微信读书导入、多书源、MCP、TUI、静默自更新。元数据范围见 ADR-030；云端图书馆与取消备份见 ADR-031；书架仅“收藏 / 书单”，本机文件与云端下载记录归下载管理，见 ADR-032。登录 Cookie 导入继续保留；详情页仍展示 EAPI 图书信息。
 
 ---
 
@@ -148,7 +148,7 @@ z-library.website, zlib.bz
 :core:network       :core:database     :core:data
 :feature:search     :feature:detail    :feature:downloads
 :feature:library    :feature:account   :feature:settings
-:feature:metadata   :feature:booklists
+:feature:booklists
 ```
 
 允许的依赖方向：
@@ -165,13 +165,15 @@ z-library.website, zlib.bz
 - 所有 Miuix 依赖与主题封装在 `:core:designsystem`；feature 只通过 `ZlibTheme`、设计系统组件使用，不直接 import Miuix 的内部实现。
 - MVVM + `StateFlow`；`UiState` 不可变；Composable 不做业务逻辑与网络请求。
 - 每个 feature 一个 `ViewModel`（必要时拆分）；一次性事件用 `Channel`/`SharedFlow`，不要塞进 `UiState`。
-- 导航用 `miuix-nav`；底部 3 tab：热门 / 书架 / 设置；搜索、下载管理从热门页顶栏进入，账号和域名体检从设置进入。
+- 导航用 `miuix-nav`；底部 3 tab：阅读 / 书架 / 设置；阅读页仍显示热门与推荐，双击底部阅读入口回到顶部。书架顶部仅“收藏 / 书单”，默认收藏。搜索、下载管理从阅读页顶栏进入，账号和域名体检从设置进入。本机文件操作和云端下载记录从下载管理分别进入；书单协议未确认时明确显示尚未接入，见 ADR-032/036。
+- 主 tab 切换使用 150ms 整页横向滑动，标题／顶栏分组与内容共同移动，底部导航固定，各页滚动状态独立，见 ADR-041。设置／下载管理同类入口无内部行间分割线，左侧图标 Normal 粗细、26dp 基准、左右各 15dp，见 ADR-038/039。图书详情例外使用非导出的 `BookDetailActivity` 接入 ITGSA SharedView Kit `1.0.0.5`；SDK 仅 app 依赖，默认尝试 ROM 能力、不提供设置项，不支持时普通 Activity 转场，见 ADR-040/041 与 `docs/ANIMATIONS.md`。
+- 图书网格仅“2:3 封面 + 单行书名”，超长末尾省略，无整项卡片。设置支持自动/2/3/4/5 列；默认“自动”，小于 360dp 为 2 列、360–599dp 为 3 列、600–839dp 为 4 列、840dp 及以上为 5 列。缺图或加载失败使用书名和作者的经典排版书封，见 ADR-034/036。
 - 外观默认跟随系统，也可手动选浅色或深色；不根据壁纸取色。支持的设备始终开启玻璃效果，不提供设置开关；不支持材质或低内存时自动降级。
 
 ### 6.3 DI 与持久化
 
 - 目标：Hilt + Room + KSP。第一天先做 **1 天 spike** 验证 AGP 9.5.2/Kotlin 2.4.21/KSP 2.3.12；失败则回退手写 `AppContainer`（构造注入），**不要混用**。
-- Room 是书架、收藏、历史、书单、下载队列的唯一本地真相；DataStore 存设置与会话；Keystore 存凭据。
+- Z-Library 服务端是“我的图书馆”（云端已下载、收藏、书单）的数据真相；Room 保存下载队列、续传进度和本机文件记录。云端数据如需缓存，必须按账号隔离并可重新拉取，不建立独立本地书单或收藏标记；DataStore 存设置与会话；Keystore 存凭据。
 - 迁移必须写 `Migration` + 测试；禁止 `fallbackToDestructiveMigration` 进 release。
 - 所有 IO 在 `Dispatchers.IO`；下载在 Service 的独立 scope；UI 只收集 Flow。
 
@@ -187,12 +189,16 @@ z-library.website, zlib.bz
 
 v1 交付：
 
-- A 核心：搜索/筛选/分页、详情、下载队列/续传、书架、收藏/历史、推荐/热门、配额、域名体检
-- B 元数据：EPUB / FB2 / DOCX + Google Books / OpenLibrary / Douban；重命名、嵌封面
-- D 书单 / 历史删除
-- E 只保留 JSON 备份/恢复；更新检查放 v1.1
+- A 核心：搜索/筛选/分页、详情、下载队列/续传、云端图书馆、收藏/下载记录、推荐/热门、配额、域名体检、本机文件分享/删除
+- D 云端书单 / 下载记录删除；书单 EAPI 先验证再实现，不以本地书单代替
 
-v1.1：MOBI / PDF / Goodreads、更新检查、更多导入导出。
+详情页下载按钮右侧支持云端收藏/取消收藏，显示“添加收藏 / 已收藏”，状态与写入结果以服务端为准，见 ADR-033/042。右上角信息按钮通过玻璃底部面板展示出版与文件信息；简介本地处理 EAPI 字段中的分段、换行和常见富文本。用户于 2026-11-22 确认收藏功能及下载管理内云端下载记录真机验证成功；账号切换、多设备和异常路径仍需独立验收。
+
+详情中作者／译者姓名独立为蓝色可点击文本，国籍、角色与分隔符普通显示；点击通过 app 回调进入独立搜索状态并自动搜索单个姓名，见 ADR-043。用户于 2026-11-22 确认测试正常。详情书名字重 600，姓名链接字重 500，字号不变，见 ADR-044。
+
+v1.1：更新检查、云端书单写入（实测后）。
+应用备份/恢复及本地书库/书单导入导出已按 ADR-031 取消。
+本地元数据编辑及其格式/查源扩展已取消，不自动延期；重新纳入范围需另立 ADR（见 ADR-030）。
 v2+：不做内置阅读器；如要做，另立 ADR 和独立模块。
 
 ---
@@ -239,15 +245,14 @@ core/model/                Book、Account、DownloadItem、Domain、UiState 共�
 core/designsystem/         Miuix 主题、颜色、组件封装（唯一允许直接依赖 Miuix 的地方）
 core/network/              OkHttp、EapiClient、Cookie/重定向策略、域名探测
 core/database/             Room entities/DAO/DB、迁移
-core/data/                 Repository、下载队列、会话、设置、元数据
+core/data/                 Repository、下载队列、会话、设置
 feature/search/            搜索 + 筛选 + 分页
 feature/detail/            详情 + 下载/分享入口
-feature/downloads/         队列 UI + 前台服务控制
-feature/library/           书架 + 收藏 + 历史
+feature/downloads/         队列 UI + 前台服务控制 + 本机文件分享/删除 + 云端下载记录入口
+feature/library/           书架：收藏 + 书单入口；独立云端下载记录页
 feature/account/           登录（密码/WebView/Cookie）+ 配额
-feature/settings/          域名、目录、主题、备份
-feature/metadata/          EPUB/FB2/DOCX 读取、查源、编辑、重命名
-feature/booklists/         书单
+feature/settings/          域名、目录、主题
+feature/booklists/         Z-Library 云端书单（当前明确提示尚未接入）
 ```
 
 ---

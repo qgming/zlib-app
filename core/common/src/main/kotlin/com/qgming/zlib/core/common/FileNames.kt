@@ -3,7 +3,7 @@ package com.qgming.zlib.core.common
 import java.io.ByteArrayOutputStream
 import java.net.URLDecoder
 
-/** File-name cleaning for downloads and metadata renames. See docs/EAPI.md §2.4. */
+/** File-name cleaning for downloads. See docs/EAPI.md §2.4. */
 object FileNames {
 
     private const val MAX_BASE_LENGTH = 120

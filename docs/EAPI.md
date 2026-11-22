@@ -171,15 +171,37 @@ GET /eapi/user/profile
 GET /eapi/user/book/saved?page=1&limit=50
 ```
 
-响应：`books[]` + `pagination`。取消/添加收藏的端点 CLI 未覆盖；v1 只读收藏，写操作需实测后再加。
+响应：`books[]` + `pagination`。取消/添加收藏的端点 CLI 未覆盖，已依据下述第三方说明接入（ADR-033）；2026-11-22 用户确认收藏功能真机验证成功。
+收藏归属 Z-Library 账号，以服务端为准；本地如需缓存必须按账号隔离，不维护独立本地收藏标记（ADR-031）。
 
-### 2.7 下载历史
+补充来源 `baroxyton/zlibrary-eapi-documentation` 列出了以下写操作，当前已实现请求与回归测试，并经用户真实账号确认可用：
+
+```
+GET /eapi/user/book/{bookId}/save
+GET /eapi/user/book/{bookId}/unsave
+```
+
+- `bookId` 仅接受 1–32 位数字；请求带 Cookie 与 remix 头，经现有 allowlist 和重定向安全管线。先解析 envelope，只有 `success:1` 才更新 UI；错误保留原状态，不把 HTTP 200 当作成功。
+- 详情顶部右侧显示心形按钮；已收藏为红色实心，未收藏为空心，状态读取或操作期间禁用重复点击。读取失败提示重试，不猜测未收藏。
+- 当前无已验证的详情收藏布尔字段，使用收藏列表逐页按数字 ID 查找（包含缺少 hash 的项）；找到即为已收藏，只有完整读完分页才确定未收藏。分页字段缺失/异常或任一页失败时为未知状态，不能误报未收藏。
+- 写入成功通知书架收藏列表刷新；状态只保留在当前会话内存，不写 Room 的旧 `favorite` 列。会话变更清除状态，旧结果不回写。
+
+列表还记录了可选查询参数 `order`；具体排序取值需另行核实。当前请求只使用 `page` / `limit`。
+
+### 2.7 云端已下载 / 下载记录
 
 ```
 GET /eapi/user/book/downloaded?page=1&limit=50
 ```
 
-响应：`books[]` + `pagination`；日期取 `date`，为空取 `downloaded_at`。
+响应：`books[]` + `pagination`；日期优先取 `date_download`，兼容 `date` / `downloaded_at`。`date_download` 来源于 ZlibraryKO 的字段映射，后两者为现有兼容字段；实际账号响应仍需脱敏核对。
+这是账号的云端下载记录，原界面将其称为“历史”，并非浏览历史。按 ADR-032 放在“下载管理 → 云端下载记录”；书架顶部只有收藏和书单。不表示当前设备存在本机文件，也不确认网站其他图书馆分组使用同一端点。本机文件只由设备文件记录及可访问性判断。
+
+2026-11-22 用户确认下载管理内云端下载记录真机验证成功；此确认不等于原始响应字段、账号切换、所有分页边界或缺图原因都已单独核验。
+
+封面兼容：ZlibraryKO 的实现记录了下载列表可能返回 `https://.../collections//<hash>.jpg`（缺目录）、相对占位图 `/img/cover-not-exists.png` 等无效值。当前映射仅保留有效的 HTTPS 绝对地址；已知缺目录/占位图视作缺失。可见卡片通过 §2.3 的详情端点补取，最多 3 个并发，同一会话内每本最多尝试一次；补取失败仍保留记录和占位封面。只替换封面，不覆盖下载日期，不猜目录。此兼容行为有模拟响应测试，尚未对用户账号确认具体缺图原因。图片加载不带 Cookie/remix 凭据。
+
+第三方文档还列出可选查询参数 `order`；不能据此断定服务端实际支持所有排序。
 
 删除一条历史：
 
@@ -188,7 +210,7 @@ GET /eapi/user/book/{numericId}/delete
 ```
 
 - 只接受数字 ID；`id:hash` 先取 `:` 前部分。
-- 删除成功返回 `{"success":1}`；**不影响本地文件**。客户端默认只删服务端记录，弹窗可选“同时删本地”。
+- 删除成功返回 `{"success":1}`；**不影响本地文件**。删除本机文件在下载管理单独操作，不联动删除云端记录（ADR-031）。
 
 ### 2.8 推荐 / 热门
 
@@ -213,6 +235,41 @@ GET /eapi/info/domains
 - 自重定向不结束 → `REDIRECT_LOOP`
 - 其它非 2xx → `HTTP_ERROR`
 - 连接失败/超时 → `NETWORK_ERROR`
+
+### 2.10 云端书单（待验证）
+
+产品范围是访问 Z-Library 账号的云端书单，不创建独立本地书单（ADR-031）。当前端点清单及 `heartleo/zlib` 参考实现尚不足以确认书单协议；网站存在该功能不等于已有可用的 EAPI 契约。
+
+2026-11-22 补查：`baroxyton/zlibrary-eapi-documentation` 的 README 没有书单端点。ZlibraryKO 的实现使用 `GET /papi/booklist/current-user/0` 和 `POST /papi/booklist/{id}/get-books/{page}`；这些是 PAPI，**不在本项目仅限 EAPI 的可调用范围内**。这里保留调查结果，不将它们加入 EAPI 实现。书架显示“书单”分组及“云端书单尚未接入”的提示，不把尚未获取的数据显示为“暂无书单”。
+
+- 读取前需验证书单列表、详情/图书、分页字段、书单标识与账号可见权限，并记录脱敏响应和来源。
+- 创建、编辑、增删图书等写入行为继续待实测；未确认前不提供写操作。
+- 仅接入 JSON EAPI；未验证时保留待办，不猜端点、不抓 HTML、不以本地列表代替云端数据。
+- 本节仅记录待验证范围，不新增可调用路径，也不表示书单已经实现。
+
+### 2.11 第三方说明中的补充端点（未实测，未接入）
+
+以下来自用户补充的 `baroxyton/zlibrary-eapi-documentation`，只作为后续调查清单。来源提供方法与少量参数，没有完整响应契约；本表不新增产品计划，不代表当前域名仍支持这些接口。接入前必须验证响应、鉴权、错误、分页及权限，并添加脱敏 fixture。当前范围仍以 ADR 和 `ROADMAP.md` 为准。
+
+| 用途 | 方法与路径 | 来源参数 / 当前范围 |
+|---|---|---|
+| 最近图书 | `GET /eapi/book/recently` | 仅记录，未安排 UI |
+| 图书的可用格式 | `GET /eapi/book/{id}/{hash}/formats` | 响应结构待核实 |
+| 相似图书 | `GET /eapi/book/{id}/{hash}/similar` | 响应结构待核实 |
+| 可用扩展名 | `GET /eapi/info/extensions` | 可作为搜索筛选候选来源；当前未接入 |
+| 可用语言 | `GET /eapi/info/languages` | 可作为搜索筛选候选来源；当前未接入 |
+| 服务信息 | `GET /eapi/info` | 查询 `switchLanguage` |
+| 套餐信息 | `GET /eapi/info/plans` | 查询 `switchLanguage`；当前范围外 |
+| 捐赠信息 | `GET /eapi/user/donations` | 当前范围外 |
+| 隐藏横幅 | `GET /eapi/user/hide-banner` | 当前范围外 |
+| 密码找回 | `POST /eapi/user/password-recovery` | 表单 `email`；当前未接入 |
+| 注册 | `POST /eapi/user/registration` | 表单 `email`, `password`, `name`；当前未接入 |
+| 重发验证邮件 | `POST /eapi/user/email/confirmation/resend` | 未列表单参数；当前未接入 |
+| Token 登录 | `POST /eapi/user/token-sign-in` | 表单 `name`, `id_token`；当前未接入 |
+| 账号更新 | `POST /eapi/user/update` | 表单 `email`, `password`, `name`, `kindle_email`；当前未接入 |
+| 发送图书 | `GET /eapi/book/{id}/{hash}/send-to-{type}` | `type` 未说明；Kindle 不在范围内 |
+
+该来源也列出热门的可选查询参数 `switch-language`、详情的 `switchLanguage`，以及收藏/下载记录的 `order`。参数拼写按来源分别记录，不能当作同一参数统一替换；未验证前不改变现有请求。
 
 ## 3. 域名 allowlist
 
@@ -254,12 +311,17 @@ z-library.website, zlib.bz
 ## 6. 不支持 / 未验证
 
 - 全文本搜索：EAPI 无确认端点，返回 `Unsupported`。
-- 收藏写入、书单创建/编辑：CLI 未覆盖，v1 只读；要加先实测并补文档。
+- 收藏写入：save/unsave 已按 ADR-033 接入，用户于 2026-11-22 确认真机验证成功；异常路径仍由模拟响应回归覆盖，账号切换/多设备仍需专项验收。书单创建/编辑继续待协议验证。
+- 云端书单读取/分页/详情：协议待验证，见 §2.10；不以本地书单代替。
 - Kindle 推送、微信读书导入：不做；只用系统分享。
 - HTML 页面抓取、Cloudflare 绕过：不做。
+- 本地电子书元数据编辑及第三方查源：计划已按 ADR-030 取消；本文件中的书名、作者、ISBN、封面等字段仍用于 EAPI 图书信息展示。
+- 应用备份/恢复及本地书库/书单导入导出：已按 ADR-031 取消；登录所需 Cookie 导入保留。
 
 ## 7. 参考
 
 - `heartleo/zlib`：`docs/eapi.md`、`internal/zlib/eapi*.go`、`domain_policy.go`、`download.go`
-- `baroxyton/zlibrary-eapi-documentation`
+- [baroxyton/zlibrary-eapi-documentation README.md](https://github.com/baroxyton/zlibrary-eapi-documentation/blob/e2184c463ed6ea8e3772a8ebe0c588b421fe366a/README.md)：第三方非官方说明；2026-11-22 核对。用户提供的 raw `/README` 返回 404，实际文件名为 [`README.md`](https://raw.githubusercontent.com/baroxyton/zlibrary-eapi-documentation/main/README.md)。其旧域名与“必须个人域下载”的说明不能替代当前域名策略和已实测下载流程。
+- [ZlibraryKO api_shared.lua](https://github.com/ZlibraryKO/zlibrary.koplugin/blob/7d15f06166999ec559d5fb9901b3a4d7f3235906/zlibrary/api_shared.lua)：云端下载记录的日期与无效封面兼容依据。
+- [ZlibraryKO config_urls.lua](https://github.com/ZlibraryKO/zlibrary.koplugin/blob/7d15f06166999ec559d5fb9901b3a4d7f3235906/zlibrary/config_urls.lua)：书单实际使用 PAPI 的调查依据；不作为当前可调用端点。
 - 实测日期：2026-09-04、2026-10-25（域名与登录行为）

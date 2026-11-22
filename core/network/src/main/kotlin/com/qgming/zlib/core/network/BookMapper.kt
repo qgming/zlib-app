@@ -2,6 +2,7 @@ package com.qgming.zlib.core.network
 
 import com.qgming.zlib.core.model.Book
 import kotlinx.serialization.json.JsonObject
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /** Maps one `books[]` entry. Entries without a hash are dropped by the caller. */
 internal object BookMapper {
@@ -54,7 +55,7 @@ internal object BookMapper {
             sizeBytes = obj.longOrNull("filesize") ?: obj.longOrNull("filesizeString"),
             isbn10 = isbn10.orEmpty(),
             isbn13 = isbn13.orEmpty(),
-            coverUrl = obj.stringOrNull("cover").orEmpty(),
+            coverUrl = usableCover(obj.stringOrNull("cover")),
             description = obj.stringOrNull("description").orEmpty(),
             categories = categories.distinct(),
             edition = obj.stringOrNull("edition").orEmpty(),
@@ -70,10 +71,21 @@ internal object BookMapper {
             val item = element as? JsonObject ?: return@mapNotNull null
             val book = fromJson(item) ?: return@mapNotNull null
             if (includeHistoryDate) {
-                book.copy(historyDate = item.stringOrNull("date") ?: item.stringOrNull("downloaded_at"))
+                book.copy(
+                    historyDate = item.stringOrNull("date_download")
+                        ?: item.stringOrNull("date") ?: item.stringOrNull("downloaded_at"),
+                )
             } else {
                 book
             }
         }
+    }
+
+    private fun usableCover(raw: String?): String {
+        val url = raw?.trim()?.toHttpUrlOrNull() ?: return ""
+        if (!url.isHttps || url.username.isNotEmpty() || url.password.isNotEmpty()) return ""
+        // Downloaded lists can omit the collection folder. Only details know its value.
+        if (url.encodedPath.contains("//") || url.encodedPath.endsWith("/cover-not-exists.png")) return ""
+        return url.toString()
     }
 }

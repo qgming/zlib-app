@@ -17,6 +17,7 @@ import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import com.qgming.zlib.core.model.ThemeMode
+import com.qgming.zlib.core.model.BookGridColumns
 import top.yukonga.miuix.kmp.material.GlassEdgeStrokes
 import top.yukonga.miuix.kmp.material.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
@@ -26,6 +27,7 @@ import top.yukonga.miuix.kmp.theme.darkColorScheme
 import top.yukonga.miuix.kmp.theme.lightColorScheme
 
 internal val LocalZlibGlass = staticCompositionLocalOf { false }
+internal val LocalBookGridColumns = staticCompositionLocalOf { BookGridColumns.AUTO }
 
 @Composable
 @ReadOnlyComposable
@@ -52,6 +54,7 @@ private val DarkColors = darkColorScheme(
 @Composable
 fun ZlibTheme(
     mode: ThemeMode = ThemeMode.SYSTEM,
+    bookGridColumns: BookGridColumns = BookGridColumns.AUTO,
     content: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
@@ -82,6 +85,10 @@ fun ZlibTheme(
         )
     }
     MiuixTheme(controller = controller) {
-        CompositionLocalProvider(LocalZlibGlass provides useGlass, content = content)
+        CompositionLocalProvider(
+            LocalZlibGlass provides useGlass,
+            LocalBookGridColumns provides bookGridColumns,
+            content = content,
+        )
     }
 }

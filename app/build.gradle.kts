@@ -86,6 +86,7 @@ dependencies {
     implementation(project(":feature:detail"))
     implementation(project(":feature:downloads"))
     implementation(project(":feature:library"))
+    implementation(project(":feature:booklists"))
 
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.ktx)
@@ -95,8 +96,14 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.coil.network.okhttp)
 
+    // SharedViewDemo b449a426, SHA-256 and provenance in app/libs/README.md.
+    implementation(files("libs/sharedview-kit-1.0.0.5.aar"))
+
     implementation(libs.hilt.android)
     implementation(libs.hilt.navigation.compose)
     ksp(libs.hilt.compiler)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlin.test.junit)
 }
 

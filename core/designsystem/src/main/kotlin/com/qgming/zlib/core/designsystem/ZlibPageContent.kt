@@ -1,6 +1,7 @@
 package com.qgming.zlib.core.designsystem
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.gestures.ScrollableState
@@ -83,16 +84,19 @@ fun ZlibBookGrid(
     content: LazyGridScope.() -> Unit,
 ) {
     val scrollBehavior = attachPageScroll(state)
+    val columns = LocalBookGridColumns.current
     val grid: @Composable (Modifier) -> Unit = { modifier ->
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 136.dp),
-            modifier = modifier.fillMaxSize(),
-            state = state,
-            contentPadding = padding,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            content = content,
-        )
+        BoxWithConstraints(modifier.fillMaxSize()) {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(columns.countForWidth(maxWidth.value.toInt())),
+                modifier = Modifier.fillMaxSize(),
+                state = state,
+                contentPadding = padding,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+                content = content,
+            )
+        }
     }
     if (onRefresh == null) {
         grid(Modifier.withPageScroll(scrollBehavior))

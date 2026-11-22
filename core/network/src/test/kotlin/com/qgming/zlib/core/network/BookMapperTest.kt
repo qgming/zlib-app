@@ -47,6 +47,32 @@ class BookMapperTest {
     }
 
     @Test
+    fun `unusable covers are omitted so details can supply the actual collection`() {
+        val covers = listOf(
+            "https://covers.example/collections//abc.jpg",
+            "/img/cover-not-exists.png",
+            "https://covers.example/img/cover-not-exists.png",
+            "http://covers.example/abc.jpg",
+            "https://user:key@covers.example/abc.jpg",
+        )
+        covers.forEach { cover ->
+            val book = BookMapper.fromJson(buildJsonObject {
+                put("id", "1")
+                put("hash", "abc")
+                put("cover", cover)
+            })!!
+            assertEquals("", book.coverUrl, cover)
+        }
+        val cover = "https://covers.example/collections/userbooks/abc.jpg"
+        val book = BookMapper.fromJson(buildJsonObject {
+            put("id", "1")
+            put("hash", "abc")
+            put("cover", cover)
+        })!!
+        assertEquals(cover, book.coverUrl)
+    }
+
+    @Test
     fun `cookie importer rejects control characters`() {
         val result = CookieImporter.parse("""{"remix_userid":"1","remix_userkey":"a\nb"}""")
         assertIs<AppError.Parse>(assertIs<AppResult.Failure>(result).error)

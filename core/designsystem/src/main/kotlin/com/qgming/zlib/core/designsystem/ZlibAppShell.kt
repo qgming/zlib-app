@@ -1,5 +1,12 @@
 package com.qgming.zlib.core.designsystem
 
+import android.os.SystemClock
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -10,6 +17,7 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -28,12 +36,19 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -57,16 +72,17 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.glass.BookOutline
 import top.yukonga.miuix.kmp.icon.glass.ChevronBackward
 import top.yukonga.miuix.kmp.icon.glass.Download
+import top.yukonga.miuix.kmp.icon.glass.Info
+import top.yukonga.miuix.kmp.icon.glass.NotesOutline
 import top.yukonga.miuix.kmp.icon.glass.Search
 import top.yukonga.miuix.kmp.icon.glass.SettingsOutline
-import top.yukonga.miuix.kmp.icon.glass.StarOutline
 import top.yukonga.miuix.kmp.icon.glass.Tune
 import top.yukonga.miuix.kmp.material.GlassDefaults
 import top.yukonga.miuix.kmp.material.GlassShadows
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 enum class ZlibTab(val label: String, internal val icon: ImageVector) {
-    Popular("热门", MiuixIcons.Glass.StarOutline),
+    Popular("阅读", MiuixIcons.Glass.Normal.NotesOutline),
     Library("书架", MiuixIcons.Glass.BookOutline),
     Settings("设置", MiuixIcons.Glass.SettingsOutline),
 }
@@ -81,21 +97,89 @@ fun ZlibAppShell(
     onTabSelected: (ZlibTab) -> Unit,
     onOpenSearch: () -> Unit,
     onOpenDownloads: () -> Unit,
-    topBarContent: @Composable () -> Unit = {},
-    content: @Composable (PaddingValues) -> Unit,
+    onReadingDoubleTap: () -> Unit,
+    topBarContent: @Composable (ZlibTab) -> Unit = {},
+    content: @Composable (ZlibTab, PaddingValues) -> Unit,
 ) {
     val tabStates = ZlibTab.entries.map { tab -> key(tab) { rememberTopAppBarState() } }
+    val tabScrolls = ZlibTab.entries.map { tab ->
+        key(tab) {
+            val behavior = MiuixScrollBehavior(state = tabStates[tab.ordinal])
+            remember(behavior) { ZlibPageScroll(behavior) }
+        }
+    }
+    val doubleTapTimeout = LocalViewConfiguration.current.doubleTapTimeoutMillis
+    val readingTap = remember(doubleTapTimeout) { ReadingTabDoubleTap(doubleTapTimeout) }
+    val transition = updateTransition(selectedTab, label = "主导航切换")
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val backdrop = if (LocalZlibGlass.current) rememberLayerBackdrop() else null
+    val background = MiuixTheme.colorScheme.surface
 
-    PageFrame(
-        title = selectedTab.label,
-        appBarState = tabStates[selectedTab.ordinal],
-        expandable = true,
-        onSearch = onOpenSearch.takeIf { selectedTab == ZlibTab.Popular },
-        onDownloads = onOpenDownloads.takeIf { selectedTab == ZlibTab.Popular },
-        topBarContent = topBarContent,
-        bottomBar = { backdrop -> ZlibBottomBar(selectedTab, onTabSelected, backdrop) },
-        content = content,
-    )
+    ZlibOverlayHost {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = background,
+            contentWindowInsets = WindowInsets(0),
+            popupHost = {},
+            bottomBar = {
+                ZlibBottomBar(
+                    selectedTab,
+                    onTabSelected = { tab ->
+                        if (readingTap.register(tab == ZlibTab.Popular, SystemClock.uptimeMillis())) {
+                            tabStates[ZlibTab.Popular.ordinal].apply {
+                                heightOffset = 0f
+                                contentOffset = 0f
+                                overscrollOffset = 0f
+                            }
+                            onReadingDoubleTap()
+                        }
+                        onTabSelected(tab)
+                    },
+                    backdrop = backdrop,
+                )
+            },
+        ) { shellPadding ->
+            val changing = transition.isRunning || transition.currentState != transition.targetState
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .clipToBounds()
+                    .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)
+                    .background(background)
+                    .then(
+                        if (changing) Modifier.pointerInput(Unit) {
+                            awaitPointerEventScope {
+                                while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                            }
+                        } else Modifier,
+                    ),
+            ) {
+                transition.AnimatedContent(
+                    modifier = Modifier.fillMaxSize(),
+                    transitionSpec = {
+                        val towards = if ((targetState.ordinal > initialState.ordinal) != rtl) SlideDirection.Left else SlideDirection.Right
+                        slideIntoContainer(towards, tween(150, easing = FastOutSlowInEasing))
+                            .togetherWith(slideOutOfContainer(towards, tween(150, easing = FastOutSlowInEasing)))
+                            .using(null)
+                    },
+                ) { tab ->
+                    PageFrame(
+                        title = tab.label,
+                        appBarState = tabStates[tab.ordinal],
+                        providedPageScroll = tabScrolls[tab.ordinal],
+                        expandable = true,
+                        onSearch = onOpenSearch.takeIf { tab == ZlibTab.Popular },
+                        onDownloads = onOpenDownloads.takeIf { tab == ZlibTab.Popular },
+                        topBarContent = { topBarContent(tab) },
+                        // Reserve the fixed bar's measured height, including its safe inset.
+                        bottomBar = { Spacer(Modifier.fillMaxWidth().height(shellPadding.calculateBottomPadding())) },
+                    ) { padding ->
+                        content(tab, padding)
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -107,21 +191,24 @@ fun ZlibPage(
     topBarContent: @Composable () -> Unit = {},
     content: @Composable (PaddingValues) -> Unit,
 ) {
-    PageFrame(
-        title = title,
-        appBarState = rememberTopAppBarState(),
-        expandable = expandable,
-        onBack = onBack,
-        actions = actions,
-        topBarContent = topBarContent,
-        content = content,
-    )
+    ZlibOverlayHost {
+        PageFrame(
+            title = title,
+            appBarState = rememberTopAppBarState(),
+            expandable = expandable,
+            onBack = onBack,
+            actions = actions,
+            topBarContent = topBarContent,
+            content = content,
+        )
+    }
 }
 
 @Composable
 private fun PageFrame(
     title: String,
     appBarState: TopAppBarState,
+    providedPageScroll: ZlibPageScroll? = null,
     expandable: Boolean = false,
     onBack: (() -> Unit)? = null,
     onSearch: (() -> Unit)? = null,
@@ -132,8 +219,9 @@ private fun PageFrame(
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val backdrop = if (LocalZlibGlass.current) rememberLayerBackdrop() else null
-    val scrollBehavior = MiuixScrollBehavior(state = appBarState)
-    val pageScroll = remember(scrollBehavior) { ZlibPageScroll(scrollBehavior) }
+    val defaultScrollBehavior = MiuixScrollBehavior(state = appBarState)
+    val pageScroll = providedPageScroll ?: remember(defaultScrollBehavior) { ZlibPageScroll(defaultScrollBehavior) }
+    val scrollBehavior = pageScroll.behavior
     val scrolled by remember(pageScroll) {
         derivedStateOf { pageScroll.content?.canScrollBackward == true || appBarState.overscrollOffset < -1f }
     }
@@ -155,52 +243,50 @@ private fun PageFrame(
         }
     }
 
-    ZlibOverlayHost {
-        Scaffold(
-            modifier = Modifier.fillMaxSize(),
-            containerColor = background,
-            contentWindowInsets = safeInsets.union(WindowInsets.ime),
-            popupHost = {},
-            topBar = {
-                if (backdrop != null) {
-                    GlassTopAppBar(
-                        title = title,
-                        backdrop = backdrop,
-                        expandable = expandable,
-                        progressiveBlur = true,
-                        scrollBehavior = scrollBehavior,
-                        isContentScrolled = scrolled,
-                        style = GlassDefaults.style(zlibIsDark()),
-                        stroke = zlibGlassStroke(),
-                        navigationIcon = navigationIcon,
-                        actions = topActions,
-                        bottomContent = {
-                            CompositionLocalProvider(LocalTopBarGlass provides TopBarGlass(backdrop, scrolled), content = topBarContent)
-                        },
-                    )
-                } else {
-                    TopAppBar(
-                        title = title,
-                        expandable = expandable,
-                        scrollBehavior = scrollBehavior,
-                        color = background,
-                        navigationIcon = navigationIcon,
-                        actions = topActions,
-                        bottomContent = topBarContent,
-                    )
-                }
-            },
-            bottomBar = { bottomBar(backdrop) },
-        ) { padding ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)
-                    .background(background),
-            ) {
-                CompositionLocalProvider(LocalZlibPageScroll provides pageScroll) {
-                    content(remember(padding) { ZlibContentPadding(padding) })
-                }
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        containerColor = background,
+        contentWindowInsets = safeInsets.union(WindowInsets.ime),
+        popupHost = {},
+        topBar = {
+            if (backdrop != null) {
+                GlassTopAppBar(
+                    title = title,
+                    backdrop = backdrop,
+                    expandable = expandable,
+                    progressiveBlur = true,
+                    scrollBehavior = scrollBehavior,
+                    isContentScrolled = scrolled,
+                    style = GlassDefaults.style(zlibIsDark()),
+                    stroke = zlibGlassStroke(),
+                    navigationIcon = navigationIcon,
+                    actions = topActions,
+                    bottomContent = {
+                        CompositionLocalProvider(LocalTopBarGlass provides TopBarGlass(backdrop, scrolled), content = topBarContent)
+                    },
+                )
+            } else {
+                TopAppBar(
+                    title = title,
+                    expandable = expandable,
+                    scrollBehavior = scrollBehavior,
+                    color = background,
+                    navigationIcon = navigationIcon,
+                    actions = topActions,
+                    bottomContent = topBarContent,
+                )
+            }
+        },
+        bottomBar = { bottomBar(backdrop) },
+    ) { padding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)
+                .background(background),
+        ) {
+            CompositionLocalProvider(LocalZlibPageScroll provides pageScroll) {
+                content(remember(padding) { ZlibContentPadding(padding) })
             }
         }
     }
@@ -241,6 +327,18 @@ fun ZlibFilterButton(active: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
+fun ZlibBookInfoButton(enabled: Boolean, onClick: () -> Unit) {
+    TopBarButton(
+        icon = MiuixIcons.Glass.Normal.Info,
+        description = "出版与文件信息",
+        onClick = onClick,
+        glass = LocalZlibGlass.current,
+        enabled = enabled,
+        tint = if (enabled) MiuixTheme.colorScheme.onSurface else MiuixTheme.colorScheme.onSurfaceVariantSummary,
+    )
+}
+
+@Composable
 private fun TopBarButton(
     icon: ImageVector,
     description: String,
@@ -248,6 +346,7 @@ private fun TopBarButton(
     glass: Boolean,
     modifier: Modifier = Modifier,
     tint: Color = MiuixTheme.colorScheme.onSurface,
+    enabled: Boolean = true,
 ) {
     val iconContent: @Composable () -> Unit = {
         Icon(
@@ -259,13 +358,17 @@ private fun TopBarButton(
     }
     if (glass) {
         GlassIconButton(
-            onClick = onClick,
-            modifier = modifier.semantics { role = Role.Button },
+            onClick = { if (enabled) onClick() },
+            modifier = modifier.semantics {
+                role = Role.Button
+                if (!enabled) disabled()
+            },
             content = iconContent,
         )
     } else {
         IconButton(
             onClick = onClick,
+            enabled = enabled,
             modifier = modifier.size(GlassTopAppBarDefaults.ButtonSize),
             content = iconContent,
         )

@@ -10,6 +10,7 @@ import com.qgming.zlib.core.designsystem.userMessage
 import com.qgming.zlib.core.model.Account
 import com.qgming.zlib.core.model.DomainCheck
 import com.qgming.zlib.core.model.ThemeMode
+import com.qgming.zlib.core.model.BookGridColumns
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.channels.Channel
@@ -28,6 +29,7 @@ data class SettingsUiState(
     val customHosts: Set<String> = emptySet(),
     val lockedHost: String? = null,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val bookGridColumns: BookGridColumns = BookGridColumns.AUTO,
     val directory: String? = null,
     val account: Account? = null,
 )
@@ -60,6 +62,7 @@ class SettingsViewModel @Inject constructor(
             customHosts = settings.customHosts,
             lockedHost = settings.lockedHost,
             themeMode = settings.themeMode,
+            bookGridColumns = settings.bookGridColumns,
         )
     }.combine(directory) { settings, name -> settings.copy(directory = name) }
         .combine(accountRepository.account) { settings, account -> settings.copy(account = account) }
@@ -116,6 +119,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setThemeMode(mode: ThemeMode) {
         viewModelScope.launch { domainRepository.setThemeMode(mode) }
+    }
+
+    fun setBookGridColumns(columns: BookGridColumns) {
+        viewModelScope.launch { domainRepository.setBookGridColumns(columns) }
     }
 
     fun setDownloadDirectory(uri: android.net.Uri) {

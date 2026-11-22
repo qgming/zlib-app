@@ -108,6 +108,39 @@ class EapiClient(
     suspend fun downloadHistory(page: Int): AppResult<BookPage> =
         accountBooks(EapiEndpoints.DOWNLOADED, page, includeHistoryDate = true)
 
+    /** Favorite membership is by numeric ID, including list entries without a download hash. */
+    suspend fun isBookSaved(id: String): AppResult<Boolean> {
+        if (!NUMERIC_BOOK_ID.matches(id)) return AppResult.Failure(AppError.Parse("收藏需要数字图书 ID"))
+        val auth = sessionProvider() ?: return AppResult.Failure(AppError.NotLoggedIn)
+        var page = 1
+        while (true) {
+            if (sessionProvider() != auth) return AppResult.Failure(AppError.SessionExpired)
+            val result = execute("${EapiEndpoints.SAVED}?page=$page&limit=50", null, auth, isGet = true)
+            if (result is AppResult.Failure) return result
+            val root = (result as AppResult.Success).value.root
+            val books = root.array("books") ?: return AppResult.Failure(AppError.Parse("响应缺少 books 字段"))
+            val ids = books.map { (it as? JsonObject)?.stringOrNull("id") }
+            if (ids.any { it == id }) return AppResult.Success(true)
+            if (ids.any { it == null }) return AppResult.Failure(AppError.Parse("收藏列表缺少图书 ID"))
+            val pagination = root.obj("pagination")
+            val current = pagination?.intOrNull("current")
+            val total = pagination?.intOrNull("total_pages")
+            if (page == 1 && books.isEmpty() && total == 0) return AppResult.Success(false)
+            if (current != page || total == null || total < current) {
+                return AppResult.Failure(AppError.Parse("无法确认收藏列表的分页状态"))
+            }
+            if (current == total) return AppResult.Success(false)
+            page++
+        }
+    }
+
+    suspend fun setBookSaved(id: String, saved: Boolean): AppResult<Unit> {
+        if (!NUMERIC_BOOK_ID.matches(id)) return AppResult.Failure(AppError.Parse("收藏需要数字图书 ID"))
+        val auth = sessionProvider() ?: return AppResult.Failure(AppError.NotLoggedIn)
+        val path = if (saved) EapiEndpoints.saveBook(id) else EapiEndpoints.unsaveBook(id)
+        return execute(path, null, auth, isGet = true).mapCatching { Unit }
+    }
+
     private suspend fun accountBooks(path: String, page: Int, includeHistoryDate: Boolean): AppResult<BookPage> {
         val auth = sessionProvider() ?: return AppResult.Failure(AppError.NotLoggedIn)
         val requestedPage = page.coerceAtLeast(1)
@@ -356,6 +389,7 @@ class EapiClient(
 
     companion object {
         private const val TAG = "Eapi"
+        private val NUMERIC_BOOK_ID = Regex("[0-9]{1,32}")
         private val EMPTY_FORM: FormBody = FormBody.Builder().build()
     }
 }

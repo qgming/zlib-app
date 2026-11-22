@@ -4,24 +4,53 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.fromHtml
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.qgming.zlib.core.designsystem.ZlibBookInfoButton
 import com.qgming.zlib.core.designsystem.ZlibCard
 import com.qgming.zlib.core.designsystem.ZlibCardList
 import com.qgming.zlib.core.designsystem.ZlibCover
+import com.qgming.zlib.core.designsystem.ZlibGlassBottomSheet
 import com.qgming.zlib.core.designsystem.ZlibLoading
 import com.qgming.zlib.core.designsystem.ZlibPage
 import com.qgming.zlib.core.designsystem.ZlibStateCard
@@ -36,13 +65,25 @@ fun DetailScreen(
     id: String,
     hash: String,
     onBack: () -> Unit,
+    onSearchContributor: (String) -> Unit,
+    previewBook: Book? = null,
     viewModel: DetailViewModel = hiltViewModel(key = "$id:$hash"),
+    favoriteViewModel: BookFavoriteViewModel = hiltViewModel(key = "$id:$hash:favorite"),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val favorite by favoriteViewModel.state.collectAsStateWithLifecycle()
+    var showInfo by rememberSaveable(id, hash) { mutableStateOf(false) }
     LaunchedEffect(id, hash) { viewModel.load(id, hash) }
+    LaunchedEffect(id, hash) { favoriteViewModel.load(id) }
 
-    ZlibPage(title = "图书详情", onBack = onBack) { padding ->
-        val book = state.book
+    ZlibPage(
+        title = "图书详情",
+        onBack = onBack,
+        actions = {
+            ZlibBookInfoButton(enabled = state.book != null, onClick = { showInfo = true })
+        },
+    ) { padding ->
+        val book = state.book ?: previewBook?.takeIf { it.ref == "$id:$hash" }
         val error = state.error
         ZlibCardList(padding) {
             if (book == null) {
@@ -54,19 +95,44 @@ fun DetailScreen(
                     }
                 }
             } else {
-                item { BookHeader(book) }
-                item { DownloadCard(message = state.message, onDownload = viewModel::download) }
-                item { MetadataCard(book) }
-                if (book.description.isNotBlank()) {
+                favorite.error?.let { message ->
+                    item(key = "favorite-error") {
+                        ZlibStateCard("无法同步收藏", message, onAction = favoriteViewModel::retry)
+                    }
+                }
+                item { BookHeader(book, onSearchContributor) }
+                if (state.book == null) {
+                    item {
+                        if (error != null) {
+                            ZlibStateCard("无法加载图书详情", error, onAction = viewModel::retry)
+                        } else {
+                            ZlibLoading()
+                        }
+                    }
+                } else {
+                    item {
+                        BookActions(
+                            favorite = favorite,
+                            message = state.message,
+                            onDownload = viewModel::download,
+                            onFavorite = favoriteViewModel::toggle,
+                        )
+                    }
+                }
+                if (state.book != null && book.description.isNotBlank()) {
                     item { DescriptionCard(book.description) }
                 }
             }
+        }
+
+        ZlibGlassBottomSheet(show = showInfo && state.book != null, title = "出版与文件信息", onDismiss = { showInfo = false }) {
+            state.book?.let { BookInfoPanel(it) }
         }
     }
 }
 
 @Composable
-private fun BookHeader(book: Book) {
+private fun BookHeader(book: Book, onSearchContributor: (String) -> Unit) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -76,11 +142,14 @@ private fun BookHeader(book: Book) {
             url = book.coverUrl,
             modifier = Modifier.size(width = 160.dp, height = 240.dp),
             contentScale = ContentScale.Fit,
+            title = book.title,
+            authors = book.authors,
         )
         Text(
             text = book.title,
             modifier = Modifier.padding(top = 10.dp).widthIn(max = 520.dp),
             style = MiuixTheme.textStyles.title3,
+            fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center,
         )
         if (book.subtitle.isNotBlank()) {
@@ -92,14 +161,11 @@ private fun BookHeader(book: Book) {
             )
         }
         if (book.authors.isNotBlank()) {
-            Text(book.authors, style = MiuixTheme.textStyles.body2, textAlign = TextAlign.Center)
+            ContributorText(book.authors, onSearchContributor)
         }
-        val rating = book.rating?.let { "★ ${"%.1f".format(it)}" }.orEmpty()
-        val summary = listOf(book.extension.uppercase(), book.language, book.year, rating)
-            .filter(String::isNotBlank).joinToString(" · ")
-        if (summary.isNotBlank()) {
+        book.rating?.let { rating ->
             Text(
-                text = summary,
+                text = "★ ${"%.1f".format(rating)}",
                 style = MiuixTheme.textStyles.footnote1,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 textAlign = TextAlign.Center,
@@ -109,48 +175,116 @@ private fun BookHeader(book: Book) {
 }
 
 @Composable
-private fun DownloadCard(message: String?, onDownload: () -> Unit) {
-    ZlibCard {
-        Button(
-            onClick = onDownload,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColorsPrimary(),
-        ) {
-            Text("下载图书")
+private fun ContributorText(authors: String, onSearch: (String) -> Unit) {
+    val names = remember(authors) { ContributorNames.parse(authors) }
+    val blue = MiuixTheme.colorScheme.primary
+    val links = buildAnnotatedString {
+        append(authors)
+        names.forEach { name ->
+            addLink(
+                LinkAnnotation.Clickable(
+                    tag = "搜索作者：${name.query}",
+                    styles = TextLinkStyles(style = SpanStyle(color = blue, fontWeight = FontWeight.Medium)),
+                    linkInteractionListener = { onSearch(name.query) },
+                ),
+                name.start,
+                name.end,
+            )
         }
-        Text(
-            text = message ?: "首次下载前，请在「设置 → 下载目录」选择保存文件夹。",
-            modifier = Modifier.padding(top = 8.dp),
-            style = MiuixTheme.textStyles.footnote1,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-        )
+    }
+    Text(links, style = MiuixTheme.textStyles.body2, textAlign = TextAlign.Center)
+}
+
+@Composable
+private fun BookActions(
+    favorite: BookFavoriteState,
+    message: String?,
+    onDownload: () -> Unit,
+    onFavorite: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Button(
+                onClick = onDownload,
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColorsPrimary(),
+            ) { Text("下载图书") }
+            Button(
+                onClick = onFavorite,
+                enabled = favorite.saved != null && !favorite.busy,
+                modifier = Modifier.weight(1f).semantics {
+                    selected = favorite.saved == true
+                    stateDescription = when {
+                        favorite.busy -> "正在同步收藏"
+                        favorite.saved == true -> "已收藏，点击取消收藏"
+                        favorite.saved == false -> "未收藏"
+                        else -> "收藏状态未知"
+                    }
+                },
+                colors = if (favorite.saved == true) ButtonDefaults.buttonColors(
+                    color = Color(0xFFE53935).copy(alpha = 0.1f),
+                    contentColor = Color(0xFFE53935),
+                ) else ButtonDefaults.buttonColors(),
+            ) { Text(if (favorite.saved == true) "已收藏" else "添加收藏") }
+        }
+        if (message != null) {
+            Text(
+                text = message,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                style = MiuixTheme.textStyles.footnote1,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        }
     }
 }
 
 @Composable
-private fun MetadataCard(book: Book) {
-    ZlibCard {
-        Text("出版与文件信息", style = MiuixTheme.textStyles.title4)
-        Spacer(Modifier.height(8.dp))
-        MetaRow("出版社", book.publisher)
-        MetaRow("出版年份", book.year)
-        MetaRow("语言", book.language)
-        MetaRow("版次", book.edition)
-        MetaRow("页数", book.pages?.toString().orEmpty())
-        MetaRow("文件格式", book.extension.uppercase())
-        MetaRow("文件大小", book.sizeBytes?.sizeText().orEmpty())
-        MetaRow("ISBN-10", book.isbn10)
-        MetaRow("ISBN-13", book.isbn13)
-        MetaRow("分类", book.categories.joinToString(" / "))
+private fun BookInfoPanel(book: Book) {
+    SelectionContainer {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .windowInsetsPadding(
+                    WindowInsets.systemBars.union(WindowInsets.displayCutout)
+                        .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
+                )
+                .padding(bottom = 16.dp),
+        ) {
+            MetaRow("出版社", book.publisher)
+            MetaRow("出版年份", book.year)
+            MetaRow("语言", book.language)
+            MetaRow("版次", book.edition)
+            MetaRow("页数", book.pages?.toString().orEmpty())
+            MetaRow("文件格式", book.extension.uppercase())
+            MetaRow("文件大小", book.sizeBytes?.sizeText().orEmpty())
+            MetaRow("ISBN-10", book.isbn10)
+            MetaRow("ISBN-13", book.isbn13)
+            MetaRow("分类", book.categories.joinToString(" / "))
+        }
     }
 }
 
 @Composable
 private fun DescriptionCard(description: String) {
+    val formatted = remember(description) { AnnotatedString.fromHtml(BookDescription.html(description)) }
+    if (formatted.isBlank()) return
     ZlibCard {
         Text("简介", style = MiuixTheme.textStyles.title4)
-        Spacer(Modifier.height(8.dp))
-        Text(description, style = MiuixTheme.textStyles.body2)
+        Spacer(Modifier.height(12.dp))
+        SelectionContainer {
+            Text(
+                text = formatted,
+                style = MiuixTheme.textStyles.body2.copy(lineHeight = MiuixTheme.textStyles.body2.fontSize * 1.65f),
+            )
+        }
     }
 }
 

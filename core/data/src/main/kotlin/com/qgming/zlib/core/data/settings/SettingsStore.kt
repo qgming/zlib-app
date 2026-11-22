@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.qgming.zlib.core.common.AppDispatchers
+import com.qgming.zlib.core.model.BookGridColumns
 import com.qgming.zlib.core.model.ThemeMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
@@ -27,6 +28,7 @@ data class AppSettings(
     val currentHost: String? = null,
     val lockedHost: String? = null,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val bookGridColumns: BookGridColumns = BookGridColumns.AUTO,
     val downloadTreeUri: String? = null,
 )
 
@@ -37,6 +39,7 @@ interface SettingsStore {
     suspend fun setCustomHosts(hosts: Set<String>)
     suspend fun setLockedHost(host: String?)
     suspend fun setThemeMode(mode: ThemeMode)
+    suspend fun setBookGridColumns(columns: BookGridColumns)
     suspend fun setDownloadTreeUri(uri: String?)
 }
 
@@ -75,6 +78,10 @@ class DataStoreSettingsStore @Inject constructor(
         prefs[THEME_MODE] = mode.name
     }
 
+    override suspend fun setBookGridColumns(columns: BookGridColumns) = edit { prefs ->
+        prefs[BOOK_GRID_COLUMNS] = columns.name
+    }
+
     override suspend fun setDownloadTreeUri(uri: String?) = edit { prefs ->
         if (uri.isNullOrBlank()) prefs.remove(DOWNLOAD_TREE) else prefs[DOWNLOAD_TREE] = uri
     }
@@ -88,6 +95,7 @@ class DataStoreSettingsStore @Inject constructor(
         currentHost = this[CURRENT_HOST]?.takeIf { it.isNotBlank() },
         lockedHost = this[LOCKED_HOST]?.takeIf { it.isNotBlank() },
         themeMode = ThemeMode.fromPreference(this[THEME_MODE]),
+        bookGridColumns = BookGridColumns.fromPreference(this[BOOK_GRID_COLUMNS]),
         downloadTreeUri = this[DOWNLOAD_TREE],
     )
 
@@ -96,6 +104,7 @@ class DataStoreSettingsStore @Inject constructor(
         private val CURRENT_HOST = stringPreferencesKey("current_host")
         private val LOCKED_HOST = stringPreferencesKey("locked_host")
         private val THEME_MODE = stringPreferencesKey("theme_mode")
+        private val BOOK_GRID_COLUMNS = stringPreferencesKey("book_grid_columns")
         private val DOWNLOAD_TREE = stringPreferencesKey("download_tree")
     }
 }

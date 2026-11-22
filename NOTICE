@@ -27,5 +27,15 @@ Third-party software and references
    project talks to it directly at the user's request and may stop working when
    upstream changes fields, authentication, or domains.
 
+5. ITGSA SharedView Kit / SharedViewDemo
+   https://gitee.com/itgsa_sharedviewkit/SharedViewDemo
+   SharedView Kit 1.0.0.5 is included as the separate SDK binary supplied by
+   that repository at b449a426a340f1827d942592bddf0a416eae3ac4. The example
+   repository uses MIT; its NOTICE states that the independent SDK's license
+   follows its own release terms. Do not assume the example MIT license
+   covers the SDK binary. See app/libs/README.md and docs/ANIMATIONS.md for
+   provenance, checksum, integration details, and release-license status.
+   No example image assets are included.
+
 No Z-Library name, logo, or other trademark is claimed by this project. The
 "Zlib" name is used only to describe the client's purpose.

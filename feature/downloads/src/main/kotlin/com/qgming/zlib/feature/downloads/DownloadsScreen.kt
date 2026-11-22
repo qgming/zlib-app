@@ -25,6 +25,9 @@ import com.qgming.zlib.core.designsystem.ZlibCover
 import com.qgming.zlib.core.designsystem.ZlibLoading
 import com.qgming.zlib.core.designsystem.ZlibLoadingStatus
 import com.qgming.zlib.core.designsystem.ZlibPage
+import com.qgming.zlib.core.designsystem.ZlibPreferenceGroup
+import com.qgming.zlib.core.designsystem.ZlibPreferenceIcon
+import com.qgming.zlib.core.designsystem.ZlibPreferenceLink
 import com.qgming.zlib.core.designsystem.ZlibSectionTitle
 import com.qgming.zlib.core.designsystem.ZlibStateCard
 import com.qgming.zlib.core.model.DownloadItem
@@ -37,6 +40,8 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 @Composable
 fun DownloadsScreen(
     onBack: () -> Unit,
+    onOpenFiles: () -> Unit,
+    onOpenHistory: () -> Unit,
     viewModel: DownloadsViewModel = hiltViewModel(),
 ) {
     val queue by viewModel.queue.collectAsStateWithLifecycle()
@@ -49,6 +54,12 @@ fun DownloadsScreen(
 
     ZlibPage(title = "下载管理", onBack = onBack) { padding ->
         ZlibCardList(padding) {
+            item(key = "download-library-links") {
+                ZlibPreferenceGroup("图书与文件") {
+                    ZlibPreferenceLink("本机文件", "分享或删除已保存到此设备的文件", ZlibPreferenceIcon.Downloads, onOpenFiles)
+                    ZlibPreferenceLink("云端下载记录", "查看 Z-Library 账号在各设备上的下载记录", ZlibPreferenceIcon.Account, onOpenHistory)
+                }
+            }
             notice?.let { message ->
                 item(key = "download-notice") {
                     ZlibStateCard("下载提示", message, actionLabel = "知道了", onAction = { notice = null })
@@ -66,7 +77,7 @@ fun DownloadsScreen(
                 items(tasks, key = { it.id }) { item -> DownloadRow(item, viewModel) }
             }
             if (records.isNotEmpty()) {
-                item(key = "download-records") { ZlibSectionTitle("已完成") }
+                item(key = "download-records") { ZlibSectionTitle("已完成的本机任务") }
                 items(records, key = { it.id }) { item -> DownloadRow(item, viewModel) }
             }
         }
@@ -84,6 +95,8 @@ private fun DownloadRow(
         Row(verticalAlignment = Alignment.CenterVertically) {
             ZlibCover(
                 url = item.coverUrl,
+                title = item.title.ifBlank { item.fileName },
+                authors = item.authors,
                 modifier = Modifier.width(56.dp).height(84.dp),
             )
             Spacer(Modifier.width(12.dp))
@@ -131,7 +144,7 @@ private fun DownloadRow(
                 DownloadState.PAUSED -> TextButton(text = "继续", onClick = { viewModel.resume(item.id) })
                 DownloadState.FAILED -> TextButton(text = "重试", onClick = { viewModel.retry(item.id) })
                 DownloadState.CANCELLED -> TextButton(text = "重新下载", onClick = { viewModel.retry(item.id) })
-                DownloadState.COMPLETED -> TextButton(text = "移除记录", onClick = { viewModel.remove(item.id) })
+                DownloadState.COMPLETED -> TextButton(text = "移除任务记录", onClick = { viewModel.remove(item.id) })
             }
             if (item.state in CancellableStates) {
                 TextButton(text = "取消", onClick = { viewModel.cancel(item.id) })

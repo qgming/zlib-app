@@ -41,6 +41,15 @@ class SearchViewModel @Inject constructor(
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
     private var submittedQuery: SearchQuery? = null
     private var request: Job? = null
+    private var initialQueryApplied = false
+
+    /** A route may re-enter composition after details; never reset its edited query or pages. */
+    fun initializeQuery(query: String) {
+        if (initialQueryApplied || query.isBlank()) return
+        initialQueryApplied = true
+        _state.value = SearchUiState(query = query.trim())
+        search()
+    }
 
     fun onQueryChange(value: String) = _state.update { it.copy(query = value, error = null) }
 

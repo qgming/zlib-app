@@ -26,4 +26,6 @@ object EapiEndpoints {
     fun detail(id: String, hash: String): String = "/eapi/book/$id/$hash"
     fun file(id: String, hash: String): String = "/eapi/book/$id/$hash/file"
     fun deleteHistory(id: String): String = "/eapi/user/book/$id/delete"
+    fun saveBook(id: String): String = "/eapi/user/book/$id/save"
+    fun unsaveBook(id: String): String = "/eapi/user/book/$id/unsave"
 }

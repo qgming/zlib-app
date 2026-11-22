@@ -11,7 +11,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.glass.GlassDropdownPreference
 import top.yukonga.miuix.kmp.glass.GlassPopupDefaults
@@ -20,16 +19,23 @@ import top.yukonga.miuix.kmp.icon.glass.Contacts
 import top.yukonga.miuix.kmp.icon.glass.Download
 import top.yukonga.miuix.kmp.icon.glass.Link
 import top.yukonga.miuix.kmp.icon.glass.Theme
+import top.yukonga.miuix.kmp.icon.glass.BookOutline
 import top.yukonga.miuix.kmp.material.GlassDefaults
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 enum class ZlibPreferenceIcon(internal val icon: ImageVector) {
-    Account(MiuixIcons.Glass.Contacts),
-    Downloads(MiuixIcons.Glass.Download),
-    Domain(MiuixIcons.Glass.Link),
-    Color(MiuixIcons.Glass.Theme),
+    Account(MiuixIcons.Glass.Normal.Contacts),
+    Downloads(MiuixIcons.Glass.Normal.Download),
+    Domain(MiuixIcons.Glass.Normal.Link),
+    Color(MiuixIcons.Glass.Normal.Theme),
+    Books(MiuixIcons.Glass.Normal.BookOutline),
 }
+
+private val PreferenceIconSpacing = 15.dp
+// BasicComponent contributes 8dp between startAction and its text.
+private val ComponentIconSpacing = 8.dp
+private val PreferenceRowMargin = PaddingValues(horizontal = PreferenceIconSpacing, vertical = 14.dp)
 
 @Composable
 fun ZlibPreferenceGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
@@ -45,7 +51,7 @@ fun ZlibPreferenceLink(title: String, summary: String, icon: ZlibPreferenceIcon,
         title = title,
         summary = summary,
         startAction = { PreferenceIcon(icon) },
-        insideMargin = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+        insideMargin = PreferenceRowMargin,
         onClick = onClick,
     )
 }
@@ -70,14 +76,9 @@ fun ZlibPreferenceMenu(
             containerColor = MiuixTheme.colorScheme.surfaceContainer,
         ),
         startAction = { PreferenceIcon(icon) },
-        insideMargin = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+        insideMargin = PreferenceRowMargin,
         onSelectedIndexChange = onSelect,
     )
-}
-
-@Composable
-fun ZlibPreferenceDivider() {
-    HorizontalDivider(modifier = Modifier.padding(start = 24.dp + preferenceIconSize(), end = 16.dp))
 }
 
 @Composable
@@ -86,11 +87,11 @@ private fun PreferenceIcon(icon: ZlibPreferenceIcon) {
         imageVector = icon.icon,
         contentDescription = null,
         tint = MiuixTheme.colorScheme.onBackground,
-        modifier = Modifier.size(preferenceIconSize()),
+        modifier = Modifier.padding(end = PreferenceIconSpacing - ComponentIconSpacing).size(preferenceIconSize()),
     )
 }
 
 @Composable
 private fun preferenceIconSize() = with(LocalDensity.current) {
-    MiuixTheme.textStyles.headline1.fontSize.toDp() * 1.25f
+    (MiuixTheme.textStyles.headline1.fontSize.toDp() * 1.3f).coerceAtLeast(26.dp)
 }

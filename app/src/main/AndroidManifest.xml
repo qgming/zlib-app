@@ -28,6 +28,12 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".BookDetailActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Zlib"
+            android:windowSoftInputMode="adjustResize" />
+
         <service
             android:name="com.qgming.zlib.core.data.download.DownloadService"
             android:exported="false"

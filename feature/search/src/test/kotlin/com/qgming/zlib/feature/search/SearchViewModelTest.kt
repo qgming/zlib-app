@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import okhttp3.OkHttpClient
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import kotlin.test.Test
@@ -21,6 +22,56 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SearchViewModelTest {
+    @Test
+    fun `contributor query auto searches once without old filters and survives reentry`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            MockWebServer().use { server ->
+                val client = EapiClient(
+                    client = OkHttpClient(),
+                    baseUrlProvider = { server.url("/").toString() },
+                    sessionProvider = { null },
+                    dispatchers = object : AppDispatchers {
+                        override val io = dispatcher
+                        override val default = dispatcher
+                        override val main = dispatcher
+                    },
+                    maxAttempts = 1,
+                )
+                val viewModel = SearchViewModel(BookRepository(client))
+                viewModel.applyFilters(SearchFilters(languages = setOf("english"), exact = true))
+                viewModel.initializeQuery(" ")
+                assertEquals(0, server.requestCount)
+                server.enqueue(bookPage(id = 1, page = 1))
+                viewModel.initializeQuery(" 丹尼尔·卡尼曼 ")
+                viewModel.initializeQuery("丹尼尔·卡尼曼")
+                advanceUntilIdle()
+                val request = assertNotNull(server.takeRequest(2, TimeUnit.SECONDS))
+                assertEquals("/eapi/book/search", request.path)
+                val form = ("https://example.test/?" + request.body.readUtf8()).toHttpUrl()
+                assertEquals(setOf("message", "page", "limit"), form.queryParameterNames)
+                assertEquals("丹尼尔·卡尼曼", form.queryParameter("message"))
+                assertEquals("1", form.queryParameter("page"))
+                assertEquals(SearchFilters(), viewModel.state.value.filters)
+
+                server.enqueue(bookPage(id = 2, page = 2))
+                viewModel.loadMore()
+                advanceUntilIdle()
+                server.nextForm()
+                viewModel.onQueryChange("edited query")
+                viewModel.initializeQuery("丹尼尔·卡尼曼")
+                advanceUntilIdle()
+                assertEquals("edited query", viewModel.state.value.query)
+                assertEquals(2, viewModel.state.value.page)
+                assertEquals(listOf("1", "2"), viewModel.state.value.books.map { it.id })
+                assertEquals(2, server.requestCount)
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
     @Test
     fun `pagination keeps the submitted query and applying filters starts at page one`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)

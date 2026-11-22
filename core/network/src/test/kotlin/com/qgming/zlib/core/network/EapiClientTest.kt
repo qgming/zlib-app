@@ -229,14 +229,15 @@ class EapiClientTest {
         server.enqueue(
             enqueueJson(
                 """{"success":1,"pagination":{"current":2,"total_pages":2},"books":[
-                    {"id":7,"hash":"abc","date":"2026-11-20","downloaded_at":"ignored"},
-                    {"id":8,"hash":"def","date":"","downloaded_at":"2026-11-17"}]}""",
+                    {"id":7,"hash":"abc","date_download":"2026-11-20","date":"ignored","downloaded_at":"ignored"},
+                    {"id":8,"hash":"def","date":"","downloaded_at":"2026-11-17"},
+                    {"id":9,"hash":"ghi","date":"2026-11-16"}]}""",
             ),
         )
         val result = assertIs<AppResult.Success<BookPage>>(
             kotlinx.coroutines.runBlocking { client(session()).downloadHistory(page = 2) },
         ).value
-        assertEquals(listOf("2026-11-20", "2026-11-17"), result.books.map { it.historyDate })
+        assertEquals(listOf("2026-11-20", "2026-11-17", "2026-11-16"), result.books.map { it.historyDate })
         assertTrue(result.books.all { it.localUri == null && it.downloadedAt == null })
         assertFalse(result.hasNext)
         val request = server.takeRequest()
@@ -250,6 +251,55 @@ class EapiClientTest {
         kotlinx.coroutines.runBlocking {
             assertEquals(AppResult.Failure(AppError.NotLoggedIn), anonymous.savedBooks(page = 1))
             assertEquals(AppResult.Failure(AppError.NotLoggedIn), anonymous.downloadHistory(page = 1))
+        }
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun `favorite lookup checks later pages by ID even without a download hash`() {
+        server.enqueue(enqueueJson("""{"success":1,"books":[{"id":1,"hash":"abc"}],"pagination":{"current":1,"total_pages":2}}"""))
+        server.enqueue(enqueueJson("""{"success":1,"books":[{"id":7}],"pagination":{"current":2,"total_pages":2}}"""))
+        val saved = kotlinx.coroutines.runBlocking { client(session()).isBookSaved("7") }
+        assertEquals(AppResult.Success(true), saved)
+        assertEquals("/eapi/user/book/saved?page=1&limit=50", server.takeRequest().path)
+        assertEquals("/eapi/user/book/saved?page=2&limit=50", server.takeRequest().path)
+    }
+
+    @Test
+    fun `favorite lookup requires a complete list before reporting not saved`() {
+        server.enqueue(enqueueJson("""{"success":1,"books":[],"pagination":{"current":1,"total_pages":0}}"""))
+        assertEquals(AppResult.Success(false), kotlinx.coroutines.runBlocking { client(session()).isBookSaved("7") })
+        server.enqueue(enqueueJson("""{"success":1,"books":[{"id":1}]}"""))
+        val result = kotlinx.coroutines.runBlocking { client(session()).isBookSaved("7") }
+        assertIs<AppError.Parse>(assertIs<AppResult.Failure>(result).error)
+    }
+
+    @Test
+    fun `save and unsave use the authenticated EAPI and preserve server failures`() {
+        server.enqueue(enqueueJson("""{"success":1}"""))
+        assertEquals(AppResult.Success(Unit), kotlinx.coroutines.runBlocking { client(session()).setBookSaved("7", true) })
+        val savedRequest = server.takeRequest()
+        assertEquals("GET", savedRequest.method)
+        assertEquals("/eapi/user/book/7/save", savedRequest.path)
+        assertEquals("7", savedRequest.getHeader(EapiHeaders.REMIX_USER_ID))
+        assertEquals("key", savedRequest.getHeader(EapiHeaders.REMIX_USER_KEY))
+        assertNotNull(savedRequest.getHeader("Cookie"))
+
+        server.enqueue(enqueueJson("""{"success":0,"error":"Cannot remove"}""", 400))
+        val failure = kotlinx.coroutines.runBlocking { client(session()).setBookSaved("7", false) }
+        assertEquals("Cannot remove", assertIs<AppError.Server>(assertIs<AppResult.Failure>(failure).error).message)
+        assertEquals("/eapi/user/book/7/unsave", server.takeRequest().path)
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `favorite operations reject unsafe IDs and anonymous calls without network requests`() {
+        kotlinx.coroutines.runBlocking {
+            val authenticated = client(session())
+            assertIs<AppError.Parse>(assertIs<AppResult.Failure>(authenticated.setBookSaved("7/unsave", true)).error)
+            assertIs<AppError.Parse>(assertIs<AppResult.Failure>(authenticated.isBookSaved("../7")).error)
+            assertEquals(AppResult.Failure(AppError.NotLoggedIn), client().isBookSaved("7"))
+            assertEquals(AppResult.Failure(AppError.NotLoggedIn), client().setBookSaved("7", false))
         }
         assertEquals(0, server.requestCount)
     }

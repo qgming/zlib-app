@@ -1,0 +1,201 @@
+package com.qgming.zlib.feature.library
+
+import com.qgming.zlib.core.common.AppDispatchers
+import com.qgming.zlib.core.data.library.LibraryRepository
+import com.qgming.zlib.core.data.library.FavoritesRepository
+import com.qgming.zlib.core.data.session.SessionManager
+import com.qgming.zlib.core.data.session.SessionStore
+import com.qgming.zlib.core.model.Session
+import com.qgming.zlib.core.network.EapiClient
+import java.util.concurrent.TimeUnit
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import okhttp3.OkHttpClient
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class LibraryViewModelTest {
+    @Test
+    fun `saved refresh recovers after failure and pagination retains cloud results`() = runTest {
+        withLibrary { server, _, _, viewModel ->
+            server.enqueue(page("""{"id":1,"hash":"abc"}""", 1, 2))
+            viewModel.onSourceShown(CloudLibrarySource.Saved)
+            advanceUntilIdle()
+            assertEquals("/eapi/user/book/saved?page=1&limit=50", server.nextPath())
+
+            server.enqueue(json("""{"success":0,"error":"temporarily unavailable"}"""))
+            viewModel.refresh(CloudLibrarySource.Saved)
+            advanceUntilIdle()
+            assertNotNull(viewModel.remote.value[CloudLibrarySource.Saved]?.error)
+            assertNull(viewModel.remote.value[CloudLibrarySource.Saved]?.request)
+
+            server.enqueue(page("""{"id":2,"hash":"def"}""", 1, 2))
+            viewModel.refresh(CloudLibrarySource.Saved)
+            advanceUntilIdle()
+            assertEquals(listOf("2"), viewModel.remote.value[CloudLibrarySource.Saved]?.page?.books?.map { it.id })
+
+            server.enqueue(page("""{"id":2,"hash":"def"},{"id":3,"hash":"ghi"}""", 2, 2))
+            viewModel.loadMore(CloudLibrarySource.Saved)
+            advanceUntilIdle()
+            assertEquals(listOf("2", "3"), viewModel.remote.value[CloudLibrarySource.Saved]?.page?.books?.map { it.id })
+            assertEquals(4, server.requestCount)
+        }
+    }
+
+    @Test
+    fun `history repairs a missing collection cover using details without overwriting its date`() = runTest {
+        withLibrary { server, _, _, viewModel ->
+            server.enqueue(page(
+                """{"id":1,"hash":"abc","date_download":"2026-11-20","cover":"https://covers.example/collections//abc.jpg"}""",
+            ))
+            viewModel.onSourceShown(CloudLibrarySource.DownloadHistory)
+            advanceUntilIdle()
+            assertEquals("/eapi/user/book/downloaded?page=1&limit=50", server.nextPath())
+            val book = assertNotNull(viewModel.remote.value[CloudLibrarySource.DownloadHistory]?.page?.books?.single())
+            assertEquals("", book.coverUrl)
+            assertEquals(1, server.requestCount) // Offscreen cards do not trigger detail requests.
+
+            val cover = "https://covers.example/collections/userbooks/abc.jpg"
+            server.enqueue(json("""{"success":1,"book":{"id":1,"hash":"abc","cover":"$cover"}}"""))
+            viewModel.loadCover(book)
+            viewModel.loadCover(book)
+            advanceUntilIdle()
+            assertEquals("/eapi/book/1/abc", server.nextPath())
+            val repaired = assertNotNull(viewModel.remote.value[CloudLibrarySource.DownloadHistory]?.page?.books?.single())
+            assertEquals(cover, repaired.coverUrl)
+            assertEquals("2026-11-20", repaired.historyDate)
+            assertNull(repaired.localUri)
+            assertEquals(2, server.requestCount)
+
+            server.enqueue(page("""{"id":1,"hash":"abc","date_download":"2026-11-20"}"""))
+            viewModel.refresh(CloudLibrarySource.DownloadHistory)
+            advanceUntilIdle()
+            assertEquals(cover, viewModel.remote.value[CloudLibrarySource.DownloadHistory]?.page?.books?.single()?.coverUrl)
+        }
+    }
+
+    @Test
+    fun `failed cover lookup keeps the list and is not repeatedly requested`() = runTest {
+        withLibrary { server, _, _, viewModel ->
+            server.enqueue(page("""{"id":1,"hash":"abc"}"""))
+            viewModel.onSourceShown(CloudLibrarySource.DownloadHistory)
+            advanceUntilIdle()
+            val book = assertNotNull(viewModel.remote.value[CloudLibrarySource.DownloadHistory]?.page?.books?.single())
+            server.enqueue(json("""{"success":0,"error":"Book not found"}""", 404))
+            viewModel.loadCover(book)
+            advanceUntilIdle()
+            viewModel.loadCover(book)
+            advanceUntilIdle()
+            assertEquals(listOf(book), viewModel.remote.value[CloudLibrarySource.DownloadHistory]?.page?.books)
+            assertNull(viewModel.remote.value[CloudLibrarySource.DownloadHistory]?.error)
+            assertEquals(2, server.requestCount)
+        }
+    }
+
+    @Test
+    fun `switching accounts discards old lists and cover cache`() = runTest {
+        withLibrary { server, sessions, _, viewModel ->
+            server.enqueue(page("""{"id":1,"hash":"abc"}"""))
+            viewModel.onSourceShown(CloudLibrarySource.Saved)
+            advanceUntilIdle()
+            server.nextPath()
+            val oldBook = assertNotNull(viewModel.remote.value[CloudLibrarySource.Saved]?.page?.books?.single())
+            server.enqueue(json("""{"success":1,"book":{"id":1,"hash":"abc","cover":"https://covers.example/old.jpg"}}"""))
+            viewModel.loadCover(oldBook)
+            advanceUntilIdle()
+            server.nextPath()
+
+            server.enqueue(page("""{"id":1,"hash":"abc"}"""))
+            sessions.save(session("8"))
+            advanceUntilIdle()
+            val newBook = assertNotNull(viewModel.remote.value[CloudLibrarySource.Saved]?.page?.books?.single())
+            assertEquals("", newBook.coverUrl)
+            assertEquals("8", assertNotNull(server.takeRequest(2, TimeUnit.SECONDS)).getHeader("remix-userid"))
+
+            sessions.clear()
+            advanceUntilIdle()
+            assertTrue(viewModel.remote.value.values.all { it.page == null })
+        }
+    }
+
+    @Test
+    fun `successful favorite mutation refreshes an already loaded saved list`() = runTest {
+        withLibrary { server, _, favorites, viewModel ->
+            server.enqueue(page("""{"id":1,"hash":"abc"}"""))
+            viewModel.onSourceShown(CloudLibrarySource.Saved)
+            advanceUntilIdle()
+            server.nextPath()
+            server.enqueue(json("""{"success":1}"""))
+            server.enqueue(page(""))
+            favorites.setSaved("1", false)
+            advanceUntilIdle()
+            assertEquals("/eapi/user/book/1/unsave", server.nextPath())
+            assertEquals("/eapi/user/book/saved?page=1&limit=50", server.nextPath())
+            assertEquals(emptyList(), viewModel.remote.value[CloudLibrarySource.Saved]?.page?.books)
+            assertNull(viewModel.remote.value[CloudLibrarySource.Saved]?.request)
+        }
+    }
+
+    private suspend fun TestScope.withLibrary(
+        block: suspend TestScope.(MockWebServer, SessionManager, FavoritesRepository, LibraryViewModel) -> Unit,
+    ) {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            MockWebServer().use { server ->
+                val dispatchers = object : AppDispatchers {
+                    override val io = dispatcher
+                    override val default = dispatcher
+                    override val main = dispatcher
+                }
+                val sessions = SessionManager(MemorySessionStore(), dispatchers)
+                sessions.save(session("7"))
+                val api = EapiClient(
+                    client = OkHttpClient(),
+                    baseUrlProvider = { server.url("/").toString() },
+                    baseUrlForHost = { server.url("/").toString() },
+                    sessionProvider = sessions::current,
+                    dispatchers = dispatchers,
+                    maxAttempts = 1,
+                )
+                val favorites = FavoritesRepository(api, sessions)
+                block(server, sessions, favorites, LibraryViewModel(LibraryRepository(api), sessions, favorites))
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    private fun session(id: String) = Session(id, "key-$id", "z-lib.sk")
+
+    private class MemorySessionStore : SessionStore {
+        private val current = MutableStateFlow<Session?>(null)
+        override val session = current.asStateFlow()
+        override suspend fun read() = current.value
+        override suspend fun save(session: Session) { current.value = session }
+        override suspend fun clear() { current.value = null }
+    }
+
+    private fun MockWebServer.nextPath(): String? = assertNotNull(takeRequest(2, TimeUnit.SECONDS)).path
+
+    private fun page(books: String, current: Int = 1, total: Int = 1): MockResponse = json(
+        """{"success":1,"books":[$books],"pagination":{"current":$current,"total_pages":$total}}""",
+    )
+
+    private fun json(body: String, code: Int = 200) = MockResponse().setResponseCode(code)
+        .setHeader("Content-Type", "application/json").setBody(body)
+}

@@ -9,6 +9,7 @@ import com.qgming.zlib.core.data.settings.AppSettings
 import com.qgming.zlib.core.data.settings.SettingsStore
 import com.qgming.zlib.core.model.DomainCheck
 import com.qgming.zlib.core.model.ThemeMode
+import com.qgming.zlib.core.model.BookGridColumns
 import com.qgming.zlib.core.network.DomainPolicy
 import com.qgming.zlib.core.network.DomainProbe
 import javax.inject.Inject
@@ -162,6 +163,11 @@ class DomainRepository @Inject constructor(
     suspend fun setThemeMode(mode: ThemeMode) = mutex.withLock {
         settingsStore.setThemeMode(mode)
         _settings.value = currentSettings().copy(themeMode = mode)
+    }
+
+    suspend fun setBookGridColumns(columns: BookGridColumns) = mutex.withLock {
+        settingsStore.setBookGridColumns(columns)
+        _settings.value = currentSettings().copy(bookGridColumns = columns)
     }
 
     /** Called after a successful login/cookie import so the session domain becomes current. */

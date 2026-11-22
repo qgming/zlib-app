@@ -35,7 +35,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.qgming.zlib.core.designsystem.ZlibBookCard
+import com.qgming.zlib.core.designsystem.ZlibBookTile
+import com.qgming.zlib.core.designsystem.ZlibBookOpenRequest
 import com.qgming.zlib.core.designsystem.ZlibBookGrid
 import com.qgming.zlib.core.designsystem.ZlibExactMatchPreference
 import com.qgming.zlib.core.designsystem.ZlibFilterButton
@@ -45,7 +46,6 @@ import com.qgming.zlib.core.designsystem.ZlibPage
 import com.qgming.zlib.core.designsystem.ZlibSearchBar
 import com.qgming.zlib.core.designsystem.ZlibStateCard
 import com.qgming.zlib.core.designsystem.fullWidthItem
-import com.qgming.zlib.core.model.Book
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Surface
@@ -57,7 +57,8 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 @Composable
 fun SearchScreen(
     onBack: () -> Unit,
-    onOpenBook: (Book) -> Unit,
+    onOpenBook: (ZlibBookOpenRequest) -> Unit,
+    initialQuery: String? = null,
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -73,6 +74,7 @@ fun SearchScreen(
         focusManager.clearFocus()
         showFilters = false
     }
+    LaunchedEffect(initialQuery) { initialQuery?.let(viewModel::initializeQuery) }
     LaunchedEffect(state.loading) {
         if (state.loading) listState.scrollToItem(0)
     }
@@ -107,7 +109,7 @@ fun SearchScreen(
                 }
 
                 else -> items(state.books, key = { "result-${it.ref}" }) { book ->
-                    ZlibBookCard(book = book, onClick = { onOpenBook(book) })
+                    ZlibBookTile(book = book, onClick = onOpenBook)
                 }
             }
 
