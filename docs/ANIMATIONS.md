@@ -2,7 +2,7 @@
 
 ## 主导航与统一入口
 
-ADR-039：设置及下载管理顶部等入口复用设计系统组件；卡片内部不绘制行间分割线，左侧图标为 Normal 常规粗细、基准 26dp，图标到卡片左缘和右侧文字各 15dp。账号主标题显示名称，副标题显示邮箱。
+ADR-039/050：设置入口复用设计系统组件，卡片内部不绘制行间分割线；当前所有设置选项移除左侧图标及其预留空间，账号、外观、下载目录、域名管理、关于依次排列（ADR-057）。账号主标题显示名称，副标题显示邮箱。设置分组和无封面的下载任务卡片圆角 24dp；下载卡片操作图标水平靠右，至少 48dp 触摸区域。
 
 ADR-041：底部阅读／书架／设置使用 150ms 的整页横向滑动，距离为当前页面完整宽度；标题、顶栏操作、书架分组和内容一起移动，不叠加淡入淡出。向右侧导航项切换时，新页从右进入、旧页向左退出，反向切换相反；RTL 镜像。底栏保持固定并采样移动页面，保留 Miuix 原生指示器动画；内容底部预留实测底栏高度及安全区。页内滚动和顶栏状态按 tab 分别保留，快速切换可中断动画，同页重复选择不重播，双击阅读继续回顶。没有新增横滑切 tab 手势；Compose 动画遵循系统动画时长缩放。
 
@@ -17,7 +17,7 @@ ADR-041：无缝动画默认尝试启用，不增加设置项；仅依靠 ROM �
 ### 打开与返回
 
 1. 通过 `ViewAnimationManager.isViewAnimationSupported()` 判断能力，返回 `>0` 才尝试 SDK。没有品牌或系统版本硬编码；不支持的设备不记录额外封面绘制层。
-2. 首页热门／推荐、搜索、收藏、云端下载记录、本机文件均通过统一 `ZlibBookOpenRequest` 交由 app 打开详情。支持设备采集实际 Compose 封面的 Bitmap，包括真实封面及经典占位书封；不截取整屏或账号信息。
+2. 首页热门／推荐、搜索、收藏、云端下载记录通过统一 `ZlibBookOpenRequest` 交由 app 打开详情。支持设备采集实际 Compose 封面的 Bitmap，包括真实封面及经典占位书封；不截取整屏或账号信息。按 ADR-049，书架“本机”单击通过外部阅读器打开实际文件，不再参加图书详情 Activity 转场。
 3. 从 `getViewAnimationExtras()[EXTRA_BOUNDS]` 读取 WINDOW／SCREEN 声明，显式 token 优先；默认 SCREEN。启动及返回使用相同规则，矩形单位 px；圆角按 8dp × density 转 px；填充色使用列表页真实底色。
 4. 调用 Bitmap 重载 `makeViewAnimationOptions(bitmap, bounds, radius, bundle, listener)`，将生成的 options 传入 `startActivity`。图书详情改用非导出的 `BookDetailActivity`，页面仍复用现有 Miuix/Compose `DetailScreen`。
 5. Intent 只包含图书引用、书名、作者、封面 URL 和随机转场标识；Bitmap、来源坐标查询器仅在内存保存，不包含 Cookie、remix key、密码、SAF URI 或下载签名。进程重建后仍能按引用重新加载详情。

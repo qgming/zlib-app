@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
+import com.qgming.zlib.core.common.R
 import com.qgming.zlib.core.database.DownloadEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -69,7 +70,7 @@ class DownloadNotifications @Inject constructor(
     private fun builder(item: DownloadEntity?, completed: Boolean): NotificationCompat.Builder {
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle(item?.title?.takeIf { it.isNotBlank() } ?: "Zlib 下载")
+            .setContentTitle(item?.title?.takeIf { it.isNotBlank() } ?: context.getString(R.string.zlib_download_title))
             .setContentText(
                 item?.let {
                     if (completed) "下载完成" else progressText(it.bytesWritten, it.totalBytes)

@@ -51,5 +51,4 @@ include(
     ":feature:library",
     ":feature:account",
     ":feature:settings",
-    ":feature:booklists",
 )

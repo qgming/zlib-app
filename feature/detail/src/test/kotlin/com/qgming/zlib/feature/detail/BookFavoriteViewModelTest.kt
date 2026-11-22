@@ -139,11 +139,10 @@ class BookFavoriteViewModelTest {
     }
 
     private class MemorySessionStore : SessionStore {
-        private val current = MutableStateFlow<Session?>(null)
-        override val session = current.asStateFlow()
-        override suspend fun read() = current.value
-        override suspend fun save(session: Session) { current.value = session }
-        override suspend fun clear() { current.value = null }
+        private var vault = com.qgming.zlib.core.data.session.SessionVault()
+        override suspend fun readVault() = vault
+        override suspend fun saveVault(vault: com.qgming.zlib.core.data.session.SessionVault) { this.vault = vault }
+        override suspend fun clear() { vault = com.qgming.zlib.core.data.session.SessionVault() }
     }
 
     private fun MockWebServer.nextPath() = assertNotNull(takeRequest(2, TimeUnit.SECONDS)).path

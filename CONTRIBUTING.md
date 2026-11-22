@@ -15,7 +15,7 @@
   ```properties
   sdk.dir=D:/Android/Sdk
   ```
-- 本地签名（可选，仅 release）：`key.properties` 指向 `D:/dev/aiok/android/app/qgming2026.jks`，alias `qgming`。**不要提交**。
+- 本地签名：按 [发布说明](docs/RELEASING.md) 创建私有 `key.properties`，维护者沿用原签名。**不要提交密钥、密码或本机路径配置**。
 
 ## 3. 代码风格
 

@@ -26,6 +26,7 @@ class AppViewModel @Inject constructor(
 
     val startupState: StateFlow<StartupState> = startupCoordinator.state
     val session: StateFlow<Session?> = authRepository.session
+    val accounts = authRepository.accounts
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()

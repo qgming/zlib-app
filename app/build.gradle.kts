@@ -1,4 +1,5 @@
 import java.util.Properties
+import java.security.MessageDigest
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -16,6 +17,8 @@ val keystoreProperties = Properties().apply {
         keystorePropertiesFile.inputStream().use { load(it) }
     }
 }
+val appVersionName = "1.0.0"
+val appVersionCode = 2
 
 android {
     namespace = "com.qgming.zlib"
@@ -26,8 +29,8 @@ android {
         applicationId = "com.qgming.zlib"
         minSdk = 33
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
     }
 
     signingConfigs {
@@ -48,12 +51,26 @@ android {
             signingConfig = signingConfigs.findByName("release")
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
             signingConfig = signingConfigs.findByName("release")
         }
     }
 
+    // GitHub side-loading uses one monotonically increasing versionCode for every ABI.
+    // Leave ordinary debug builds universal; opt in when preparing release assets.
+    splits {
+        abi {
+            isEnable = providers.gradleProperty("splitApks").orNull == "true"
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+            isUniversalApk = true
+        }
+    }
+
     buildFeatures {
+        buildConfig = true
         compose = true
     }
 
@@ -66,6 +83,40 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+    }
+}
+
+tasks.register<Sync>("prepareReleaseAssets") {
+    group = "distribution"
+    description = "Build signed ABI APKs and SHA256SUMS.txt for a GitHub Release."
+    dependsOn("assembleRelease")
+    from(layout.buildDirectory.dir("outputs/apk/release")) {
+        include("app-*-release.apk")
+        rename { name -> "zhishi-$appVersionName-${name.removePrefix("app-").removeSuffix("-release.apk")}.apk" }
+    }
+    into(layout.buildDirectory.dir("release"))
+    doFirst {
+        check(providers.gradleProperty("splitApks").orNull == "true") { "Use -PsplitApks=true to prepare all release APKs." }
+        check(keystorePropertiesFile.exists()) { "A private key.properties signing configuration is required." }
+    }
+    doLast {
+        val apks = destinationDir.listFiles().orEmpty().filter { it.extension == "apk" }.sortedBy { it.name }
+        val expected = setOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86", "universal")
+            .map { "zhishi-$appVersionName-$it.apk" }.toSet()
+        check(apks.map { it.name }.toSet() == expected) { "Expected all four ABI APKs and a universal APK." }
+        val checksums = apks.joinToString("\n", postfix = "\n") { apk ->
+            val digest = MessageDigest.getInstance("SHA-256")
+            apk.inputStream().buffered().use { input ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    digest.update(buffer, 0, read)
+                }
+            }
+            "${digest.digest().joinToString("") { "%02x".format(it) }}  ${apk.name}"
+        }
+        destinationDir.resolve("SHA256SUMS.txt").writeText(checksums, Charsets.UTF_8)
     }
 }
 
@@ -86,7 +137,6 @@ dependencies {
     implementation(project(":feature:detail"))
     implementation(project(":feature:downloads"))
     implementation(project(":feature:library"))
-    implementation(project(":feature:booklists"))
 
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.ktx)

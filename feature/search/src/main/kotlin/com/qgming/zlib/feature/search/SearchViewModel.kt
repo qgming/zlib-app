@@ -43,6 +43,22 @@ class SearchViewModel @Inject constructor(
     private var request: Job? = null
     private var initialQueryApplied = false
 
+    init {
+        var previous: com.qgming.zlib.core.model.Session? = null
+        var initialized = false
+        viewModelScope.launch {
+            bookRepository.sessionChanges.collect { session ->
+                if (initialized && (session?.remixUserId != previous?.remixUserId || session?.remixUserKey != previous?.remixUserKey)) {
+                    request?.cancel()
+                    submittedQuery = null
+                    _state.value = SearchUiState(query = _state.value.query)
+                }
+                previous = session
+                initialized = true
+            }
+        }
+    }
+
     /** A route may re-enter composition after details; never reset its edited query or pages. */
     fun initializeQuery(query: String) {
         if (initialQueryApplied || query.isBlank()) return

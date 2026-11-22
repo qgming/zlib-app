@@ -1,6 +1,6 @@
 package com.qgming.zlib.core.model
 
-/** Single-account session. Only remix credentials and cookies are persisted (encrypted). */
+/** One account session. Only remix credentials and necessary cookies are persisted (encrypted). */
 data class Session(
     val remixUserId: String,
     val remixUserKey: String,

@@ -17,12 +17,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -150,6 +152,133 @@ class LibraryViewModelTest {
         }
     }
 
+    @Test
+    fun `history deletion requires confirmation sends once and reloads pagination from page one`() = runTest {
+        withLibrary { server, _, _, viewModel ->
+            server.enqueue(page("""{"id":1,"hash":"abc"},{"id":2,"hash":"def"}""", 1, 3))
+            viewModel.onSourceShown(CloudLibrarySource.DownloadHistory)
+            advanceUntilIdle()
+            server.nextPath()
+            val book = assertNotNull(viewModel.remote.value[CloudLibrarySource.DownloadHistory]?.page?.books?.first())
+            viewModel.showHistoryActions(book)
+            viewModel.confirmHistoryDeletion()
+            advanceUntilIdle()
+            assertEquals(1, server.requestCount)
+            viewModel.requestHistoryDeletion()
+            server.enqueue(json("""{"success":1}"""))
+            server.enqueue(page("""{"id":2,"hash":"def"},{"id":3,"hash":"ghi"}""", 1, 2))
+            viewModel.confirmHistoryDeletion()
+            viewModel.confirmHistoryDeletion()
+            viewModel.loadMore(CloudLibrarySource.DownloadHistory)
+            assertTrue(viewModel.historyAction.value.busy)
+            assertEquals(listOf("1", "2"), viewModel.remote.value[CloudLibrarySource.DownloadHistory]?.page?.books?.map { it.id })
+            advanceUntilIdle()
+            assertEquals("/eapi/user/book/1/delete", server.nextPath())
+            assertEquals("/eapi/user/book/downloaded?page=1&limit=50", server.nextPath())
+            assertEquals(listOf("2", "3"), viewModel.remote.value[CloudLibrarySource.DownloadHistory]?.page?.books?.map { it.id })
+            assertEquals(1, viewModel.remote.value[CloudLibrarySource.DownloadHistory]?.page?.page)
+            assertNull(viewModel.historyAction.value.book)
+            assertEquals("已删除云端下载记录", withTimeoutOrNull(100) { viewModel.events.first() })
+            assertNull(withTimeoutOrNull(100) { viewModel.events.first() })
+            assertEquals(3, server.requestCount)
+        }
+    }
+
+    @Test
+    fun `refused history deletion retains the record and user can cancel or retry`() = runTest {
+        withLibrary { server, _, _, viewModel ->
+            server.enqueue(page("""{"id":1,"hash":"abc"}"""))
+            viewModel.onSourceShown(CloudLibrarySource.DownloadHistory)
+            advanceUntilIdle()
+            server.nextPath()
+            val book = assertNotNull(viewModel.remote.value[CloudLibrarySource.DownloadHistory]?.page?.books?.single())
+            viewModel.showHistoryActions(book)
+            viewModel.requestHistoryDeletion()
+            server.enqueue(json("""{"success":0,"error":"Cannot delete"}""", 400))
+            viewModel.confirmHistoryDeletion()
+            advanceUntilIdle()
+            server.nextPath()
+            assertEquals(listOf(book), viewModel.remote.value[CloudLibrarySource.DownloadHistory]?.page?.books)
+            assertNotNull(viewModel.historyAction.value.error)
+            assertEquals(false, viewModel.historyAction.value.busy)
+            assertNull(withTimeoutOrNull(100) { viewModel.events.first() })
+            assertEquals(2, server.requestCount)
+            viewModel.dismissHistoryActions()
+            assertNull(viewModel.historyAction.value.book)
+        }
+    }
+
+    @Test
+    fun `a failed refresh after deletion cannot append using stale page offsets`() = runTest {
+        withLibrary { server, _, _, viewModel ->
+            server.enqueue(page("""{"id":1,"hash":"abc"},{"id":2,"hash":"def"}""", 1, 3))
+            viewModel.onSourceShown(CloudLibrarySource.DownloadHistory)
+            advanceUntilIdle()
+            server.nextPath()
+            val book = assertNotNull(viewModel.remote.value[CloudLibrarySource.DownloadHistory]?.page?.books?.first())
+            viewModel.showHistoryActions(book)
+            viewModel.requestHistoryDeletion()
+            server.enqueue(json("""{"success":1}"""))
+            server.enqueue(json("""{"success":0,"error":"Cannot refresh"}"""))
+            viewModel.confirmHistoryDeletion()
+            advanceUntilIdle()
+            assertEquals("/eapi/user/book/1/delete", server.nextPath())
+            assertEquals("/eapi/user/book/downloaded?page=1&limit=50", server.nextPath())
+            assertEquals(listOf("2"), viewModel.remote.value[CloudLibrarySource.DownloadHistory]?.page?.books?.map { it.id })
+            assertNotNull(viewModel.remote.value[CloudLibrarySource.DownloadHistory]?.error)
+
+            server.enqueue(page("""{"id":2,"hash":"def"},{"id":3,"hash":"ghi"}""", 1, 2))
+            viewModel.loadMore(CloudLibrarySource.DownloadHistory)
+            advanceUntilIdle()
+            assertEquals("/eapi/user/book/downloaded?page=1&limit=50", server.nextPath())
+            assertEquals(listOf("2", "3"), viewModel.remote.value[CloudLibrarySource.DownloadHistory]?.page?.books?.map { it.id })
+        }
+    }
+
+    @Test
+    fun `logout before confirming a history deletion drops the old account action`() = runTest {
+        withLibrary { server, sessions, _, viewModel ->
+            server.enqueue(page("""{"id":1,"hash":"abc"}"""))
+            viewModel.onSourceShown(CloudLibrarySource.DownloadHistory)
+            advanceUntilIdle()
+            server.nextPath()
+            val book = assertNotNull(viewModel.remote.value[CloudLibrarySource.DownloadHistory]?.page?.books?.single())
+            viewModel.showHistoryActions(book)
+            viewModel.requestHistoryDeletion()
+            sessions.clear()
+            viewModel.confirmHistoryDeletion()
+            advanceUntilIdle()
+            assertNull(viewModel.historyAction.value.book)
+            assertTrue(viewModel.remote.value.values.all { it.page == null })
+            assertEquals(1, server.requestCount)
+        }
+    }
+
+    @Test
+    fun `logout clears pending success feedback and changes the snackbar session key`() = runTest {
+        withLibrary { server, sessions, _, viewModel ->
+            server.enqueue(page("""{"id":1,"hash":"abc"}"""))
+            viewModel.onSourceShown(CloudLibrarySource.DownloadHistory)
+            advanceUntilIdle()
+            val book = assertNotNull(viewModel.remote.value[CloudLibrarySource.DownloadHistory]?.page?.books?.single())
+            val previousGeneration = viewModel.sessionGeneration.value
+            viewModel.showHistoryActions(book)
+            viewModel.requestHistoryDeletion()
+            server.enqueue(json("""{"success":1}"""))
+            server.enqueue(page(""))
+            viewModel.confirmHistoryDeletion()
+            advanceUntilIdle()
+
+            sessions.clear()
+            advanceUntilIdle()
+            assertEquals(previousGeneration + 1, viewModel.sessionGeneration.value)
+            assertNull(withTimeoutOrNull(100) { viewModel.events.first() })
+            assertNull(viewModel.historyAction.value.book)
+            assertTrue(viewModel.remote.value.values.all { it.page == null })
+            assertEquals(3, server.requestCount)
+        }
+    }
+
     private suspend fun TestScope.withLibrary(
         block: suspend TestScope.(MockWebServer, SessionManager, FavoritesRepository, LibraryViewModel) -> Unit,
     ) {
@@ -183,11 +312,10 @@ class LibraryViewModelTest {
     private fun session(id: String) = Session(id, "key-$id", "z-lib.sk")
 
     private class MemorySessionStore : SessionStore {
-        private val current = MutableStateFlow<Session?>(null)
-        override val session = current.asStateFlow()
-        override suspend fun read() = current.value
-        override suspend fun save(session: Session) { current.value = session }
-        override suspend fun clear() { current.value = null }
+        private var vault = com.qgming.zlib.core.data.session.SessionVault()
+        override suspend fun readVault() = vault
+        override suspend fun saveVault(vault: com.qgming.zlib.core.data.session.SessionVault) { this.vault = vault }
+        override suspend fun clear() { vault = com.qgming.zlib.core.data.session.SessionVault() }
     }
 
     private fun MockWebServer.nextPath(): String? = assertNotNull(takeRequest(2, TimeUnit.SECONDS)).path

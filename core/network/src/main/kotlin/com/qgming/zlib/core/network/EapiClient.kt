@@ -10,6 +10,7 @@ import com.qgming.zlib.core.common.SafeLog
 import com.qgming.zlib.core.common.mapCatching
 import com.qgming.zlib.core.model.Account
 import com.qgming.zlib.core.model.Book
+import com.qgming.zlib.core.model.BookFormat
 import com.qgming.zlib.core.model.BookPage
 import com.qgming.zlib.core.model.Quota
 import com.qgming.zlib.core.model.SearchQuery
@@ -41,6 +42,12 @@ class EapiClient(
     private val sleeper: suspend (Long) -> Unit = { delay(it) },
     private val maxAttempts: Int = 4,
 ) {
+    // A destructive GET must not be replayed by either OkHttp or the application retry loop.
+    private val mutationClient = client.newBuilder()
+        .retryOnConnectionFailure(false)
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .build()
 
     // ---------------------------------------------------------------- auth
 
@@ -107,6 +114,13 @@ class EapiClient(
 
     suspend fun downloadHistory(page: Int): AppResult<BookPage> =
         accountBooks(EapiEndpoints.DOWNLOADED, page, includeHistoryDate = true)
+
+    suspend fun deleteDownloadHistory(id: String): AppResult<Unit> {
+        if (!NUMERIC_BOOK_ID.matches(id)) return AppResult.Failure(AppError.Parse("删除记录需要数字图书 ID"))
+        val auth = sessionProvider() ?: return AppResult.Failure(AppError.NotLoggedIn)
+        return execute(EapiEndpoints.deleteHistory(id), null, auth, isGet = true, allowRetry = false)
+            .mapCatching { }
+    }
 
     /** Favorite membership is by numeric ID, including list entries without a download hash. */
     suspend fun isBookSaved(id: String): AppResult<Boolean> {
@@ -220,6 +234,33 @@ class EapiClient(
             }
     }
 
+    suspend fun bookFormats(id: String, hash: String): AppResult<List<BookFormat>> {
+        if (!BookMapper.isSafeRef(id, hash)) return AppResult.Failure(AppError.Parse("图书 ID 或 hash 无效"))
+        val auth = sessionProvider() ?: return AppResult.Failure(AppError.NotLoggedIn)
+        return execute(EapiEndpoints.formats(id, hash), null, auth, isGet = true).mapCatching { exchange ->
+            val rows = exchange.root.array("books")
+                ?: throw AppErrorException(AppError.Parse("格式响应缺少 books 列表"))
+            val formats = rows.map { element ->
+                val row = element as? JsonObject
+                val formatId = row?.stringOrNull("id").orEmpty()
+                val formatHash = row?.stringOrNull("hash").orEmpty()
+                val extension = row?.stringOrNull("extension").orEmpty().trim().lowercase()
+                if (!BookMapper.isSafeRef(formatId, formatHash) || !FILE_EXTENSION.matches(extension)) {
+                    throw AppErrorException(AppError.Parse("格式列表包含无效文件信息，请重试"))
+                }
+                BookFormat(
+                    id = formatId,
+                    hash = formatHash,
+                    extension = extension,
+                    sizeBytes = row?.longOrNull("filesize")?.takeIf { it >= 0 },
+                    sizeText = row?.stringOrNull("filesizeString").orEmpty(),
+                )
+            }.distinctBy(BookFormat::ref)
+            SafeLog.d(TAG, "formats $id:$hash returned=${formats.size}")
+            formats
+        }
+    }
+
     /** Resolves the current download URL. Signed query strings must never be persisted/logged. */
     fun downloadUrl(id: String, hash: String, session: Session? = sessionProvider()): String? {
         val auth = session ?: return null
@@ -234,6 +275,7 @@ class EapiClient(
         form: FormBody?,
         session: Session?,
         isGet: Boolean = false,
+        allowRetry: Boolean = true,
     ): AppResult<Exchange> {
         val base = baseUrlFor(session) ?: return AppResult.Failure(AppError.NoDomain)
         val url = base.trimEnd('/') + path
@@ -241,9 +283,10 @@ class EapiClient(
         var lastError: AppError? = null
         var expiredRetried = false
 
-        while (attempt <= maxAttempts.coerceAtLeast(1)) {
+        val attemptLimit = if (allowRetry) maxAttempts.coerceAtLeast(1) else 1
+        while (attempt <= attemptLimit) {
             val outcome = try {
-                withContext(dispatchers.io) { executeOnce(url, form, session, isGet) }
+                withContext(dispatchers.io) { executeOnce(url, form, session, isGet, allowRetry) }
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (blocked: BlockedRedirectException) {
@@ -258,11 +301,11 @@ class EapiClient(
                 is Outcome.Err -> {
                     lastError = outcome.error
                     // ADR-016: a session-expired response gets one retry on the same domain.
-                    if (outcome.error == AppError.SessionExpired && !expiredRetried) {
+                    if (allowRetry && outcome.error == AppError.SessionExpired && !expiredRetried) {
                         expiredRetried = true
                         continue
                     }
-                    if (!outcome.retryable || attempt >= maxAttempts) break
+                    if (!outcome.retryable || attempt >= attemptLimit) break
                     sleeper(1_000L shl (attempt - 1))
                     attempt++
                 }
@@ -279,6 +322,7 @@ class EapiClient(
         form: FormBody?,
         session: Session?,
         isGet: Boolean,
+        allowRetry: Boolean,
     ): Outcome {
         SafeLog.d(TAG, "request ${SafeLog.redactUrl(url)}")
         val builder = Request.Builder().url(url).markEapi()
@@ -295,9 +339,13 @@ class EapiClient(
             builder.header(EapiHeaders.REMIX_USER_KEY, session.remixUserKey)
         }
 
-        client.newCall(builder.build()).execute().use { response ->
+        val transport = if (allowRetry) client else mutationClient
+        transport.newCall(builder.build()).execute().use { response ->
             val code = response.code
             val body = response.body?.string().orEmpty()
+            if (!allowRetry && response.isRedirect) {
+                return Outcome.Err(AppError.Server(code, "删除请求发生重定向，请刷新记录后重试"), retryable = false)
+            }
             val setCookies = response.headers.values("Set-Cookie")
             val root = parseObject(body)
 
@@ -362,6 +410,7 @@ class EapiClient(
             isPremium = user.boolOrNull("isPremium") == true,
             confirmed = user.boolOrNull("confirmed") == true,
             quota = Quota.from(amount, allowed),
+            membershipKnown = user.boolOrNull("isPremium") != null,
         )
     }
 
@@ -390,6 +439,7 @@ class EapiClient(
     companion object {
         private const val TAG = "Eapi"
         private val NUMERIC_BOOK_ID = Regex("[0-9]{1,32}")
+        private val FILE_EXTENSION = Regex("[a-z0-9]{1,20}")
         private val EMPTY_FORM: FormBody = FormBody.Builder().build()
     }
 }

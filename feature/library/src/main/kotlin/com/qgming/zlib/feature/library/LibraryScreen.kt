@@ -14,10 +14,15 @@ import com.qgming.zlib.core.designsystem.ZlibBookTile
 import com.qgming.zlib.core.designsystem.ZlibBookOpenRequest
 import com.qgming.zlib.core.designsystem.ZlibBookGrid
 import com.qgming.zlib.core.designsystem.ZlibLoading
+import com.qgming.zlib.core.designsystem.ZlibConfirmDialog
+import com.qgming.zlib.core.designsystem.ZlibGlassBottomSheet
+import com.qgming.zlib.core.designsystem.ZlibMenuAction
 import com.qgming.zlib.core.designsystem.ZlibPage
+import com.qgming.zlib.core.designsystem.ZlibSnackbarHost
 import com.qgming.zlib.core.designsystem.ZlibStateCard
 import com.qgming.zlib.core.designsystem.ZlibTopBarTabs
 import com.qgming.zlib.core.designsystem.fullWidthItem
+import com.qgming.zlib.core.designsystem.rememberZlibSnackbarHostState
 import top.yukonga.miuix.kmp.basic.TextButton
 
 private val SectionTitles = LibrarySection.entries.map { it.title }
@@ -36,14 +41,13 @@ fun LibraryScreen(
     padding: PaddingValues,
     section: LibrarySection,
     onOpenBook: (ZlibBookOpenRequest) -> Unit,
-    booklistsContent: @Composable (PaddingValues) -> Unit,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val stateHolder = rememberSaveableStateHolder()
     stateHolder.SaveableStateProvider(section.name) {
         when (section) {
+            LibrarySection.Local -> LocalFilesContent(padding)
             LibrarySection.Saved -> RemoteBooks(padding, CloudLibrarySource.Saved, onOpenBook, viewModel)
-            LibrarySection.Booklists -> booklistsContent(padding)
         }
     }
 }
@@ -54,7 +58,13 @@ fun DownloadHistoryScreen(
     onOpenBook: (ZlibBookOpenRequest) -> Unit,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
-    ZlibPage(title = "云端下载记录", onBack = onBack) { padding ->
+    val sessionGeneration by viewModel.sessionGeneration.collectAsStateWithLifecycle()
+    val snackbar = rememberZlibSnackbarHostState(sessionGeneration)
+    LaunchedEffect(viewModel, snackbar) { viewModel.events.collect { snackbar.showMessage(it) } }
+    ZlibPage(
+        title = "云端下载记录", onBack = onBack,
+        snackbarHost = { ZlibSnackbarHost(snackbar) },
+    ) { padding ->
         RemoteBooks(padding, CloudLibrarySource.DownloadHistory, onOpenBook, viewModel)
     }
 }
@@ -68,6 +78,7 @@ private fun RemoteBooks(
 ) {
     LaunchedEffect(viewModel, source) { viewModel.onSourceShown(source) }
     val states by viewModel.remote.collectAsStateWithLifecycle()
+    val action by viewModel.historyAction.collectAsStateWithLifecycle()
     val state = states[source] ?: RemoteLibraryState()
     val page = state.page
     val onRefresh = { viewModel.refresh(source) }
@@ -86,7 +97,13 @@ private fun RemoteBooks(
 
             else -> items(page.books, key = { it.ref }) { book ->
                 LaunchedEffect(viewModel, book.ref, book.coverUrl) { viewModel.loadCover(book) }
-                ZlibBookTile(book = book, onClick = onOpenBook)
+                ZlibBookTile(
+                    book = book, onClick = onOpenBook,
+                    onLongClick = if (source == CloudLibrarySource.DownloadHistory) {
+                        { viewModel.showHistoryActions(book) }
+                    } else null,
+                    onLongClickLabel = "更多操作",
+                )
             }
         }
         if (page != null && state.error != null) {
@@ -106,5 +123,24 @@ private fun RemoteBooks(
                 )
             }
         }
+    }
+    if (source == CloudLibrarySource.DownloadHistory) {
+        ZlibGlassBottomSheet(
+            show = action.book != null && !action.confirming,
+            title = action.book?.title.orEmpty(), onDismiss = viewModel::dismissHistoryActions,
+        ) {
+            ZlibMenuAction(text = "删除记录", onClick = viewModel::requestHistoryDeletion)
+        }
+        ZlibConfirmDialog(
+            show = action.book != null && action.confirming,
+            title = "删除云端下载记录？",
+            summary = buildString {
+                append("删除《${action.book?.title.orEmpty()}》的云端下载记录，不影响本机文件、下载任务或收藏。")
+                action.error?.let { append("\n\n删除失败：$it") }
+            },
+            confirmLabel = if (action.error == null) "删除" else "重试删除",
+            onDismiss = viewModel::dismissHistoryActions, onConfirm = viewModel::confirmHistoryDeletion,
+            destructive = true, busy = action.busy,
+        )
     }
 }

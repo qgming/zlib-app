@@ -29,7 +29,7 @@ fun AppError.userMessage(): String = when (this) {
 
     is AppError.AuthFailed ->
         message?.takeIf { it.isNotBlank() }?.let { "登录失败：$it；也可以尝试 Cookie 导入。" }
-            ?: "邮箱或密码不正确。部分账号需改用 WebView 或 Cookie 导入。"
+            ?: "邮箱或密码不正确，也可以尝试 Cookie 导入。"
 
     is AppError.Quota -> buildString {
         append("今日下载额度已用完")
@@ -57,7 +57,12 @@ fun AppError.userMessage(): String = when (this) {
         else -> if (message.isNotBlank()) "服务端错误：$message" else "服务端错误（HTTP $code）。"
     }
 
-    is AppError.Storage -> "写入本地存储失败。"
+    is AppError.Storage -> when {
+        cause is SecurityException -> "无法访问下载目录，请在设置中重新选择并授权。"
+        cause is java.io.IOException -> cause.message?.let(com.qgming.zlib.core.common.SafeLog::redactText)
+            ?.takeIf { it.isNotBlank() } ?: "无法访问本机文件，请检查下载目录和权限。"
+        else -> "写入本地存储失败。"
+    }
 
     is AppError.Parse -> message.ifBlank { "服务器响应格式异常，请稍后重试。" }
 

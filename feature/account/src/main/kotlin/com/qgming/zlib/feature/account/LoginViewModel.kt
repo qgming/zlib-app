@@ -3,12 +3,14 @@ package com.qgming.zlib.feature.account
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qgming.zlib.core.data.auth.AuthRepository
-import com.qgming.zlib.core.data.domain.AllowedHostRegistry
 import com.qgming.zlib.core.data.domain.DomainRepository
+import com.qgming.zlib.core.common.AppResult
 import com.qgming.zlib.core.designsystem.userMessage
+import com.qgming.zlib.core.model.DomainCheck
+import com.qgming.zlib.core.model.Session
 import dagger.hilt.android.lifecycle.HiltViewModel
-import java.net.URI
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,28 +23,34 @@ data class LoginUiState(
     val password: String = "",
     val cookieText: String = "",
     val domain: String? = null,
-    val probing: Boolean = false,
+    val checks: List<DomainCheck> = emptyList(),
     val loading: Boolean = false,
     val error: String? = null,
     val showCookieImport: Boolean = false,
+    val showDomainPicker: Boolean = false,
+    val switchingDomain: Boolean = false,
+    val domainError: String? = null,
 )
 
 @HiltViewModel
-class LoginViewModel @Inject constructor(
-    private val authRepository: AuthRepository,
+class LoginViewModel internal constructor(
     private val domainRepository: DomainRepository,
-    private val registry: AllowedHostRegistry,
+    private val loginWithPassword: suspend (String, String) -> AppResult<Session>,
+    private val importCookies: suspend (String) -> AppResult<Session>,
 ) : ViewModel() {
+    @Inject constructor(authRepository: AuthRepository, domainRepository: DomainRepository) : this(
+        domainRepository, authRepository::loginWithPassword, authRepository::importCookies,
+    )
 
     private val _state = MutableStateFlow(LoginUiState())
     val state: StateFlow<LoginUiState> = _state.asStateFlow()
 
     init {
         viewModelScope.launch {
-            combine(domainRepository.currentHost, domainRepository.probing) { host, probing ->
-                host to probing
-            }.collect { (host, probing) ->
-                _state.update { it.copy(domain = host, probing = probing) }
+            combine(domainRepository.currentHost, domainRepository.checks) { host, checks ->
+                host to checks
+            }.collect { (host, checks) ->
+                _state.update { it.copy(domain = host, checks = checks) }
             }
         }
     }
@@ -53,24 +61,14 @@ class LoginViewModel @Inject constructor(
 
     fun onCookieTextChange(value: String) = _state.update { it.copy(cookieText = value, error = null) }
 
-    fun toggleCookieImport() = _state.update { it.copy(showCookieImport = !it.showCookieImport) }
+    fun toggleCookieImport() {
+        if (_state.value.loading) return
+        _state.update { it.copy(showCookieImport = !it.showCookieImport, password = "", cookieText = "", error = null) }
+    }
 
     fun login() {
         val current = _state.value
-        if (current.loading) return
-        _state.update { it.copy(loading = true, error = null) }
-        viewModelScope.launch {
-            val result = authRepository.loginWithPassword(current.email, current.password)
-            when (result) {
-                is com.qgming.zlib.core.common.AppResult.Success -> {
-                    _state.update { it.copy(loading = false, password = "", cookieText = "", error = null) }
-                }
-
-                is com.qgming.zlib.core.common.AppResult.Failure -> {
-                    _state.update { it.copy(loading = false, error = result.error.userMessage()) }
-                }
-            }
-        }
+        authenticate { loginWithPassword(current.email, current.password) }
     }
 
     fun importCookieText() {
@@ -79,36 +77,53 @@ class LoginViewModel @Inject constructor(
             _state.update { it.copy(error = "请粘贴 Cookie、Netscape 文件内容或 JSON。") }
             return
         }
-        importCookies(raw, host = null)
+        authenticate { importCookies(raw) }
     }
 
-    fun importFromWebView(host: String, rawCookie: String) {
-        importCookies(rawCookie, host)
-    }
-
-    private fun importCookies(raw: String, host: String?) {
-        if (_state.value.loading) return
+    private fun authenticate(action: suspend () -> AppResult<Session>) {
+        if (_state.value.loading || _state.value.switchingDomain) return
         _state.update { it.copy(loading = true, error = null) }
         viewModelScope.launch {
-            val result = authRepository.importCookies(raw, host)
-            when (result) {
-                is com.qgming.zlib.core.common.AppResult.Success -> {
-                    _state.update { it.copy(loading = false, password = "", cookieText = "", error = null) }
+            try {
+                val error = when (val result = action()) {
+                    is AppResult.Success -> null
+                    is AppResult.Failure -> result.error.userMessage()
                 }
-
-                is com.qgming.zlib.core.common.AppResult.Failure -> {
-                    _state.update { it.copy(loading = false, error = result.error.userMessage()) }
-                }
+                _state.update { it.copy(error = error) }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                _state.update { it.copy(error = "无法保存登录状态，请重试") }
+            } finally {
+                _state.update { it.copy(loading = false, password = "", cookieText = "") }
             }
         }
     }
 
-    fun probeDomains() {
-        viewModelScope.launch { domainRepository.probeAll(switchToBest = true) }
+    fun showDomains() {
+        if (!_state.value.loading) _state.update { it.copy(showDomainPicker = true, domainError = null) }
     }
 
-    fun isAllowedUrl(url: String): Boolean = runCatching {
-        val uri = URI(url)
-        uri.scheme.equals("https", ignoreCase = true) && uri.host != null && registry.isAllowed(uri.host)
-    }.getOrDefault(false)
+    fun dismissDomains() {
+        if (!_state.value.switchingDomain) _state.update { it.copy(showDomainPicker = false, domainError = null) }
+    }
+
+    fun selectDomain(host: String) {
+        if (_state.value.loading || _state.value.switchingDomain) return
+        _state.update { it.copy(switchingDomain = true, domainError = null) }
+        viewModelScope.launch {
+            try {
+                when (val result = domainRepository.setCurrentHost(host)) {
+                    is AppResult.Success -> _state.update { it.copy(showDomainPicker = false, error = null) }
+                    is AppResult.Failure -> _state.update { it.copy(domainError = result.error.userMessage()) }
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                _state.update { it.copy(domainError = "无法切换域名，请重试") }
+            } finally {
+                _state.update { it.copy(switchingDomain = false) }
+            }
+        }
+    }
 }

@@ -15,5 +15,7 @@ class LibraryRepository @Inject constructor(
 
     suspend fun history(page: Int): AppResult<BookPage> = api.downloadHistory(page)
 
+    suspend fun deleteHistory(id: String): AppResult<Unit> = api.deleteDownloadHistory(id)
+
     suspend fun detail(book: Book): AppResult<Book> = api.bookDetail(book.id, book.hash)
 }

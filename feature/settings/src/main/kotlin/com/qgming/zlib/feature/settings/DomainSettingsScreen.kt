@@ -1,182 +1,82 @@
 package com.qgming.zlib.feature.settings
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.qgming.zlib.core.designsystem.label
-import com.qgming.zlib.core.designsystem.ZlibCard
+import com.qgming.zlib.core.designsystem.ZlibAddDomainButton
+import com.qgming.zlib.core.designsystem.ZlibAddDomainForm
 import com.qgming.zlib.core.designsystem.ZlibCardList
-import com.qgming.zlib.core.designsystem.ZlibLoadingStatus
+import com.qgming.zlib.core.designsystem.ZlibConfirmDialog
+import com.qgming.zlib.core.designsystem.ZlibDomainAutoSwitch
+import com.qgming.zlib.core.designsystem.ZlibDomainCard
+import com.qgming.zlib.core.designsystem.ZlibGlassBottomSheet
+import com.qgming.zlib.core.designsystem.ZlibMenuAction
 import com.qgming.zlib.core.designsystem.ZlibPage
-import com.qgming.zlib.core.designsystem.ZlibSectionTitle
-import top.yukonga.miuix.kmp.basic.Button
-import top.yukonga.miuix.kmp.basic.Switch
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.basic.TextField
-import top.yukonga.miuix.kmp.theme.MiuixTheme
+import com.qgming.zlib.core.designsystem.ZlibProbeDomainsButton
+import com.qgming.zlib.core.designsystem.ZlibSnackbarHost
+import com.qgming.zlib.core.designsystem.rememberZlibSnackbarHostState
 
 @Composable
-fun DomainSettingsScreen(
-    onBack: () -> Unit,
-    viewModel: SettingsViewModel = hiltViewModel(),
-) {
+fun DomainSettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var notice by remember { mutableStateOf<String?>(null) }
-    var customHost by rememberSaveable { mutableStateOf("") }
+    val busy by viewModel.domainBusy.collectAsStateWithLifecycle()
+    val form by viewModel.addDomain.collectAsStateWithLifecycle()
+    val snackbar = rememberZlibSnackbarHostState()
+    var actionHost by remember { mutableStateOf<String?>(null) }
+    var removeHost by remember { mutableStateOf<String?>(null) }
+    val controlsEnabled = !busy && !state.probing
 
-    LaunchedEffect(Unit) {
-        viewModel.events.collect { notice = it }
-    }
+    LaunchedEffect(viewModel, snackbar) { viewModel.events.collect { snackbar.showMessage(it) } }
 
-    ZlibPage(title = "域名与网络", onBack = onBack) { padding ->
+    ZlibPage(
+        title = "域名管理", onBack = onBack,
+        actions = {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ZlibProbeDomainsButton(enabled = controlsEnabled, onClick = viewModel::probeAll)
+                ZlibAddDomainButton(onClick = viewModel::showAddDomain)
+            }
+        },
+        snackbarHost = { ZlibSnackbarHost(snackbar) },
+    ) { padding ->
         ZlibCardList(padding) {
-            notice?.let { message ->
-                item {
-                    ZlibCard {
-                        Text(
-                            text = message,
-                            style = MiuixTheme.textStyles.footnote1,
-                            color = MiuixTheme.colorScheme.error,
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        TextButton(text = "知道了", onClick = { notice = null })
-                    }
-                }
+            item("auto-switch") {
+                ZlibDomainAutoSwitch(
+                    checked = state.lockedHost == null,
+                    enabled = controlsEnabled,
+                    onChange = viewModel::setAutoSwitch,
+                )
             }
-
-            item {
-                ZlibCard {
-                    Text("域名体检", style = MiuixTheme.textStyles.title4)
-                    Text(
-                        text = state.currentHost ?: "尚未选择域名",
-                        style = MiuixTheme.textStyles.title4,
-                    )
-                    Text(
-                        text = state.checks.firstOrNull { it.host == state.currentHost }?.status?.label() ?: "未检测",
-                        style = MiuixTheme.textStyles.footnote1,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    if (state.probing) {
-                        ZlibLoadingStatus("正在体检域名…", Modifier.padding(vertical = 8.dp))
-                    } else {
-                        Button(onClick = viewModel::probeAll) { Text("重新体检可用域名") }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("锁定当前域名", style = MiuixTheme.textStyles.body2)
-                            Text(
-                                text = "锁定时不会自动切换；域名失效需手动换。",
-                                style = MiuixTheme.textStyles.footnote1,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            )
-                        }
-                        Switch(
-                            checked = state.lockedHost != null,
-                            onCheckedChange = { viewModel.setLocked(it) },
-                        )
-                    }
-                }
-            }
-
-            if (state.checks.isNotEmpty()) {
-                item { ZlibSectionTitle("镜像列表") }
-            }
-
             items(state.checks, key = { it.host }) { check ->
-                ZlibCard {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = check.host + if (check.host == state.currentHost) "（当前）" else "",
-                                style = MiuixTheme.textStyles.body2,
-                            )
-                            Text(
-                                text = check.status.label() +
-                                    if (check.detail.isBlank()) "" else " · ${check.detail}",
-                                style = MiuixTheme.textStyles.footnote1,
-                                color = if (check.healthy) {
-                                    MiuixTheme.colorScheme.primary
-                                } else {
-                                    MiuixTheme.colorScheme.onSurfaceVariantSummary
-                                },
-                            )
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            if (check.host != state.currentHost) {
-                                TextButton(text = "切换", onClick = { viewModel.selectHost(check.host) })
-                            }
-                            if (check.host in state.customHosts) {
-                                TextButton(text = "删除", onClick = { viewModel.removeCustomHost(check.host) })
-                            }
-                        }
-                    }
-                }
-            }
-
-            item {
-                ZlibCard {
-                    Text("添加自定义镜像", style = MiuixTheme.textStyles.title4)
-                    Text(
-                        text = "只接受 HTTPS 主机名，不能带端口、路径或 IP；只信任精确主机。",
-                        style = MiuixTheme.textStyles.footnote1,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    TextField(
-                        value = customHost,
-                        onValueChange = { customHost = it },
-                        label = "例如 mirror.example.org",
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Button(
-                        onClick = {
-                            viewModel.addCustomHost(customHost)
-                        },
-                        enabled = customHost.isNotBlank(),
-                    ) {
-                        Text("添加并体检")
-                    }
-                }
-            }
-
-            item {
-                Text(
-                    text = "所有请求仅发往允许列表内的 HTTPS 域名；跨主机重定向会剥离 Cookie 与 remix 凭据。",
-                    modifier = Modifier.padding(horizontal = 4.dp),
-                    style = MiuixTheme.textStyles.footnote1,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                ZlibDomainCard(
+                    check = check, current = check.host == state.currentHost, enabled = controlsEnabled,
+                    onSelect = { viewModel.selectHost(check.host) },
+                    onProbe = { viewModel.probeHost(check.host) },
+                    onLongClick = if (check.host in state.customHosts) ({ actionHost = check.host }) else null,
                 )
             }
         }
+        ZlibGlassBottomSheet(show = form.visible, title = "添加域名", onDismiss = viewModel::dismissAddDomain) {
+            ZlibAddDomainForm(
+                host = form.host, busy = form.busy, error = form.error,
+                onHostChange = viewModel::onDomainInput, onSubmit = viewModel::addCustomHost,
+            )
+        }
+        ZlibGlassBottomSheet(show = actionHost != null, title = "域名操作", onDismiss = { actionHost = null }) {
+            ZlibMenuAction("删除域名", enabled = controlsEnabled) { removeHost = actionHost; actionHost = null }
+        }
+        ZlibConfirmDialog(
+            show = removeHost != null, title = "删除域名？", summary = removeHost.orEmpty(),
+            confirmLabel = "删除", destructive = true, onDismiss = { removeHost = null },
+            onConfirm = { removeHost?.let(viewModel::removeCustomHost); removeHost = null },
+        )
     }
 }

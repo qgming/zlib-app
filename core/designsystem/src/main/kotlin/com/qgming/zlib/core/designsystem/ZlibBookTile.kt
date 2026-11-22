@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.qgming.zlib.core.model.Book
+import com.qgming.zlib.core.model.LocalFile
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -31,27 +32,56 @@ fun ZlibBookTile(
     book: Book,
     onClick: (ZlibBookOpenRequest) -> Unit,
     onLongClick: (() -> Unit)? = null,
+    onLongClickLabel: String = "文件操作",
 ) {
     val source = if (LocalZlibBookSnapshotsEnabled.current) rememberCoverSource() else null
+    BookTile(
+        title = book.title, authors = book.authors, coverUrl = book.coverUrl,
+        coverSource = source,
+        onClickLabel = "查看图书详情", onClick = { onClick(ZlibBookOpenRequest(book, source)) },
+        onLongClickLabel = onLongClickLabel, onLongClick = onLongClick,
+    )
+}
+
+@Composable
+fun ZlibLocalFileTile(file: LocalFile, onClick: () -> Unit, onLongClick: () -> Unit) {
+    BookTile(
+        title = file.title, authors = file.book?.authors.orEmpty(), coverUrl = file.book?.coverUrl.orEmpty(),
+        onClickLabel = "打开本机文件", onClick = onClick,
+        onLongClickLabel = "文件操作", onLongClick = onLongClick,
+    )
+}
+
+@Composable
+private fun BookTile(
+    title: String,
+    authors: String,
+    coverUrl: String,
+    coverSource: ComposeCoverSource? = null,
+    onClickLabel: String,
+    onClick: () -> Unit,
+    onLongClickLabel: String,
+    onLongClick: (() -> Unit)?,
+) {
     Column(
         modifier = Modifier.fillMaxWidth().combinedClickable(
             role = Role.Button,
-            onClickLabel = "查看图书详情",
-            onLongClickLabel = if (onLongClick != null) "文件操作" else null,
-            onClick = { onClick(ZlibBookOpenRequest(book, source)) },
+            onClickLabel = onClickLabel,
+            onLongClickLabel = if (onLongClick != null) onLongClickLabel else null,
+            onClick = onClick,
             onLongClick = onLongClick,
         ),
     ) {
         ZlibCover(
-            url = book.coverUrl,
+            url = coverUrl,
             modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f)
-                .then(source?.modifier ?: Modifier),
+                .then(coverSource?.modifier ?: Modifier),
             contentScale = ContentScale.Crop,
-            title = book.title,
-            authors = book.authors,
+            title = title,
+            authors = authors,
         )
         Text(
-            text = book.title,
+            text = title,
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             style = MiuixTheme.textStyles.body2,
             fontWeight = FontWeight.Medium,

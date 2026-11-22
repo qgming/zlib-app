@@ -18,6 +18,7 @@ import com.qgming.zlib.core.network.DomainProbe
 import com.qgming.zlib.core.network.EapiClient
 import com.qgming.zlib.core.network.EapiJson
 import com.qgming.zlib.core.network.EapiRedirectGuardInterceptor
+import com.qgming.zlib.core.network.GitHubReleaseClient
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -34,6 +35,10 @@ import okhttp3.OkHttpClient
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
+
+    @Provides
+    @Singleton
+    fun gitHubReleaseClient(): GitHubReleaseClient = GitHubReleaseClient()
 
     @Provides
     @Singleton

@@ -65,6 +65,9 @@ interface BookDao {
     @Query("UPDATE books SET localUri = NULL, downloadedAt = NULL, updatedAt = :updatedAt WHERE id = :id")
     suspend fun clearLocalFile(id: String, updatedAt: Long)
 
+    @Query("UPDATE books SET localUri = NULL, downloadedAt = NULL, updatedAt = :updatedAt WHERE localUri = :uri")
+    suspend fun clearLocalFileByUri(uri: String, updatedAt: Long)
+
     @Query("SELECT * FROM books WHERE favorite = 1 ORDER BY updatedAt DESC")
     fun observeFavorites(): Flow<List<BookEntity>>
 }

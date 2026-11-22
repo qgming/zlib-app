@@ -23,4 +23,7 @@ data class Account(
     val isPremium: Boolean,
     val confirmed: Boolean,
     val quota: Quota,
+    val membershipKnown: Boolean = true,
 )
+
+data class AccountEntry(val id: String, val profile: Account?, val current: Boolean, val expired: Boolean)

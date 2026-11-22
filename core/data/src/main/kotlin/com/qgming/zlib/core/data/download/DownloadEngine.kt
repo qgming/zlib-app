@@ -1,18 +1,17 @@
 package com.qgming.zlib.core.data.download
 
 import android.content.Context
-import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import com.qgming.zlib.core.common.AppDispatchers
 import com.qgming.zlib.core.common.AppError
 import com.qgming.zlib.core.common.AppResult
 import com.qgming.zlib.core.common.DomainStatus
-import com.qgming.zlib.core.common.FileNames
 import com.qgming.zlib.core.common.SafeLog
 import com.qgming.zlib.core.data.session.SessionManager
 import com.qgming.zlib.core.database.DownloadEntity
 import com.qgming.zlib.core.network.EapiEndpoints
 import com.qgming.zlib.core.network.EapiHeaders
+import com.qgming.zlib.core.model.Session
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -21,7 +20,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import okhttp3.Call
 import okhttp3.Request
+import okhttp3.HttpUrl.Companion.toHttpUrl
 
 @Singleton
 class DownloadEngine @Inject constructor(
@@ -31,18 +32,29 @@ class DownloadEngine @Inject constructor(
     private val directoryStore: DownloadDirectoryStore,
     private val dispatchers: AppDispatchers,
 ) {
+    @Volatile private var activeCall: Call? = null
+
+    fun cancelActiveTransfer() { activeCall?.cancel() }
+
     suspend fun download(
         item: DownloadEntity,
+        session: Session? = sessionManager.current(),
         onProgress: suspend (written: Long, total: Long?) -> Unit,
     ): AppResult<String> = withContext(dispatchers.io) {
-        downloadInner(item, onProgress)
+        try {
+            downloadInner(item, session, onProgress)
+        } finally {
+            activeCall = null
+        }
     }
 
     private suspend fun downloadInner(
         item: DownloadEntity,
+        session: Session?,
         onProgress: suspend (Long, Long?) -> Unit,
     ): AppResult<String> {
-        val session = sessionManager.current() ?: return AppResult.Failure(AppError.NotLoggedIn)
+        if (session == null) return AppResult.Failure(AppError.NotLoggedIn)
+        coroutineContext.ensureActive()
         directoryStore.ensureLoaded()
         val tree = directoryStore.tree()
             ?: return AppResult.Failure(AppError.Storage(IllegalStateException("download directory missing")))
@@ -53,7 +65,7 @@ class DownloadEngine @Inject constructor(
 
         val offset = context.contentResolver.openFileDescriptor(part.uri, "r")?.use { it.statSize } ?: 0L
         val partPrefix = if (offset > 0) readPrefix(part) else ByteArray(0)
-        val response = when (val opened = openFileResponse(item, offset)) {
+        val response = when (val opened = openFileResponse(item, offset, session)) {
             is AppResult.Failure -> return opened
             is AppResult.Success -> opened.value
         }
@@ -71,7 +83,7 @@ class DownloadEngine @Inject constructor(
                 val body = runCatching { resp.body.string() }.getOrDefault("")
                 val lower = body.lowercase()
                 val error = when {
-                    lower.contains("daily limit") -> AppError.Quota(null, body.take(120))
+                    lower.contains("daily limit") || lower.contains("daily download") -> AppError.Quota(null, "今日下载额度已用完")
                     resp.code == 401 || resp.code == 403 -> AppError.SessionExpired
                     resp.code == 513 || resp.code == 517 -> AppError.DomainBlocked(DomainStatus.DIAMWALL)
                     resp.code == 502 || resp.code == 503 || resp.code == 504 ->
@@ -98,8 +110,8 @@ class DownloadEngine @Inject constructor(
             if (contentType.contains("text/html")) {
                 val body = runCatching { resp.body.string() }.getOrDefault("")
                 return AppResult.Failure(
-                    if (body.lowercase().contains("daily limit")) {
-                        AppError.Quota(null, body.take(120))
+                    if (body.lowercase().contains("daily limit") || body.lowercase().contains("daily download")) {
+                        AppError.Quota(null, "今日下载额度已用完")
                     } else {
                         AppError.Server(resp.code, "下载返回了网页，请切换域名后重试")
                     },
@@ -121,6 +133,7 @@ class DownloadEngine @Inject constructor(
                             coroutineContext.ensureActive()
                             val read = input.read(buffer)
                             if (read < 0) break
+                            coroutineContext.ensureActive()
                             output.write(buffer, 0, read)
                             written += read
                             if (written - lastReport >= 512 * 1024) {
@@ -133,6 +146,7 @@ class DownloadEngine @Inject constructor(
                     }
                 }
             } catch (io: java.io.IOException) {
+                coroutineContext.ensureActive()
                 return AppResult.Failure(AppError.Network(io))
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -141,6 +155,7 @@ class DownloadEngine @Inject constructor(
             }
         }
 
+        coroutineContext.ensureActive()
         val finalName = uniqueName(tree, item.fileName, item.bookId)
         val renamed = runCatching { part.renameTo(finalName) }.getOrDefault(false)
         SafeLog.d("Download", "finished name=$finalName renamed=$renamed")
@@ -160,11 +175,11 @@ class DownloadEngine @Inject constructor(
         return AppResult.Success(target.uri.toString())
     }
 
-    private fun openFileResponse(item: DownloadEntity, offset: Long): AppResult<okhttp3.Response> {
-        val session = sessionManager.current() ?: return AppResult.Failure(AppError.NotLoggedIn)
+    private suspend fun openFileResponse(item: DownloadEntity, offset: Long, session: Session): AppResult<okhttp3.Response> {
         val first = try {
-            client.newCall(fileRequest(item, session, offset, overrideUrl = null)).execute()
+            execute(fileRequest(item, session, offset, overrideUrl = null))
         } catch (io: java.io.IOException) {
+            coroutineContext.ensureActive()
             return AppResult.Failure(AppError.Network(io))
         }
 
@@ -184,17 +199,26 @@ class DownloadEngine @Inject constructor(
             return AppResult.Failure(AppError.Parse("下载地址不是 HTTPS"))
         }
         return try {
-            AppResult.Success(client.newCall(fileRequest(item, session, offset, url)).execute())
+            AppResult.Success(execute(fileRequest(item, session, offset, url)))
         } catch (io: java.io.IOException) {
+            coroutineContext.ensureActive()
             AppResult.Failure(AppError.Network(io))
         }
     }
 
+    private suspend fun execute(request: Request): okhttp3.Response {
+        val call = client.newCall(request)
+        activeCall = call
+        // If cancellation raced with call creation it is observed here; otherwise cancelActiveTransfer
+        // cancels the published call, including a blocking socket read.
+        coroutineContext.ensureActive()
+        return call.execute()
+    }
 
     private fun jsonError(body: String): AppError {
         val lower = body.lowercase()
         return when {
-            lower.contains("daily limit") -> AppError.Quota(null, body.take(120))
+            lower.contains("daily limit") || lower.contains("daily download") -> AppError.Quota(null, "今日下载额度已用完")
             lower.contains("please login") || lower.contains("invalid credentials") ->
                 AppError.SessionExpired
 
@@ -229,9 +253,13 @@ class DownloadEngine @Inject constructor(
             .get()
             .header("User-Agent", EapiHeaders.USER_AGENT)
             .header("Accept", if (overrideUrl == null) EapiHeaders.ACCEPT else "*/*")
-            .header("Cookie", session.cookieHeader)
-            .header(EapiHeaders.REMIX_USER_ID, session.remixUserId)
-            .header(EapiHeaders.REMIX_USER_KEY, session.remixUserKey)
+            .apply {
+                if (url.toHttpUrl().host == session.domain) {
+                    header("Cookie", session.cookieHeader)
+                    header(EapiHeaders.REMIX_USER_ID, session.remixUserId)
+                    header(EapiHeaders.REMIX_USER_KEY, session.remixUserKey)
+                }
+            }
             .apply { if (offset > 0) header("Range", "bytes=$offset-") }
             .build()
     }

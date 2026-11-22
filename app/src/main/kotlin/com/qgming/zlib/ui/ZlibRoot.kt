@@ -19,13 +19,18 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.activity.compose.LocalActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qgming.zlib.AppViewModel
+import com.qgming.zlib.BuildConfig
+import com.qgming.zlib.R
 import com.qgming.zlib.core.data.startup.StartupState
 import com.qgming.zlib.core.designsystem.ZlibAppShell
+import com.qgming.zlib.core.designsystem.ZlibAppOverlay
 import com.qgming.zlib.core.designsystem.LocalZlibBookSnapshotsEnabled
 import com.qgming.zlib.core.designsystem.ZlibBookOpenRequest
 import com.qgming.zlib.core.designsystem.ZlibCard
@@ -35,9 +40,7 @@ import com.qgming.zlib.core.designsystem.ZlibTheme
 import com.qgming.zlib.core.designsystem.userMessage
 import com.qgming.zlib.feature.account.AccountScreen
 import com.qgming.zlib.feature.account.LoginScreen
-import com.qgming.zlib.feature.booklists.BooklistsScreen
 import com.qgming.zlib.feature.downloads.DownloadsScreen
-import com.qgming.zlib.feature.downloads.LocalFilesScreen
 import com.qgming.zlib.feature.library.DownloadHistoryScreen
 import com.qgming.zlib.feature.library.LibraryScreen
 import com.qgming.zlib.feature.library.LibrarySection
@@ -45,6 +48,13 @@ import com.qgming.zlib.feature.library.LibraryTabs
 import com.qgming.zlib.feature.search.PopularScreen
 import com.qgming.zlib.feature.search.SearchScreen
 import com.qgming.zlib.feature.settings.DomainSettingsScreen
+import com.qgming.zlib.feature.settings.AboutAppInfo
+import com.qgming.zlib.feature.settings.AboutDocumentScreen
+import com.qgming.zlib.feature.settings.AboutPage
+import com.qgming.zlib.feature.settings.AboutScreen
+import com.qgming.zlib.feature.settings.AboutViewModel
+import com.qgming.zlib.feature.settings.AppUpdateHost
+import com.qgming.zlib.feature.settings.ReleaseHistoryScreen
 import com.qgming.zlib.feature.settings.SettingsScreen
 import com.qgming.zlib.navigation.BookDetailLauncher
 import kotlinx.serialization.Serializable
@@ -71,9 +81,6 @@ private sealed interface Route : NavKey {
     data object Downloads : Route
 
     @Serializable
-    data object LocalFiles : Route
-
-    @Serializable
     data object DownloadHistory : Route
 
     @Serializable
@@ -82,31 +89,46 @@ private sealed interface Route : NavKey {
     @Serializable
     data object DomainSettings : Route
 
+    @Serializable
+    data object About : Route
+
+    @Serializable
+    data object ReleaseHistory : Route
+
+    @Serializable
+    data class AboutDocument(val pageName: String) : Route
+
 }
 
 @Composable
 fun ZlibRoot(viewModel: AppViewModel = hiltViewModel()) {
     val startup by viewModel.startupState.collectAsStateWithLifecycle()
     val session by viewModel.session.collectAsStateWithLifecycle()
+    val accounts by viewModel.accounts.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val updates: AboutViewModel = hiltViewModel()
+    val appInfo = AboutAppInfo(stringResource(R.string.app_name), BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE.toLong())
 
     ZlibTheme(mode = settings.themeMode, bookGridColumns = settings.bookGridColumns) {
-        when (val state = startup) {
-            StartupState.Loading -> SplashScreen()
+        ZlibAppOverlay {
+            when (val state = startup) {
+                StartupState.Loading -> SplashScreen()
 
-            is StartupState.Failed -> StartupFailedScreen(
-                message = state.error.userMessage(),
-                actionError = message,
-                onRetry = viewModel::retry,
-                onAddHost = viewModel::addCustomHost,
-            )
+                is StartupState.Failed -> StartupFailedScreen(
+                    message = state.error.userMessage(),
+                    actionError = message,
+                    onRetry = viewModel::retry,
+                    onAddHost = viewModel::addCustomHost,
+                )
 
-            StartupState.Ready -> if (session == null) {
-                LoginScreen()
-            } else {
-                MainShell()
+                StartupState.Ready -> if (session == null) {
+                    if (accounts.entries.isEmpty()) LoginScreen() else AccountScreen(onBack = null)
+                } else {
+                    MainShell(appInfo, updates)
+                }
             }
+            AppUpdateHost(appInfo, updates)
         }
     }
 }
@@ -119,7 +141,7 @@ private fun SplashScreen() {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text("Zlib", style = MiuixTheme.textStyles.title1)
+            Text(stringResource(R.string.app_name), style = MiuixTheme.textStyles.title1)
             Spacer(Modifier.height(16.dp))
             ZlibLoadingIndicator()
             Spacer(Modifier.height(8.dp))
@@ -195,7 +217,7 @@ private fun StartupFailedScreen(
 }
 
 @Composable
-private fun MainShell() {
+private fun MainShell(appInfo: AboutAppInfo, updates: AboutViewModel) {
     val nav = rememberNavController<Route>(Route.Home)
     val activity = LocalActivity.current
     val scope = rememberCoroutineScope()
@@ -218,6 +240,7 @@ private fun MainShell() {
                     onOpenDownloads = { if (nav.backStack.lastOrNull() == Route.Home) nav.push(Route.Downloads) },
                     onOpenAccount = { if (nav.backStack.lastOrNull() == Route.Home) nav.push(Route.Account) },
                     onOpenDomains = { if (nav.backStack.lastOrNull() == Route.Home) nav.push(Route.DomainSettings) },
+                    onOpenAbout = { if (nav.backStack.lastOrNull() == Route.Home) nav.push(Route.About) },
                 )
             }
             entry<Route.Search> {
@@ -226,12 +249,8 @@ private fun MainShell() {
             entry<Route.Downloads> {
                 DownloadsScreen(
                     onBack = { nav.pop() },
-                    onOpenFiles = { if (nav.backStack.lastOrNull() == Route.Downloads) nav.push(Route.LocalFiles) },
                     onOpenHistory = { if (nav.backStack.lastOrNull() == Route.Downloads) nav.push(Route.DownloadHistory) },
                 )
-            }
-            entry<Route.LocalFiles> {
-                LocalFilesScreen(onBack = { nav.pop() }, onOpenBook = openBook)
             }
             entry<Route.DownloadHistory> {
                 DownloadHistoryScreen(onBack = { nav.pop() }, onOpenBook = openBook)
@@ -241,6 +260,21 @@ private fun MainShell() {
             }
             entry<Route.DomainSettings> {
                 DomainSettingsScreen(onBack = { nav.pop() })
+            }
+            entry<Route.About> {
+                AboutScreen(
+                    info = appInfo, icon = painterResource(R.drawable.ic_zhishi_foreground), onBack = { nav.pop() },
+                    onOpenPage = { page -> if (nav.backStack.lastOrNull() == Route.About) nav.push(Route.AboutDocument(page.name)) },
+                    onOpenChangelog = { if (nav.backStack.lastOrNull() == Route.About) nav.push(Route.ReleaseHistory) },
+                    onCheckUpdate = { updates.checkUpdate(appInfo.versionName) },
+                )
+            }
+            entry<Route.AboutDocument> { route ->
+                val page = AboutPage.entries.firstOrNull { it.name == route.pageName } ?: AboutPage.Privacy
+                AboutDocumentScreen(page = page, onBack = { nav.pop() })
+            }
+            entry<Route.ReleaseHistory> {
+                ReleaseHistoryScreen(onBack = { nav.pop() })
             }
         }
     }
@@ -253,11 +287,12 @@ private fun HomeTabs(
     onOpenDownloads: () -> Unit,
     onOpenAccount: () -> Unit,
     onOpenDomains: () -> Unit,
+    onOpenAbout: () -> Unit,
 ) {
     var tabName by rememberSaveable { mutableStateOf(ZlibTab.Popular.name) }
     val selectedTab = ZlibTab.entries.firstOrNull { it.name == tabName } ?: ZlibTab.Popular
-    var librarySectionName by rememberSaveable { mutableStateOf(LibrarySection.Saved.name) }
-    val librarySection = LibrarySection.entries.firstOrNull { it.name == librarySectionName } ?: LibrarySection.Saved
+    var librarySectionName by rememberSaveable { mutableStateOf(LibrarySection.Local.name) }
+    val librarySection = LibrarySection.entries.firstOrNull { it.name == librarySectionName } ?: LibrarySection.Local
     val tabStateHolder = rememberSaveableStateHolder()
     val readingGridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
@@ -281,9 +316,11 @@ private fun HomeTabs(
                     padding = padding,
                     section = librarySection,
                     onOpenBook = onOpenBook,
-                    booklistsContent = { BooklistsScreen(it) },
                 )
-                ZlibTab.Settings -> SettingsScreen(padding = padding, onOpenAccount = onOpenAccount, onOpenDomains = onOpenDomains)
+                ZlibTab.Settings -> SettingsScreen(
+                    padding = padding, onOpenAccount = onOpenAccount,
+                    onOpenDomains = onOpenDomains, onOpenAbout = onOpenAbout,
+                )
             }
         }
     }

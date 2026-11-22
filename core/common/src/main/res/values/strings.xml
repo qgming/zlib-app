@@ -1,0 +1,5 @@
+<resources>
+    <string name="zlib_app_name">芝士读书</string>
+    <string name="zlib_login_title">登录芝士读书</string>
+    <string name="zlib_download_title">芝士读书下载</string>
+</resources>

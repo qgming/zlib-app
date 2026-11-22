@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.icon.glass.Add
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.TabRowWithContour
@@ -71,9 +72,11 @@ import top.yukonga.miuix.kmp.glass.GlassTopAppBarDefaults
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.glass.BookOutline
 import top.yukonga.miuix.kmp.icon.glass.ChevronBackward
+import top.yukonga.miuix.kmp.icon.glass.Cloud
 import top.yukonga.miuix.kmp.icon.glass.Download
 import top.yukonga.miuix.kmp.icon.glass.Info
 import top.yukonga.miuix.kmp.icon.glass.NotesOutline
+import top.yukonga.miuix.kmp.icon.glass.Refresh
 import top.yukonga.miuix.kmp.icon.glass.Search
 import top.yukonga.miuix.kmp.icon.glass.SettingsOutline
 import top.yukonga.miuix.kmp.icon.glass.Tune
@@ -189,9 +192,10 @@ fun ZlibPage(
     expandable: Boolean = false,
     actions: @Composable RowScope.() -> Unit = {},
     topBarContent: @Composable () -> Unit = {},
+    snackbarHost: @Composable () -> Unit = {},
     content: @Composable (PaddingValues) -> Unit,
 ) {
-    ZlibOverlayHost {
+    ZlibOverlayHost(snackbarHost = snackbarHost) {
         PageFrame(
             title = title,
             appBarState = rememberTopAppBarState(),
@@ -330,9 +334,36 @@ fun ZlibFilterButton(active: Boolean, onClick: () -> Unit) {
 fun ZlibBookInfoButton(enabled: Boolean, onClick: () -> Unit) {
     TopBarButton(
         icon = MiuixIcons.Glass.Normal.Info,
-        description = "出版与文件信息",
+        description = "书籍信息",
         onClick = onClick,
         glass = LocalZlibGlass.current,
+        enabled = enabled,
+        tint = if (enabled) MiuixTheme.colorScheme.onSurface else MiuixTheme.colorScheme.onSurfaceVariantSummary,
+    )
+}
+
+@Composable
+fun ZlibDownloadHistoryButton(onClick: () -> Unit) {
+    TopBarButton(
+        icon = MiuixIcons.Glass.Normal.Cloud,
+        description = "云端下载记录", onClick = onClick, glass = LocalZlibGlass.current,
+    )
+}
+
+@Composable
+fun ZlibAddAccountButton(onClick: () -> Unit) {
+    TopBarButton(MiuixIcons.Glass.Normal.Add, "添加账号", onClick, LocalZlibGlass.current)
+}
+
+@Composable
+fun ZlibAddDomainButton(onClick: () -> Unit) {
+    TopBarButton(MiuixIcons.Glass.Normal.Add, "添加域名", onClick, LocalZlibGlass.current)
+}
+
+@Composable
+fun ZlibProbeDomainsButton(enabled: Boolean, onClick: () -> Unit) {
+    TopBarButton(
+        MiuixIcons.Glass.Normal.Refresh, "全部体检", onClick, LocalZlibGlass.current,
         enabled = enabled,
         tint = if (enabled) MiuixTheme.colorScheme.onSurface else MiuixTheme.colorScheme.onSurfaceVariantSummary,
     )

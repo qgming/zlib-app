@@ -4,18 +4,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -52,6 +45,7 @@ import com.qgming.zlib.core.designsystem.ZlibCardList
 import com.qgming.zlib.core.designsystem.ZlibCover
 import com.qgming.zlib.core.designsystem.ZlibGlassBottomSheet
 import com.qgming.zlib.core.designsystem.ZlibLoading
+import com.qgming.zlib.core.designsystem.ZlibMenuAction
 import com.qgming.zlib.core.designsystem.ZlibPage
 import com.qgming.zlib.core.designsystem.ZlibStateCard
 import com.qgming.zlib.core.model.Book
@@ -73,8 +67,11 @@ fun DetailScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val favorite by favoriteViewModel.state.collectAsStateWithLifecycle()
     var showInfo by rememberSaveable(id, hash) { mutableStateOf(false) }
+    var notice by remember(id, hash) { mutableStateOf<String?>(null) }
     LaunchedEffect(id, hash) { viewModel.load(id, hash) }
     LaunchedEffect(id, hash) { favoriteViewModel.load(id) }
+    LaunchedEffect(viewModel) { viewModel.events.collect { notice = it } }
+    LaunchedEffect(state.book) { if (state.book == null) notice = null }
 
     ZlibPage(
         title = "图书详情",
@@ -113,8 +110,9 @@ fun DetailScreen(
                     item {
                         BookActions(
                             favorite = favorite,
-                            message = state.message,
-                            onDownload = viewModel::download,
+                            message = notice,
+                            downloading = state.enqueuing,
+                            onDownload = viewModel::showFormats,
                             onFavorite = favoriteViewModel::toggle,
                         )
                     }
@@ -125,8 +123,38 @@ fun DetailScreen(
             }
         }
 
-        ZlibGlassBottomSheet(show = showInfo && state.book != null, title = "出版与文件信息", onDismiss = { showInfo = false }) {
+        ZlibGlassBottomSheet(show = showInfo && state.book != null, title = "书籍信息", onDismiss = { showInfo = false }) {
             state.book?.let { BookInfoPanel(it) }
+        }
+        ZlibGlassBottomSheet(show = state.formats != null, title = "选择下载格式", onDismiss = viewModel::dismissFormats) {
+            state.formats?.let { menu ->
+                Column(
+                    Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    when {
+                        menu.loading -> ZlibLoading()
+                        menu.error != null -> ZlibStateCard("无法获取其他格式", menu.error, onAction = viewModel::showFormats)
+                    }
+                    menu.options.forEach { format ->
+                        val size = format.sizeText.ifBlank { format.sizeBytes?.sizeText().orEmpty() }
+                        val duplicateExtension = menu.options.count { it.extension == format.extension } > 1
+                        val label = listOfNotNull(
+                            format.extension.uppercase(),
+                            size.takeIf(String::isNotBlank),
+                            "当前格式".takeIf { format.ref == state.book?.ref },
+                            "文件 ${format.id}".takeIf { duplicateExtension },
+                        ).joinToString(" · ")
+                        ZlibMenuAction(
+                            text = label, enabled = !menu.loading && !state.enqueuing,
+                            onClick = { viewModel.selectFormat(format.ref) },
+                        )
+                    }
+                    if (!menu.loading && menu.options.isEmpty()) {
+                        Text("暂无可下载的格式", style = MiuixTheme.textStyles.body2)
+                    }
+                }
+            }
         }
     }
 }
@@ -199,6 +227,7 @@ private fun ContributorText(authors: String, onSearch: (String) -> Unit) {
 private fun BookActions(
     favorite: BookFavoriteState,
     message: String?,
+    downloading: Boolean,
     onDownload: () -> Unit,
     onFavorite: () -> Unit,
 ) {
@@ -213,6 +242,7 @@ private fun BookActions(
         ) {
             Button(
                 onClick = onDownload,
+                enabled = !downloading,
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColorsPrimary(),
             ) { Text("下载图书") }
@@ -251,20 +281,13 @@ private fun BookInfoPanel(book: Book) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .windowInsetsPadding(
-                    WindowInsets.systemBars.union(WindowInsets.displayCutout)
-                        .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
-                )
-                .padding(bottom = 16.dp),
+                .verticalScroll(rememberScrollState()),
         ) {
             MetaRow("出版社", book.publisher)
             MetaRow("出版年份", book.year)
             MetaRow("语言", book.language)
             MetaRow("版次", book.edition)
             MetaRow("页数", book.pages?.toString().orEmpty())
-            MetaRow("文件格式", book.extension.uppercase())
-            MetaRow("文件大小", book.sizeBytes?.sizeText().orEmpty())
             MetaRow("ISBN-10", book.isbn10)
             MetaRow("ISBN-13", book.isbn13)
             MetaRow("分类", book.categories.joinToString(" / "))

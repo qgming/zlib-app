@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -17,30 +16,28 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qgming.zlib.core.designsystem.ZlibCard
 import com.qgming.zlib.core.designsystem.ZlibCardList
-import com.qgming.zlib.core.designsystem.ZlibCover
+import com.qgming.zlib.core.designsystem.ZlibDownloadAction
+import com.qgming.zlib.core.designsystem.ZlibDownloadActionButton
+import com.qgming.zlib.core.designsystem.ZlibDownloadHistoryButton
 import com.qgming.zlib.core.designsystem.ZlibLoading
 import com.qgming.zlib.core.designsystem.ZlibLoadingStatus
 import com.qgming.zlib.core.designsystem.ZlibPage
-import com.qgming.zlib.core.designsystem.ZlibPreferenceGroup
-import com.qgming.zlib.core.designsystem.ZlibPreferenceIcon
-import com.qgming.zlib.core.designsystem.ZlibPreferenceLink
 import com.qgming.zlib.core.designsystem.ZlibSectionTitle
 import com.qgming.zlib.core.designsystem.ZlibStateCard
 import com.qgming.zlib.core.model.DownloadItem
 import com.qgming.zlib.core.model.DownloadState
 import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun DownloadsScreen(
     onBack: () -> Unit,
-    onOpenFiles: () -> Unit,
     onOpenHistory: () -> Unit,
     viewModel: DownloadsViewModel = hiltViewModel(),
 ) {
@@ -52,14 +49,8 @@ fun DownloadsScreen(
     }
     val (records, tasks) = loadedQueue.orEmpty().partition { it.state == DownloadState.COMPLETED }
 
-    ZlibPage(title = "下载管理", onBack = onBack) { padding ->
+    ZlibPage(title = "下载管理", onBack = onBack, actions = { ZlibDownloadHistoryButton(onOpenHistory) }) { padding ->
         ZlibCardList(padding) {
-            item(key = "download-library-links") {
-                ZlibPreferenceGroup("图书与文件") {
-                    ZlibPreferenceLink("本机文件", "分享或删除已保存到此设备的文件", ZlibPreferenceIcon.Downloads, onOpenFiles)
-                    ZlibPreferenceLink("云端下载记录", "查看 Z-Library 账号在各设备上的下载记录", ZlibPreferenceIcon.Account, onOpenHistory)
-                }
-            }
             notice?.let { message ->
                 item(key = "download-notice") {
                     ZlibStateCard("下载提示", message, actionLabel = "知道了", onAction = { notice = null })
@@ -77,7 +68,7 @@ fun DownloadsScreen(
                 items(tasks, key = { it.id }) { item -> DownloadRow(item, viewModel) }
             }
             if (records.isNotEmpty()) {
-                item(key = "download-records") { ZlibSectionTitle("已完成的本机任务") }
+                item(key = "download-records") { ZlibSectionTitle("已完成") }
                 items(records, key = { it.id }) { item -> DownloadRow(item, viewModel) }
             }
         }
@@ -91,17 +82,10 @@ private fun DownloadRow(
 ) {
     val progress = item.progress
     val waiting = item.state == DownloadState.RESOLVING || (item.state == DownloadState.DOWNLOADING && progress == null)
-    ZlibCard {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            ZlibCover(
-                url = item.coverUrl,
-                title = item.title.ifBlank { item.fileName },
-                authors = item.authors,
-                modifier = Modifier.width(56.dp).height(84.dp),
-            )
-            Spacer(Modifier.width(12.dp))
+    ZlibCard(cornerRadius = 24.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(item.title.ifBlank { item.fileName }, style = MiuixTheme.textStyles.body2)
+                Text(item.title.ifBlank { item.fileName }, style = MiuixTheme.textStyles.body2, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (waiting) {
                     ZlibLoadingStatus(item.state.label())
                 } else {
@@ -120,42 +104,38 @@ private fun DownloadRow(
                         },
                     )
                 }
+                item.totalBytes?.let { total ->
+                    if (progress != null && (item.state == DownloadState.DOWNLOADING || item.state == DownloadState.PAUSED)) {
+                        Spacer(Modifier.height(8.dp))
+                        LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
+                        Text(
+                            "${item.bytesWritten.sizeText()} / ${total.sizeText()}",
+                            style = MiuixTheme.textStyles.footnote2,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
+                }
             }
-        }
-
-        item.totalBytes?.let { total ->
-            if (progress != null && (item.state == DownloadState.DOWNLOADING || item.state == DownloadState.PAUSED)) {
-                Spacer(Modifier.height(8.dp))
-                LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
-                Text(
-                    "${item.bytesWritten.sizeText()} / ${total.sizeText()}",
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                )
-            }
-        }
-
-        Spacer(Modifier.height(4.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            when (item.state) {
-                DownloadState.QUEUED, DownloadState.RESOLVING, DownloadState.DOWNLOADING ->
-                    TextButton(text = "暂停", onClick = { viewModel.pause(item.id) })
-
-                DownloadState.PAUSED -> TextButton(text = "继续", onClick = { viewModel.resume(item.id) })
-                DownloadState.FAILED -> TextButton(text = "重试", onClick = { viewModel.retry(item.id) })
-                DownloadState.CANCELLED -> TextButton(text = "重新下载", onClick = { viewModel.retry(item.id) })
-                DownloadState.COMPLETED -> TextButton(text = "移除任务记录", onClick = { viewModel.remove(item.id) })
-            }
-            if (item.state in CancellableStates) {
-                TextButton(text = "取消", onClick = { viewModel.cancel(item.id) })
+            Row {
+                val primary = when (item.state) {
+                    DownloadState.QUEUED, DownloadState.RESOLVING, DownloadState.DOWNLOADING -> ZlibDownloadAction.Pause
+                    DownloadState.PAUSED -> ZlibDownloadAction.Resume
+                    DownloadState.FAILED, DownloadState.CANCELLED -> ZlibDownloadAction.Retry
+                    DownloadState.COMPLETED -> null
+                }
+                if (primary != null) ZlibDownloadActionButton(primary) {
+                    when (primary) {
+                        ZlibDownloadAction.Pause -> viewModel.pause(item.id)
+                        ZlibDownloadAction.Resume -> viewModel.resume(item.id)
+                        ZlibDownloadAction.Retry -> viewModel.retry(item.id)
+                        ZlibDownloadAction.Remove -> viewModel.remove(item.id)
+                    }
+                }
+                ZlibDownloadActionButton(ZlibDownloadAction.Remove) { viewModel.remove(item.id) }
             }
         }
     }
 }
-
-private val CancellableStates = setOf(
-    DownloadState.QUEUED, DownloadState.RESOLVING, DownloadState.DOWNLOADING, DownloadState.PAUSED,
-)
 
 private fun DownloadState.label(): String = when (this) {
     DownloadState.QUEUED -> "排队中"

@@ -3,6 +3,7 @@ package com.qgming.zlib.core.network
 import com.qgming.zlib.core.common.AppError
 import com.qgming.zlib.core.common.AppResult
 import com.qgming.zlib.core.model.BookPage
+import com.qgming.zlib.core.model.BookFormat
 import com.qgming.zlib.core.model.SearchQuery
 import com.qgming.zlib.core.model.Session
 import kotlin.test.AfterTest
@@ -134,6 +135,16 @@ class EapiClientTest {
         val request = server.takeRequest()
         assertEquals("GET", request.method)
         assertEquals("/eapi/user/profile", request.path)
+    }
+
+    @Test
+    fun `profile does not invent a standard tier when membership field is absent`() {
+        server.enqueue(enqueueJson("""{"success":1,"user":{"id":7,"name":"Ada"}}"""))
+        val account = assertIs<AppResult.Success<com.qgming.zlib.core.model.Account>>(
+            kotlinx.coroutines.runBlocking { client(session()).profile() },
+        ).value
+        assertFalse(account.membershipKnown)
+        assertFalse(account.quota.known)
     }
 
     @Test
@@ -302,6 +313,92 @@ class EapiClientTest {
             assertEquals(AppResult.Failure(AppError.NotLoggedIn), client().setBookSaved("7", false))
         }
         assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun `formats map sparse file records and keep two distinct files of the same extension`() {
+        server.enqueue(enqueueJson("""{"success":1,"books":[
+            {"id":8,"hash":"epub1","extension":"EPUB","filesize":"2048","filesizeString":"2 KB"},
+            {"id":"9","hash":"epub2","extension":"epub","filesize":4096},
+            {"id":10,"hash":"pdf1","extension":"pdf","filesizeString":"1.5 MB"},
+            {"id":8,"hash":"epub1","extension":"epub"}]}"""))
+        val formats = assertIs<AppResult.Success<List<BookFormat>>>(
+            kotlinx.coroutines.runBlocking { client(session()).bookFormats("7", "original") },
+        ).value
+        assertEquals(listOf("8:epub1", "9:epub2", "10:pdf1"), formats.map { it.ref })
+        assertEquals(listOf("epub", "epub", "pdf"), formats.map { it.extension })
+        assertEquals(2048L, formats.first().sizeBytes)
+        assertEquals("2 KB", formats.first().sizeText)
+        assertNull(formats.last().sizeBytes)
+        assertEquals("1.5 MB", formats.last().sizeText)
+        val request = server.takeRequest()
+        assertEquals("GET", request.method)
+        assertEquals("/eapi/book/7/original/formats", request.path)
+        assertEquals("7", request.getHeader("remix-userid"))
+        assertEquals("key", request.getHeader("remix-userkey"))
+        assertNotNull(request.getHeader("Cookie"))
+    }
+
+    @Test
+    fun `formats distinguish an empty response from missing or invalid file records`() {
+        server.enqueue(enqueueJson("""{"success":1,"books":[]}"""))
+        assertEquals(AppResult.Success(emptyList()), kotlinx.coroutines.runBlocking { client(session()).bookFormats("7", "abc") })
+        for (body in listOf(
+            """{"success":1}""",
+            """{"success":1,"books":[{"id":8,"extension":"pdf"}]}""",
+            """{"success":1,"books":[{"id":8,"hash":"def","extension":"../epub"}]}""",
+        )) {
+            server.enqueue(enqueueJson(body))
+            assertIs<AppError.Parse>(assertIs<AppResult.Failure>(
+                kotlinx.coroutines.runBlocking { client(session()).bookFormats("7", "abc") },
+            ).error)
+        }
+        server.enqueue(enqueueJson("""{"success":0,"error":"Formats unavailable"}""", 400))
+        val failure = kotlinx.coroutines.runBlocking { client(session()).bookFormats("7", "abc") }
+        assertEquals("Formats unavailable", assertIs<AppError.Server>(assertIs<AppResult.Failure>(failure).error).message)
+    }
+
+    @Test
+    fun `format and deletion requests reject unsafe references and missing sessions`() {
+        kotlinx.coroutines.runBlocking {
+            assertIs<AppError.Parse>(assertIs<AppResult.Failure>(client(session()).bookFormats("../7", "abc")).error)
+            assertEquals(AppResult.Failure(AppError.NotLoggedIn), client().bookFormats("7", "abc"))
+            for (id in listOf("7:abc", "../7", "7/delete", "abc", "")) {
+                assertIs<AppError.Parse>(assertIs<AppResult.Failure>(client(session()).deleteDownloadHistory(id)).error)
+            }
+            assertEquals(AppResult.Failure(AppError.NotLoggedIn), client().deleteDownloadHistory("7"))
+        }
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun `history deletion uses the authenticated numeric endpoint and preserves refused changes`() {
+        server.enqueue(enqueueJson("""{"success":1}"""))
+        assertEquals(AppResult.Success(Unit), kotlinx.coroutines.runBlocking { client(session()).deleteDownloadHistory("7") })
+        val request = server.takeRequest()
+        assertEquals("GET", request.method)
+        assertEquals("/eapi/user/book/7/delete", request.path)
+        assertEquals("7", request.getHeader("remix-userid"))
+        assertEquals("key", request.getHeader("remix-userkey"))
+        assertNotNull(request.getHeader("Cookie"))
+        server.enqueue(enqueueJson("""{"success":0,"error":"Cannot delete"}""", 400))
+        val failure = kotlinx.coroutines.runBlocking { client(session()).deleteDownloadHistory("7") }
+        assertEquals("Cannot delete", assertIs<AppError.Server>(assertIs<AppResult.Failure>(failure).error).message)
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `destructive GET never retries transient status or expired session and never follows redirects`() {
+        for (response in listOf(
+            MockResponse().setResponseCode(503).setBody("busy"),
+            enqueueJson("""{"success":0,"error":"Please login"}""", 400),
+            MockResponse().setResponseCode(302).addHeader("Location", server.url("/eapi/user/book/7/delete")),
+        )) {
+            val previous = server.requestCount
+            server.enqueue(response)
+            assertIs<AppResult.Failure>(kotlinx.coroutines.runBlocking { client(session()).deleteDownloadHistory("7") })
+            assertEquals(previous + 1, server.requestCount)
+        }
     }
 
     @Test

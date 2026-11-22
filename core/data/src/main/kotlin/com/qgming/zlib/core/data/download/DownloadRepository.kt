@@ -7,6 +7,7 @@ import com.qgming.zlib.core.common.AppDispatchers
 import com.qgming.zlib.core.common.AppError
 import com.qgming.zlib.core.common.AppResult
 import com.qgming.zlib.core.common.FileNames
+import com.qgming.zlib.core.common.SafeLog
 import com.qgming.zlib.core.database.DownloadEntity
 import com.qgming.zlib.core.database.DownloadStates
 import com.qgming.zlib.core.database.ZlibDatabase
@@ -24,6 +25,7 @@ object DownloadServiceActions {
     const val START = "com.qgming.zlib.download.START"
     const val PAUSE = "com.qgming.zlib.download.PAUSE"
     const val CANCEL = "com.qgming.zlib.download.CANCEL"
+    const val REMOVE = "com.qgming.zlib.download.REMOVE"
     const val EXTRA_ID = "download_id"
 }
 
@@ -80,7 +82,6 @@ class DownloadRepository @Inject constructor(
     }
 
     suspend fun pause(id: String) = withContext(dispatchers.io) {
-        downloads.updateState(id, DownloadStates.PAUSED, null, System.currentTimeMillis())
         sendAction(DownloadServiceActions.PAUSE, id)
     }
 
@@ -95,7 +96,6 @@ class DownloadRepository @Inject constructor(
     }
 
     suspend fun cancel(id: String) = withContext(dispatchers.io) {
-        downloads.updateState(id, DownloadStates.CANCELLED, null, System.currentTimeMillis())
         sendAction(DownloadServiceActions.CANCEL, id)
     }
 
@@ -111,8 +111,29 @@ class DownloadRepository @Inject constructor(
     }
 
     suspend fun remove(id: String) = withContext(dispatchers.io) {
-        downloads.byId(id)?.let { directoryStore.deletePart(it.fileName) }
-        downloads.delete(id)
+        // The Service joins its writer before deleting the record or .part file.
+        sendAction(DownloadServiceActions.REMOVE, id)
+    }
+
+    internal suspend fun finishControl(action: String, id: String) = withContext(dispatchers.io) {
+        val item = downloads.byId(id) ?: return@withContext
+        when (action) {
+            DownloadServiceActions.PAUSE -> if (item.state != DownloadStates.COMPLETED) {
+                downloads.updateState(id, DownloadStates.PAUSED, null, System.currentTimeMillis())
+            }
+            DownloadServiceActions.CANCEL -> if (item.state != DownloadStates.COMPLETED) {
+                downloads.updateState(id, DownloadStates.CANCELLED, null, System.currentTimeMillis())
+            }
+            DownloadServiceActions.REMOVE -> {
+                // An unavailable provider must not prevent clearing an already stopped record.
+                if (item.state != DownloadStates.COMPLETED) {
+                    directoryStore.ensureLoaded()
+                    runCatching { directoryStore.deletePart(item.fileName) }
+                        .onFailure { SafeLog.w("Download", "temporary file cleanup unavailable") }
+                }
+                downloads.delete(id)
+            }
+        }
     }
 
     suspend fun setDownloadDirectory(uri: android.net.Uri): AppResult<Unit> =

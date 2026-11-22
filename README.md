@@ -1,105 +1,190 @@
-# Zlib
+<div align="center">
 
-一个面向 Android 的 Z-Library 客户端：登录、搜索、下载，以及账号的“我的图书馆”（云端已下载、收藏、书单）。**非官方项目**，仅供自己和朋友使用，以开源方式维护。
+<img src="app/artwork/zhishi.svg" alt="芝士读书图标" width="120" height="120" />
 
-> 本项目不是 Z-Library 官方客户端，不复刻其品牌或 Logo。Z-Library 属于影子图书馆，下载受版权保护的内容在部分司法辖区有法律风险；请自行判断并承担使用风险。项目不上架 Google Play，只通过 GitHub Releases 侧载。
+# 芝士读书
 
-## 状态
+**简洁的 Android Z-Library 非官方客户端**
 
-**v0.4 进行中（下载已可用）。** v0.2 已落地 EAPI 管线、域名体检/切换、三种登录、加密会话与配额；v0.3 接入搜索/详情/热门推荐/Coil 封面；v0.4 已接入 SAF 下载目录、Room 队列、前台下载 Service、暂停/取消/恢复、下载页、书架列表与系统分享。顶部/底部导航已切换为 Miuix 最新玻璃风格。
+搜索、收藏、下载与本机文件管理，在一处完成。
 
-下载适配了镜像的两种行为：302 到 CDN，以及 200 JSON `file.downloadLink`；写入前校验 EPUB/PDF/FB2 魔数，Range 206 续传已在真机验证为字节一致。`/eapi/user/profile` 已修正为 GET；镜像缺该接口时会体检并切换一次域名。
+<p>
+  <a href="https://github.com/qgming/zlib-app/releases/latest"><img alt="最新版本" src="https://img.shields.io/github/v/release/qgming/zlib-app?style=flat-square&color=E7A52C" /></a>
+  <img alt="Android 13+" src="https://img.shields.io/badge/Android-13%2B-3DDC84?style=flat-square&logo=android&logoColor=white" />
+  <img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-2.4.21-7F52FF?style=flat-square&logo=kotlin&logoColor=white" />
+  <img alt="Jetpack Compose" src="https://img.shields.io/badge/Jetpack_Compose-UI-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white" />
+  <img alt="Miuix" src="https://img.shields.io/badge/Miuix-0.9.5--beta03-FF6900?style=flat-square" />
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" /></a>
+</p>
 
-范围调整（ADR-031/032）：已取消应用备份和独立本地书库计划，“我的图书馆”以 Z-Library 云端为准。书架顶部仅“收藏 / 书单”，默认收藏；收藏的读取/分页/刷新已接入，书单目前明确提示“云端书单尚未接入”。原“历史”实际是云端下载记录，现从下载管理进入；本机文件分享/删除也已迁入下载管理。已对缺失/已知无效封面增加详情 EAPI 补取，并隔离不同会话的列表与封面状态。2026-11-22 用户确认收藏功能与云端下载记录真机验证成功；封面补取边界、账号切换和多设备一致性仍待专项复验。
+<p>
+  <a href="https://github.com/qgming/zlib-app/releases/latest">下载安装</a> ·
+  <a href="#核心功能">核心功能</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#构建与打包">构建与打包</a> ·
+  <a href="https://github.com/qgming/zlib-app/releases">更新日志</a>
+</p>
 
-## 功能范围（v1）
+</div>
 
-- 账号：邮箱密码登录、内嵌 WebView 登录抓 Cookie、粘贴/导入 Netscape Cookie；单账号
-- 网络：内置镜像 allowlist、并发域名体检、失败自动切换、自定义镜像、系统 VPN/代理
-- 浏览：阅读首页包含热门和为你推荐；底部使用 Glass 系列的 Notes 图标，与书架区分。切页时标题和内容整页左右滑动，底栏固定；双击“阅读”回到顶部。搜索结果、云端收藏和下载记录共用封面网格
-- 详情转场：接入 ITGSA SharedView Kit 1.0.0.5，默认使用设备 ROM 声明的能力，不增加设置项；支持时从封面一镜到底展开为独立详情页，返回更新封面落点，不支持或快照失败时普通打开。设备验收与 SDK 来源见 [动画说明](docs/ANIMATIONS.md)
-- 网格：统一 2:3 封面与下方单行书名，超长末尾省略，无整项卡片；在「设置 → 外观 → 图书网格列数」选择自动、2、3、4、5 列。默认“自动”，常见手机三列，窄分屏两列，平板按窗口宽度使用四列、五列；手动选择保留并立即应用
-- 缺图书封：缺失或加载失败时，按实际书名和作者排成素色底、细框、居中衬线文字的经典书封，加载成功后显示真实封面
-- 搜索：从阅读页右上角进入，使用 Miuix 搜索栏；搜索页右上角打开筛选面板，包含语言、格式、年份、精确匹配和排序
-- 下载：从阅读页右上角打开下载管理，查看进度、暂停、取消、续传与本机任务记录；通过“本机文件”分享/删除文件，通过“云端下载记录”查看账号在各设备上的下载记录
-- 书架：顶部仅“收藏 / 书单”，默认显示 Z-Library 云端收藏；云端书单尚未接入，需先验证 EAPI，不维护独立本地书单。云端下载记录不表示当前设备已有文件
-- 详情：下载与收藏并排，收藏位于右侧，显示“添加收藏 / 已收藏”；操作区无外层卡片，出版和文件信息从右上角信息按钮打开玻璃底部面板。简介支持段落、换行、常见富文本与选择复制
-- 作者：详情中作者、译者的姓名各自为蓝色链接，点击自动搜索单个姓名；国籍、角色说明和分隔符保持普通文字。书名字重 600，姓名字重 500
-- 收藏：点击详情的“添加收藏 / 已收藏”加入或取消云端收藏，成功后刷新书架收藏列表。用户于 2026-11-22 确认收藏逻辑真机验证成功
-- 本机文件：点击封面或书名进入详情，长按打开分享/删除操作面板，删除需要确认
-- 分享：通过系统 `ACTION_SEND` 把书分享到阅读器 App（含微信读书），**不做内置阅读器**
-- 设置：底部独立入口，按账号、下载与网络、外观分组管理；账号显示名称与邮箱，左侧图标统一常规粗细，以 26dp 为基准随标题字号缩放，左右各留 15dp；设置与下载管理顶部卡片均无内部行间分割线，玻璃效果在支持的设备上始终开启
-- 隐私：零遥测、零统计
+---
 
-### 明确不做
+芝士读书使用 **Kotlin + Jetpack Compose + Miuix** 构建，提供阅读发现、书架与设置三个入口。
+图书、收藏和云端下载记录来自你的 Z-Library 账号；下载文件保存在你选择的文件夹，交给你喜欢的阅读器打开。
 
-- 应用备份/恢复、独立本地书库/书单及其导入导出（ADR-031）；登录 Cookie 导入继续保留
-- Kindle 推送、微信读书导入 API（只走系统分享）
-- 内置 EPUB/PDF 阅读器
-- 多书源（Anna's Archive、Gutenberg 等）
-- MCP server、TUI、终端封面
-- 静默自更新（只做“检查 Release 并跳转浏览器”）
-- 本地电子书元数据编辑、第三方查源、嵌封面与编辑器重命名（计划已取消，见 ADR-030）；详情页继续展示 EAPI 返回的图书信息
+这是独立的非官方项目，与 Z-Library 无关联或授权关系，不提供图书内容或账号。
+请遵守所在地法律、作品版权及服务规则，仅访问和下载你有权使用的内容。
 
-## 技术栈
+## 下载安装
 
-- Kotlin 2.4.21 / Jetpack Compose（Compose 1.13.0-rc01）
-- Miuix 0.9.5-beta03（`miuix-ui`、`preference`、`icons`、`glass-icons`、`material`、`squircle`、`blur`、`glass`、`nav`；不含 desktop-only 的 `miuix-window`）
-- AGP 9.5.2 / Gradle 9.9.2 / JDK 21
-- Hilt + Room + KSP（Hilt 有 1 天 spike，失败则回退手写 `AppContainer`）
-- OkHttp + kotlinx.serialization；前台 `dataSync` Service + Room 下载队列
+前往 **[GitHub Releases](https://github.com/qgming/zlib-app/releases/latest)** 下载正式版 APK。最低支持 **Android 13**，无需 Google Play 服务。
 
-## 构建
+| 安装包后缀 | 适用设备 |
+| --- | --- |
+| `arm64-v8a.apk` | 64 位 ARM 手机和平板，通常优先选择这一版 |
+| `armeabi-v7a.apk` | 支持 32 位 ARM 应用的 Android 13+ 设备 |
+| `x86_64.apk` | 64 位 Intel / AMD Android 设备或模拟器 |
+| `x86.apk` | 32 位 x86 Android 设备或模拟器 |
+| `universal.apk` | 包含以上全部架构，不确定时选择；体积稍大 |
 
-前置：
+架构拆分不会降低 Android 版本要求。每次发布都附有 `SHA256SUMS.txt`，可核对文件完整性。
 
-- Android 13+ 设备（`minSdk 33`；`miuix-blur` 要求 33）
-- JDK 21
-- Android SDK Platform **37.2**、Build-Tools **37.0.0**
-- 把 SDK 路径写进 `local.properties`（`sdk.dir=D:/Android/Sdk`）
+应用会在启动后检查新版，也可在「设置 → 关于 → 检查更新」手动触发。
+发现新版后显示真实发布日志；点击更新会自动选择设备架构、在应用内下载并显示进度。
+校验通过的 APK 会保存到已授权的下载目录，点击安装后由系统确认；不会静默安装。
+
+## 核心功能
+
+| 分区 | 能力 |
+| --- | --- |
+| 阅读发现 | 热门与推荐、关键词搜索、语言 / 格式 / 年份 / 精确匹配 / 排序筛选、分页加载 |
+| 图书详情 | 封面、简介、出版信息，点击作者或译者搜索，下载前选择服务端提供的文件格式 |
+| 多账号 | 邮箱密码登录、Cookie 导入、加密保存会话、手动切换、刷新或退出指定账号、剩余额度展示 |
+| 云端收藏 | 查看、分页与刷新收藏，详情中加入或取消收藏；切换账号后隔离数据 |
+| 下载管理 | 持久化队列、单任务顺序下载、暂停 / 恢复 / 重试、前台通知、Range 续传与配额保护 |
+| 本机书架 | 扫描下载目录及子目录的电子书，外部阅读器打开、系统分享、确认后删除真实文件 |
+| 云端下载记录 | 独立查看账号的跨设备下载记录，可确认后删除记录，不影响本机文件或收藏 |
+| 域名管理 | 域名体检、手动切换、自定义域名、单独或全部体检、可关闭的自动切换 |
+| 外观 | Miuix 玻璃界面、跟随系统 / 浅色 / 深色、自动或 2–5 列封面网格 |
+| 应用更新 | GitHub Releases 真实日志、启动及手动检查、匹配架构下载、进度、签名校验与系统安装 |
+
+应用**不内置阅读器**，也不建立独立本地书库或书单。云端下载记录表示账号曾下载过，
+不代表文件仍在当前设备；清除下载任务记录不会删除已完成的电子书。
+
+## 快速开始
+
+1. 安装适合设备架构的 APK，使用自己的 Z-Library 账号登录；也可切换为 Cookie 导入。
+2. 域名不可用时，点击登录页当前域名右侧的更换按钮，或进入「设置 → 域名管理」。
+3. 在「设置 → 下载目录」选择保存文件的文件夹并授予访问权限。
+4. 在阅读页浏览或搜索图书，进入详情选择格式后下载；下载管理从阅读页右上角进入。
+5. 在「书架 → 本机」打开或分享已下载文件，在「收藏」查看当前账号的云端收藏。
+
+只会保存加密后的登录会话，**不保存密码**。账号管理支持添加多个账号；额度耗尽自动切换默认关闭，
+开启后也只选择服务端确认仍有额度的有效会话，平台的验证或限制仍然适用。
+
+## 隐私与数据
+
+- **无广告、无遥测、无统计 SDK**，不上传本机文件列表。
+- 会话凭据通过 Android Keystore 加密，只向已允许的图书服务域名发送；跨域下载剥离账号凭据。
+- 电子书只写入用户通过系统文件选择器授权的目录；本机删除需要确认。
+- 更新查询和 APK 下载使用独立的匿名网络客户端，不携带图书账号、Cookie 或密码。
+- 不内置 WebView 登录，不抓取网页或绕过网站验证；服务端接口、域名和可用性可能变化。
+
+## 架构
+
+```mermaid
+flowchart TB
+  App["app · 导航 / 依赖注入 / 平台入口"]
+  Features["feature · 搜索 / 详情 / 下载 / 书架 / 账号 / 设置"]
+  Design["core:designsystem · Miuix 组件与主题"]
+  Data["core:data · Repository / 会话 / 下载队列 / 更新"]
+  Network["core:network · EAPI / 域名探测 / 独立 GitHub 客户端"]
+  Database["core:database · Room"]
+  Base["core:model / core:common · 模型与公共类型"]
+  App --> Features
+  App --> Design
+  Features --> Design
+  Features --> Data
+  Data --> Network
+  Data --> Database
+  Design --> Base
+  Network --> Base
+  Database --> Base
+```
+
+界面使用 MVVM 与 StateFlow；feature 之间不相互依赖，Miuix 由设计系统统一封装。
+图书接口行为参考 [heartleo/zlib](https://github.com/heartleo/zlib)，不是将 CLI 打包进 APK。
+
+## 构建与打包
+
+**环境要求**：JDK 21、Android SDK Platform **37.2**、Build-Tools **37.0.0**。
+Gradle 由仓库 Wrapper 提供，固定工具链见 [AGENTS.md](AGENTS.md)。
 
 ```powershell
-# 安装缺失的 SDK 组件（新版 CLI 一次一个包）
-D:\Android\Sdk\cmdline-tools\latest\bin\android.exe sdk install "platforms;android-37.2"
-D:\Android\Sdk\cmdline-tools\latest\bin\android.exe sdk install "build-tools;37.0.0"
+git clone https://github.com/qgming/zlib-app.git
+cd zlib-app
 
-# 调试构建
+# 在 local.properties 中配置本机 SDK 路径，例如 sdk.dir=D:/Android/Sdk
 .\gradlew.bat :app:assembleDebug
 
-# 单测 + lint
+# 单元测试与静态检查
 .\gradlew.bat test lint
 ```
 
-### 签名
+macOS / Linux 将 `gradlew.bat` 替换为 `./gradlew`。
 
-本地签名复用 `D:\dev\aiok\android\app\qgming2026.jks`（alias `qgming`）。在项目根目录创建 **不提交** 的 `key.properties`：
+### 正式版签名
+
+在项目根目录创建仅保存在本机的 `key.properties`，使用自己的签名信息：
 
 ```properties
-storeFile=D:/dev/aiok/android/app/qgming2026.jks
-storePassword=...
-keyAlias=qgming
-keyPassword=...
+storeFile=/absolute/path/to/release.jks
+storePassword=<store-password>
+keyAlias=<key-alias>
+keyPassword=<key-password>
 ```
 
-CI 使用 GitHub Secrets 注入 base64 的 keystore 和密码；仓库里永远不要出现 `*.jks`、`key.properties`、密码。签名一旦更换，朋友无法覆盖安装。
+不要提交该文件、密钥或密码。自行构建所用签名若与官方安装包不同，无法直接覆盖安装。
+维护者发布须始终沿用原签名。
+
+### 按架构生成发布资产
+
+```powershell
+.\gradlew.bat :app:prepareReleaseAssets -PsplitApks=true
+```
+
+输出到 `app/build/release/`：
+
+```text
+zhishi-1.0.0-arm64-v8a.apk
+zhishi-1.0.0-armeabi-v7a.apk
+zhishi-1.0.0-x86_64.apk
+zhishi-1.0.0-x86.apk
+zhishi-1.0.0-universal.apk
+SHA256SUMS.txt
+```
+
+发布时同步递增 `appVersionName` / `appVersionCode`，使用对应的 `vMAJOR.MINOR.PATCH` 标签创建正式 Release，
+填写真实更新日志并上传上述资产。所有架构使用相同版本号。具体校验与发布流程见 [发布说明](docs/RELEASING.md)。
+正式构建启用 R8 优化和资源裁剪，按架构仅保留对应原生库；通用包包含全部架构。
 
 ## 文档
 
-- [AGENTS.md](AGENTS.md) — 给 AI/协作者的硬约束
-- [GLOSSARY.md](GLOSSARY.md) — 云端图书馆、已下载、本机文件等术语
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 模块图、数据流、状态机
-- [docs/EAPI.md](docs/EAPI.md) — EAPI 端点、错误、域名与凭据规则
-- [docs/DECISIONS.md](docs/DECISIONS.md) — ADR 决策记录
-- [docs/ANIMATIONS.md](docs/ANIMATIONS.md) — 主导航切页及 SharedView Kit 接入与验收
-- [docs/ROADMAP.md](docs/ROADMAP.md) — 版本计划
-- [docs/TESTING.md](docs/TESTING.md) — 测试与 CI
-- [CONTRIBUTING.md](CONTRIBUTING.md) — 贡献流程
+| 文档 | 内容 |
+| --- | --- |
+| [架构说明](docs/ARCHITECTURE.md) | 模块、状态与数据流 |
+| [EAPI 契约](docs/EAPI.md) | 已核对的图书端点、字段及安全边界 |
+| [决策记录](docs/DECISIONS.md) | 功能范围与实现取舍 |
+| [测试说明](docs/TESTING.md) | 自动化检查与真机验收 |
+| [发布说明](docs/RELEASING.md) | 签名、架构拆包、校验与发布 |
+| [动画说明](docs/ANIMATIONS.md) | 页面切换及 SharedView Kit 适配 |
+| [贡献指南](CONTRIBUTING.md) | 环境、规范与提交流程 |
+| [术语表](GLOSSARY.md) | 本机文件、下载任务与云端记录的区别 |
 
-## English summary
+## 致谢与开源协议
 
-Zlib is an unofficial Android client for Z-Library, built with Kotlin, Jetpack Compose, and Miuix. Its scope is login, mirror health checks, search, downloads over SAF, and the account's cloud library. The bookshelf has Favorites and Booklists tabs; Favorites is connected, while Booklists explicitly shows that access is not yet available. Download management provides separate local file actions and cloud download history. Invalid or missing covers can be recovered through book details for visible cards. App backup/restore and an independent local library are out of scope (ADR-031/032). Local e-book metadata editing has also been removed from the roadmap (ADR-030); book details continue to display information returned by the EAPI. There is no built-in reader; books are shared to reader apps via `ACTION_SEND`. The project is MIT-licensed, has no telemetry, and is distributed as sideloaded APKs through GitHub Releases. It is not affiliated with Z-Library.
+感谢 [heartleo/zlib](https://github.com/heartleo/zlib)、[Miuix](https://github.com/compose-miuix-ui/miuix)
+及 AndroidX、Kotlin、OkHttp、Coil、Hilt、Room、DataStore 等项目。
 
-## License
-
-MIT. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for third-party attribution.
-
+项目代码使用 **[MIT License](LICENSE)**。第三方组件遵循各自许可证，归属信息见 [NOTICE](NOTICE)。
+SharedView Kit 是独立 SDK，不能将示例工程的 MIT 许可视作 SDK 许可；来源与适用边界见 [app/libs/README.md](app/libs/README.md)。

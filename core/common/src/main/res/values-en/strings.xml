@@ -1,0 +1,5 @@
+<resources>
+    <string name="zlib_app_name">Zlib</string>
+    <string name="zlib_login_title">Sign in to Zlib</string>
+    <string name="zlib_download_title">Zlib downloads</string>
+</resources>

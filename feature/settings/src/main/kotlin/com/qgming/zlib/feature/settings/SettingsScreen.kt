@@ -9,11 +9,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.res.stringResource
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qgming.zlib.core.designsystem.ZlibCardList
+import com.qgming.zlib.core.designsystem.ZlibAboutGroup
 import com.qgming.zlib.core.designsystem.ZlibPreferenceGroup
-import com.qgming.zlib.core.designsystem.ZlibPreferenceIcon
 import com.qgming.zlib.core.designsystem.ZlibPreferenceLink
 import com.qgming.zlib.core.designsystem.ZlibPreferenceMenu
 import com.qgming.zlib.core.designsystem.ZlibStateCard
@@ -40,6 +41,7 @@ fun SettingsScreen(
     padding: PaddingValues,
     onOpenAccount: () -> Unit,
     onOpenDomains: () -> Unit,
+    onOpenAbout: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -59,48 +61,55 @@ fun SettingsScreen(
             }
         }
         item(key = "account") {
-            ZlibPreferenceGroup("账号") {
+            ZlibPreferenceGroup {
                 ZlibPreferenceLink(
                     title = state.account?.name?.takeIf(String::isNotBlank)
                         ?: if (state.account == null) "Z-Library 账号" else "Z-Library 用户",
                     summary = state.account?.email?.takeIf(String::isNotBlank)
                         ?: if (state.account == null) "查看账号与下载额度" else "未提供邮箱",
-                    icon = ZlibPreferenceIcon.Account,
                     onClick = onOpenAccount,
                 )
             }
         }
-        item(key = "downloads-network") {
-            ZlibPreferenceGroup("下载与网络") {
-                ZlibPreferenceLink(
-                    title = "下载目录",
-                    summary = state.directory ?: "选择保存图书的文件夹",
-                    icon = ZlibPreferenceIcon.Downloads,
-                    onClick = { directoryPicker.launch(null) },
-                )
-                ZlibPreferenceLink(
-                    title = "域名与网络",
-                    summary = state.currentHost ?: "检测和管理镜像",
-                    icon = ZlibPreferenceIcon.Domain,
-                    onClick = onOpenDomains,
-                )
-            }
-        }
         item(key = "appearance") {
-            ZlibPreferenceGroup("外观") {
+            ZlibPreferenceGroup {
                 ZlibPreferenceMenu(
                     title = "外观模式",
-                    icon = ZlibPreferenceIcon.Color,
                     options = ThemeOptionLabels,
                     selectedIndex = ThemeOptions.indexOfFirst { it.first == state.themeMode },
                     onSelect = { index -> viewModel.setThemeMode(ThemeOptions[index].first) },
                 )
                 ZlibPreferenceMenu(
-                    title = "图书网格列数",
-                    icon = ZlibPreferenceIcon.Books,
+                    title = "网络格数",
                     options = GridOptionLabels,
                     selectedIndex = GridOptions.indexOfFirst { it.first == state.bookGridColumns },
                     onSelect = { index -> viewModel.setBookGridColumns(GridOptions[index].first) },
+                )
+            }
+        }
+        item(key = "downloads") {
+            ZlibPreferenceGroup {
+                ZlibPreferenceLink(
+                    title = "下载目录",
+                    summary = state.directory ?: "选择保存图书的文件夹",
+                    onClick = { directoryPicker.launch(null) },
+                )
+            }
+        }
+        item(key = "domains") {
+            ZlibPreferenceGroup {
+                ZlibPreferenceLink(
+                    title = "域名管理",
+                    summary = state.currentHost ?: "检测和管理镜像",
+                    onClick = onOpenDomains,
+                )
+            }
+        }
+        item(key = "about") {
+            ZlibAboutGroup {
+                ZlibPreferenceLink(
+                    title = stringResource(R.string.about_title),
+                    onClick = onOpenAbout,
                 )
             }
         }

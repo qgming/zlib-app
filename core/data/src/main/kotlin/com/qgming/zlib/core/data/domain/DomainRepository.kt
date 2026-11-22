@@ -17,6 +17,7 @@ import javax.inject.Singleton
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -71,6 +72,7 @@ class DomainRepository @Inject constructor(
                 if (normalized != null && registry.isAllowed(normalized)) {
                     _currentHost.value = normalized
                 }
+                populateChecks()
                 if (_currentHost.value == null) {
                     probeInternal(switchToBest = true)
                 }
@@ -89,7 +91,10 @@ class DomainRepository @Inject constructor(
     suspend fun probeHost(host: String): DomainCheck = mutex.withLock {
         val normalized = DomainPolicy.normalizeHostInput(host)
             ?: return@withLock DomainCheck(host = host, status = DomainStatus.INVALID, detail = "域名格式无效")
-        val check = withContext(dispatchers.io) { probe.probe(normalized) }
+        if (!registry.isAllowed(normalized)) {
+            return@withLock DomainCheck(normalized, DomainStatus.INVALID, "域名不在允许列表")
+        }
+        val check = checkHost(normalized)
         val updated = _checks.value.filterNot { it.host == normalized } + check
         _checks.value = updated.sortedBy { hostOrder(it.host) }
         check
@@ -115,7 +120,7 @@ class DomainRepository @Inject constructor(
         registry.updateCustomHosts(hosts)
         _settings.value = currentSettings().copy(customHosts = hosts)
 
-        val check = withContext(dispatchers.io) { probe.probe(host) }
+        val check = checkHost(host)
         _checks.value = (_checks.value.filterNot { it.host == host } + check).sortedBy { hostOrder(it.host) }
 
         if (check.status == DomainStatus.HEALTHY &&
@@ -146,17 +151,12 @@ class DomainRepository @Inject constructor(
         AppResult.Success(Unit)
     }
 
-    suspend fun setLockedHost(host: String?): AppResult<Unit> = mutex.withLock {
-        val normalized = host?.let(DomainPolicy::normalizeHostInput)
-        if (host != null && normalized == null) {
-            return@withLock AppResult.Failure(AppError.Parse("域名格式无效"))
-        }
-        if (normalized != null && !registry.isAllowed(normalized)) {
-            return@withLock AppResult.Failure(AppError.Parse("域名不在允许列表"))
-        }
-        settingsStore.setLockedHost(normalized)
-        _settings.value = currentSettings().copy(lockedHost = normalized)
-        if (normalized != null) applyHost(normalized)
+    suspend fun setAutoSwitchEnabled(enabled: Boolean): AppResult<Unit> = mutex.withLock {
+        val lockedHost = if (enabled) null else (
+            _currentHost.value ?: return@withLock AppResult.Failure(AppError.NoDomain)
+        )
+        settingsStore.setLockedHost(lockedHost)
+        _settings.value = currentSettings().copy(lockedHost = lockedHost)
         AppResult.Success(Unit)
     }
 
@@ -182,9 +182,14 @@ class DomainRepository @Inject constructor(
         settings: AppSettings = currentSettings(),
     ): List<DomainCheck> {
         val hosts = probeHosts(settings)
+        val previous = _checks.value
+        _checks.value = hosts.map { DomainCheck(it, DomainStatus.PROBING) }
         _probing.value = true
         val results = try {
             probe.probeAll(hosts, concurrency = 8)
+        } catch (failure: Exception) {
+            _checks.value = previous
+            throw failure
         } finally {
             _probing.value = false
         }
@@ -215,6 +220,9 @@ class DomainRepository @Inject constructor(
         }
 
         if (_currentHost.value != host) _currentHost.value = host
+        if (_checks.value.none { it.host == host }) {
+            _checks.update { (it + DomainCheck.unknown(host)).sortedBy { check -> hostOrder(check.host) } }
+        }
         settingsStore.setCurrentHost(host)
         _settings.value = currentSettings().copy(currentHost = host)
         // Manual selection follows the lock so a later probe cannot undo it.
@@ -223,7 +231,7 @@ class DomainRepository @Inject constructor(
             _settings.value = currentSettings().copy(lockedHost = host)
         }
         if (session != null && session.domain != host) {
-            sessionManager.save(session.withDomain(host))
+            sessionManager.updateDomain(session, host)
         }
     }
 
@@ -236,10 +244,30 @@ class DomainRepository @Inject constructor(
 
     private fun probeHosts(settings: AppSettings): List<String> {
         val remembered = _settings.value.currentHost
-        return (DomainPolicy.DEFAULT_PROBE_HOSTS + settings.customHosts + listOfNotNull(remembered))
+        return (DomainPolicy.DEFAULT_PROBE_HOSTS + settings.customHosts + listOfNotNull(_currentHost.value, remembered))
             .mapNotNull(DomainPolicy::normalizeHostInput)
             .filter(registry::isAllowed)
             .distinct()
+    }
+
+    private fun populateChecks() {
+        val known = _checks.value.associateBy { it.host }
+        _checks.value = probeHosts(currentSettings()).map { known[it] ?: DomainCheck.unknown(it) }
+    }
+
+    private suspend fun checkHost(host: String): DomainCheck {
+        val previous = _checks.value
+        _checks.value = (previous.filterNot { it.host == host } + DomainCheck(host, DomainStatus.PROBING))
+            .sortedBy { hostOrder(it.host) }
+        _probing.value = true
+        return try {
+            withContext(dispatchers.io) { probe.probe(host) }
+        } catch (failure: Exception) {
+            _checks.value = previous
+            throw failure
+        } finally {
+            _probing.value = false
+        }
     }
 
     private fun hostOrder(host: String): Int {

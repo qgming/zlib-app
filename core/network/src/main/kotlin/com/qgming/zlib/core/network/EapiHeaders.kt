@@ -24,6 +24,7 @@ object EapiEndpoints {
     const val MOST_POPULAR = "/eapi/book/most-popular"
 
     fun detail(id: String, hash: String): String = "/eapi/book/$id/$hash"
+    fun formats(id: String, hash: String): String = "/eapi/book/$id/$hash/formats"
     fun file(id: String, hash: String): String = "/eapi/book/$id/$hash/file"
     fun deleteHistory(id: String): String = "/eapi/user/book/$id/delete"
     fun saveBook(id: String): String = "/eapi/user/book/$id/save"

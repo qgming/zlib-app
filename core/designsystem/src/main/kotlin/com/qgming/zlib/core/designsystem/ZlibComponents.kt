@@ -14,6 +14,7 @@ import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
@@ -26,11 +27,13 @@ fun ZlibCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
     insideMargin: PaddingValues = PaddingValues(16.dp),
+    cornerRadius: Dp = 16.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
         insideMargin = insideMargin,
+        cornerRadius = cornerRadius,
         onClick = onClick,
         showIndication = onClick != null,
         content = content,

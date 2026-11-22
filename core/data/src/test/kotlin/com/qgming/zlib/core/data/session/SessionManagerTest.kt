@@ -23,16 +23,10 @@ class SessionManagerTest {
     }
 
     private class FakeSessionStore(initial: Session? = null) : SessionStore {
-        private val state = MutableStateFlow(initial)
-        override val session: Flow<Session?> = state.asStateFlow()
-        override suspend fun read(): Session? = state.value
-        override suspend fun save(session: Session) {
-            state.value = session
-        }
-
-        override suspend fun clear() {
-            state.value = null
-        }
+        private var state = initial?.let { SessionVault(listOf(SessionEntry(it)), it.remixUserId) } ?: SessionVault()
+        override suspend fun readVault() = state
+        override suspend fun saveVault(vault: SessionVault) { state = vault }
+        override suspend fun clear() { state = SessionVault() }
     }
 
     private fun session(key: String = "key", domain: String = "z-lib.gd") = Session(
@@ -62,7 +56,7 @@ class SessionManagerTest {
 
         assertEquals("new-key", manager.current()?.remixUserKey)
         assertEquals("z-library.sk", manager.session.value?.domain)
-        assertEquals("new-key", store.read()?.remixUserKey)
+        assertEquals("new-key", store.readVault().current?.remixUserKey)
     }
 
     @Test
@@ -75,7 +69,7 @@ class SessionManagerTest {
 
         assertNull(manager.current())
         assertNull(manager.session.value)
-        assertNull(store.read())
+        assertNull(store.readVault().current)
     }
 
     @Test

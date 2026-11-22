@@ -12,16 +12,18 @@ import com.qgming.zlib.core.model.BookPage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
 enum class LibrarySection(val title: String) {
+    Local("本机"),
     Saved("收藏"),
-    Booklists("书单"),
 }
 
 internal enum class CloudLibrarySource(val title: String, val emptyMessage: String) {
@@ -37,6 +39,13 @@ internal data class RemoteLibraryState(
     val error: String? = null,
 )
 
+internal data class HistoryActionState(
+    val book: Book? = null,
+    val confirming: Boolean = false,
+    val busy: Boolean = false,
+    val error: String? = null,
+)
+
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
     private val repository: LibraryRepository,
@@ -45,9 +54,17 @@ class LibraryViewModel @Inject constructor(
 ) : ViewModel() {
     private val _remote = MutableStateFlow<Map<CloudLibrarySource, RemoteLibraryState>>(emptyMap())
     internal val remote = _remote.asStateFlow()
+    private val _historyAction = MutableStateFlow(HistoryActionState())
+    internal val historyAction = _historyAction.asStateFlow()
+    private val _events = Channel<String>(Channel.BUFFERED)
+    internal val events = _events.receiveAsFlow()
+    private var deleteRequest: Job? = null
+    private var historyNeedsRefresh = false
 
     private var activeSession = sessions.current()
-    private var generation = 0L
+    private val _sessionGeneration = MutableStateFlow(0L)
+    internal val sessionGeneration = _sessionGeneration.asStateFlow()
+    private val generation get() = _sessionGeneration.value
     private var shownSource: CloudLibrarySource? = null
     private val requests = mutableMapOf<CloudLibrarySource, Job>()
     private val coverRequests = mutableMapOf<String, Job>()
@@ -91,9 +108,13 @@ class LibraryViewModel @Inject constructor(
         val session = sessions.current()
         if (session == activeSession) return false
         activeSession = session
-        generation++
+        _sessionGeneration.value++
         requests.values.forEach { it.cancel() }
         coverRequests.values.forEach { it.cancel() }
+        deleteRequest?.cancel()
+        _historyAction.value = HistoryActionState()
+        historyNeedsRefresh = false
+        while (_events.tryReceive().isSuccess) { /* Discard previous-account feedback. */ }
         requests.clear()
         coverRequests.clear()
         attemptedCovers.clear()
@@ -104,6 +125,11 @@ class LibraryViewModel @Inject constructor(
 
     private fun load(source: CloudLibrarySource, request: LibraryRequest) {
         resetSession()
+        if (source == CloudLibrarySource.DownloadHistory && _historyAction.value.busy) return
+        if (source == CloudLibrarySource.DownloadHistory && request == LibraryRequest.Append && historyNeedsRefresh) {
+            load(source, LibraryRequest.Refresh)
+            return
+        }
         val current = _remote.value[source] ?: RemoteLibraryState()
         if (current.request != null) return
         val requestedPage = if (request == LibraryRequest.Append) {
@@ -123,6 +149,7 @@ class LibraryViewModel @Inject constructor(
             if (generation != requestGeneration || sessions.current() != requestSession) return@launch
             val updated = when (result) {
                 is AppResult.Success -> {
+                    if (source == CloudLibrarySource.DownloadHistory) historyNeedsRefresh = false
                     // Keep any covers that arrived while the next page was loading.
                     val previousBooks = if (request == LibraryRequest.Append) _remote.value[source]?.page?.books.orEmpty() else emptyList()
                     val page = result.value
@@ -134,6 +161,59 @@ class LibraryViewModel @Inject constructor(
                 is AppResult.Failure -> (_remote.value[source] ?: current).copy(request = null, error = result.error.userMessage())
             }
             updateRemote(source, updated)
+        }
+    }
+
+    internal fun showHistoryActions(book: Book) {
+        if (resetSession() || _historyAction.value.busy) return
+        val loaded = _remote.value[CloudLibrarySource.DownloadHistory]?.page?.books
+            ?.firstOrNull { it.ref == book.ref } ?: return
+        _historyAction.value = HistoryActionState(book = loaded)
+    }
+
+    internal fun dismissHistoryActions() {
+        if (!_historyAction.value.busy) _historyAction.value = HistoryActionState()
+    }
+
+    internal fun requestHistoryDeletion() {
+        if (resetSession()) return
+        val current = _historyAction.value
+        if (current.book == null || current.busy) return
+        _historyAction.value = current.copy(confirming = true, error = null)
+    }
+
+    internal fun confirmHistoryDeletion() {
+        if (resetSession()) return
+        val current = _historyAction.value
+        val book = current.book ?: return
+        if (!current.confirming || current.busy) return
+        val requestSession = activeSession
+        val requestGeneration = generation
+        val source = CloudLibrarySource.DownloadHistory
+        requests.remove(source)?.cancel()
+        _remote.value[source]?.let { updateRemote(source, it.copy(request = null)) }
+        _historyAction.value = current.copy(busy = true, error = null)
+        deleteRequest = viewModelScope.launch {
+            if (sessions.current() != requestSession) return@launch
+            val result = repository.deleteHistory(book.id)
+            if (generation != requestGeneration || sessions.current() != requestSession) return@launch
+            when (result) {
+                is AppResult.Success -> {
+                    _historyAction.value = HistoryActionState()
+                    historyNeedsRefresh = true
+                    _remote.value[source]?.let { previous ->
+                        updateRemote(source, previous.copy(
+                            page = previous.page?.let { it.copy(books = it.books.filterNot { it.id == book.id }) },
+                        ))
+                    }
+                    _events.send("已删除云端下载记录")
+                    // A deletion shifts server offsets. Reload page one before allowing another append.
+                    load(source, LibraryRequest.Refresh)
+                }
+                is AppResult.Failure -> _historyAction.value = current.copy(
+                    busy = false, error = result.error.userMessage(),
+                )
+            }
         }
     }
 

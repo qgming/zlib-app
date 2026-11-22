@@ -50,7 +50,7 @@ email=<email>&password=<password>
 - 取 `remix_userkey`，为空时取 `remix_user_key`。
 - `id` 可能是数字或字符串，统一转字符串。
 - 失败：`{"success":0,"error":"Incorrect email or password"}` 或 `Authorization failed`。
-- **已知问题**：部分账号密码登录被拒，但用浏览器 Cookie 可以正常调用其它端点。因此客户端必须提供 Cookie 导入/WebView 通道。
+- **已知问题**：部分账号密码登录被拒，但用浏览器 Cookie 可以正常调用其它端点。因此客户端必须保留 Cookie 导入；内嵌 WebView 登录已按 ADR-052 移除。
 - 登录成功后，后续请求带 Cookie + 头；不要把密码写入任何存储。
 
 ### 2.2 搜索
@@ -114,6 +114,33 @@ GET /eapi/book/{id}/{hash}
 
 返回单本书的完整字段，结构与搜索项相同。详情页按 `id:hash` 缓存，避免重复请求。
 
+#### 同一本书的可用格式（ADR-045）
+
+```
+GET /eapi/book/{id}/{hash}/formats
+```
+
+2026-11-22 在 `zh.z-lib.by` 已验证此端点：未登录和用户授权的有效账号会话均返回 HTTP 200、`application/json`、`{"success":1,"books":[]}`。本次收藏、热门及搜索样本未获得非空列表，不能据此判断其它图书或域名都没有其它格式，也不能将非空菜单标记为真机验收完成。程序要求有效会话后调用，使用相同 Cookie/remix 头和安全管线；读取此列表不调用 `/file`。
+
+用户反馈单格式后，2026-11-22 再核对真机近期访问的两个图书引用：在 `zh.z-lib.by` 未登录请求仍返回成功的空数组；真机当前配置镜像 `zh.friday101.ru` 对其中一项的未登录只读请求也返回相同结果。单本详情只含当前 `extension`，未发现被客户端漏读的格式数组。上述补查不等于验证了当前镜像的登录态非空列表，也不能据此宣称网站无其它格式；客户端通过日志条目数与 MockWebServer 回归区分服务端空数组和本地过滤问题。
+
+非空条目的字段依据 `nassim-arifette/zlibrary-api` 的 `parse_format()` 和 `roxycon-dev/Ciallo-Reader` 的 `getFormats()`，并用 MockWebServer 回归，**下例是契约样例，不是真实账号响应**：
+
+```json
+{
+  "success": 1,
+  "books": [
+    { "id": 8, "hash": "exampleHash", "extension": "pdf", "filesize": 1048576, "filesizeString": "1 MB" }
+  ]
+}
+```
+
+- 每条对应一个已有文件，必须用其独立 `id` / `hash` 调用下载端点；不拼接其它扩展名、不本地转换、不用普通搜索猜测其它格式。
+- `extension` 转小写，只接受 1–20 位字母数字；引用校验与详情一致。`filesize` 可为数字或数字字符串，非负时保存为字节；`filesizeString` 仅用于显示，不按字节数字解析。
+- 必须存在 `books` 数组。空数组是有效结果；字段缺失、错误类型或无效条目为解析错误，保留重试，不默默丢弃而声称已经展示所有选项。
+- 按 `id:hash` 去重；不同引用的同格式文件保留。当前详情的文件格式可作为已确认选项补入，不能覆盖服务端条目的引用和大小。
+- 下载按钮每次重新请求并打开玻璃格式菜单；不按详情当前扩展名筛选，不缓存空列表。即使只有当前格式也需点选后入队。失败保留当前格式和重试，成功直接列出可用项，不额外显示“未返回其他格式”小字（ADR-048）；菜单关闭和会话变化清除读取状态，重复点选只入队一次。调试日志仅记该图书引用及有效条目数，不含响应正文或鉴权信息。
+
 ### 2.4 下载
 
 ```
@@ -164,6 +191,8 @@ GET /eapi/user/profile
 - `daily_allowed = downloads_limit ?? dailyDownloadLimit`
 - `daily_remaining = max(0, allowed - amount)`
 - `QuotaKnown = allowed != null`；未知时不要显示“0 本”。
+- 账号等级仅确认 `isPremium`：false 显示“标准账号”，true 显示“Premium 会员”，字段未返回时不猜等级；`donations_active` 等字段未用于推断其它等级。
+- 多账号（ADR-051）仍调用相同登录/profile 端点，每次显式使用该账号的 Cookie/remix 头，profile 按用户 ID 和会话隔离保存；密码不落盘。平台没有公开的多账号自动切换风控保证。自动切换默认关闭，仅额度错误后重新验证当前额度为 0 和候选额度大于 0 时采用，不因认证/网络/风控错误轮换。
 
 ### 2.6 收藏
 
@@ -195,7 +224,7 @@ GET /eapi/user/book/downloaded?page=1&limit=50
 ```
 
 响应：`books[]` + `pagination`；日期优先取 `date_download`，兼容 `date` / `downloaded_at`。`date_download` 来源于 ZlibraryKO 的字段映射，后两者为现有兼容字段；实际账号响应仍需脱敏核对。
-这是账号的云端下载记录，原界面将其称为“历史”，并非浏览历史。按 ADR-032 放在“下载管理 → 云端下载记录”；书架顶部只有收藏和书单。不表示当前设备存在本机文件，也不确认网站其他图书馆分组使用同一端点。本机文件只由设备文件记录及可访问性判断。
+这是账号的云端下载记录，原界面将其称为“历史”，并非浏览历史。按 ADR-049/051 从下载管理右上角云图标进入；书架为“本机 / 收藏”。云端记录不表示当前设备存在文件，也不确认网站其他图书馆分组使用同一端点。本机文件以设置的 SAF 下载目录实际扫描为准，不调用 EAPI。
 
 2026-11-22 用户确认下载管理内云端下载记录真机验证成功；此确认不等于原始响应字段、账号切换、所有分页边界或缺图原因都已单独核验。
 
@@ -210,7 +239,10 @@ GET /eapi/user/book/{numericId}/delete
 ```
 
 - 只接受数字 ID；`id:hash` 先取 `:` 前部分。
-- 删除成功返回 `{"success":1}`；**不影响本地文件**。删除本机文件在下载管理单独操作，不联动删除云端记录（ADR-031）。
+- 删除成功返回 `{"success":1}`；**不影响本地文件**。删除本机文件在书架“本机”单独操作，不联动删除云端记录（ADR-049）。
+- 已按 ADR-046 接入“云端下载记录 → 长按图书 → 删除记录 → 确认”。API 只接受 1–32 位数字 ID，由列表图书取 `id`，不接受完整 `id:hash` 或其它路径字符。
+- 该 GET 会修改账号数据，客户端为其关闭应用和 OkHttp 自动重试、会话过期自动重发与自动重定向；异常或结果不明时保留记录，由用户刷新核实。只有 `success:1` 后移除条目并重读第一页，刷新失败后也不得沿用旧分页偏移继续追加。
+- 删除只调用云端端点，不依赖 Room 文件 DAO，不改本机文件、任务或收藏。操作防重复、会话变化丢弃菜单与旧结果；请求路径、鉴权、错误、无自动重试与列表状态已用 MockWebServer 验证，真实账号删除待用户手动确认具体条目后验收。
 
 ### 2.8 推荐 / 热门
 
@@ -236,28 +268,43 @@ GET /eapi/info/domains
 - 其它非 2xx → `HTTP_ERROR`
 - 连接失败/超时 → `NETWORK_ERROR`
 
-### 2.10 云端书单（待验证）
+### 2.10 云端书单（已移出范围）
 
-产品范围是访问 Z-Library 账号的云端书单，不创建独立本地书单（ADR-031）。当前端点清单及 `heartleo/zlib` 参考实现尚不足以确认书单协议；网站存在该功能不等于已有可用的 EAPI 契约。
+书单页面与模块已按 ADR-051 移除。2026-11-22 调查没有确认可用的书单 EAPI；第三方实现读取书单使用的是 JSON PAPI，而非本项目允许的 EAPI。本客户端不调用这些路径，不抓取网页，也不建立本地替代书单。
 
-2026-11-22 补查：`baroxyton/zlibrary-eapi-documentation` 的 README 没有书单端点。ZlibraryKO 的实现使用 `GET /papi/booklist/current-user/0` 和 `POST /papi/booklist/{id}/get-books/{page}`；这些是 PAPI，**不在本项目仅限 EAPI 的可调用范围内**。这里保留调查结果，不将它们加入 EAPI 实现。书架显示“书单”分组及“云端书单尚未接入”的提示，不把尚未获取的数据显示为“暂无书单”。
+历史调查中的用户书单 URL、标识和失败候选路径已清理；它们不是可调用契约。若未来重新纳入，先立 ADR，重新核对鉴权、端点及分页，并添加脱敏 fixture 后实现。
 
-- 读取前需验证书单列表、详情/图书、分页字段、书单标识与账号可见权限，并记录脱敏响应和来源。
-- 创建、编辑、增删图书等写入行为继续待实测；未确认前不提供写操作。
-- 仅接入 JSON EAPI；未验证时保留待办，不猜端点、不抓 HTML、不以本地列表代替云端数据。
-- 本节仅记录待验证范围，不新增可调用路径，也不表示书单已经实现。
+### 2.11 搜索语言与格式候选（已实测，筛选 UI 未动态接入）
 
-### 2.11 第三方说明中的补充端点（未实测，未接入）
+```
+GET /eapi/info/languages
+GET /eapi/info/extensions
+```
+
+2026-11-22 `zh.z-lib.by` 免登录请求均为 HTTP 200、`application/json`、`success:1`。需要固定 UA 和 `Accept: application/json`；本次没有额外参数，也未将它们加入应用的动态筛选请求。
+
+语言响应中的 `languages` 是 **代码到显示名称的对象**，本次有 175 项，节选：
+
+```json
+{"success":1,"languages":{"english":"英语","russian":"俄语","french":"法语","chinese":"中文"}}
+```
+
+格式响应的 `extensions` 是字符串数组，本次完整响应：
+
+```json
+{"success":1,"extensions":["pdf","fb2","epub","lit","mobi","djvu","djv","txt","rtf","azw","azw3","cbz"]}
+```
+
+这两项用于搜索筛选候选：提交搜索时使用 `languages[]=chinese`、`extensions[]=epub` 等代码。`extensions` 表示全站候选，不能用作某一本书的可下载格式；后者必须使用 §2.3 的 `/formats`。
+
+### 2.12 第三方说明中的其它补充端点（未实测，未接入）
 
 以下来自用户补充的 `baroxyton/zlibrary-eapi-documentation`，只作为后续调查清单。来源提供方法与少量参数，没有完整响应契约；本表不新增产品计划，不代表当前域名仍支持这些接口。接入前必须验证响应、鉴权、错误、分页及权限，并添加脱敏 fixture。当前范围仍以 ADR 和 `ROADMAP.md` 为准。
 
 | 用途 | 方法与路径 | 来源参数 / 当前范围 |
 |---|---|---|
 | 最近图书 | `GET /eapi/book/recently` | 仅记录，未安排 UI |
-| 图书的可用格式 | `GET /eapi/book/{id}/{hash}/formats` | 响应结构待核实 |
 | 相似图书 | `GET /eapi/book/{id}/{hash}/similar` | 响应结构待核实 |
-| 可用扩展名 | `GET /eapi/info/extensions` | 可作为搜索筛选候选来源；当前未接入 |
-| 可用语言 | `GET /eapi/info/languages` | 可作为搜索筛选候选来源；当前未接入 |
 | 服务信息 | `GET /eapi/info` | 查询 `switchLanguage` |
 | 套餐信息 | `GET /eapi/info/plans` | 查询 `switchLanguage`；当前范围外 |
 | 捐赠信息 | `GET /eapi/user/donations` | 当前范围外 |
@@ -291,7 +338,7 @@ z-library.website, zlib.bz
 |---|---|---|
 | 400 + `Invalid credentials` / `Please login` | `SessionExpired` | 当前域重试一次；仍失败 → 重新登录 |
 | 400 + `Incorrect email or password` | `AuthFailed` | 提示凭据错误；不要重试 |
-| `Authorization failed`（登录） | `AuthFailed` | 引导 WebView/Cookie 导入 |
+| `Authorization failed`（登录） | `AuthFailed` | 引导 Cookie 导入 |
 | `daily limit` / `Daily limit reached` | `Quota` | 显示剩余/重置提示；不重试 |
 | 513 / 517 / DiamWall 标题 | `DomainBlocked` | 切域；提示 VPN/代理 |
 | 自重定向 / 超过 10 跳 | `RedirectLoop` | 切域 |
@@ -324,4 +371,9 @@ z-library.website, zlib.bz
 - [baroxyton/zlibrary-eapi-documentation README.md](https://github.com/baroxyton/zlibrary-eapi-documentation/blob/e2184c463ed6ea8e3772a8ebe0c588b421fe366a/README.md)：第三方非官方说明；2026-11-22 核对。用户提供的 raw `/README` 返回 404，实际文件名为 [`README.md`](https://raw.githubusercontent.com/baroxyton/zlibrary-eapi-documentation/main/README.md)。其旧域名与“必须个人域下载”的说明不能替代当前域名策略和已实测下载流程。
 - [ZlibraryKO api_shared.lua](https://github.com/ZlibraryKO/zlibrary.koplugin/blob/7d15f06166999ec559d5fb9901b3a4d7f3235906/zlibrary/api_shared.lua)：云端下载记录的日期与无效封面兼容依据。
 - [ZlibraryKO config_urls.lua](https://github.com/ZlibraryKO/zlibrary.koplugin/blob/7d15f06166999ec559d5fb9901b3a4d7f3235906/zlibrary/config_urls.lua)：书单实际使用 PAPI 的调查依据；不作为当前可调用端点。
+- [nassim-arifette/zlibrary-api eapi.py](https://github.com/nassim-arifette/zlibrary-api/blob/cedae14c1ca344b1b35ef8d779adb7d84743b19d/zlib_connector/eapi.py)：另一份书单读取实际调用 PAPI 的实现；仅作调查依据，未调用或接入。
+- [nassim-arifette/zlibrary-api books.py](https://github.com/nassim-arifette/zlibrary-api/blob/cedae14c1ca344b1b35ef8d779adb7d84743b19d/zlib_connector/books.py)：格式选项独立引用、扩展名与显示大小的映射依据。
+- [Ciallo-Reader ZLibraryEapiClient.kt](https://github.com/roxycon-dev/Ciallo-Reader/blob/50f374cde1cfa41cb16c072b7455e9b402863d0f/app/src/main/java/com/example/source/zlibrary/ZLibraryEapiClient.kt)：格式数组的 `id/hash/extension/filesize/filesizeString` 映射依据；只参考字段，不采用其其它鉴权、网页或下载凭据行为。
+- [rookslog/zlibrary-mcp ADR-005](https://github.com/rookslog/zlibrary-mcp/blob/70eebdae00a0499819c06c6eb1dcb132883084a5/docs/adr/ADR-005-EAPI-Migration.md)：该项目迁移 EAPI 时记录缺少书单端点；不作为所有服务端均不支持的证明。
 - 实测日期：2026-09-04、2026-10-25（域名与登录行为）
+- 本项目实测：2026-11-22（`zh.z-lib.by` 登录、资料、收藏对照与书单 EAPI 候选检查，见 §2.10）；记录不含账号标识或凭据。

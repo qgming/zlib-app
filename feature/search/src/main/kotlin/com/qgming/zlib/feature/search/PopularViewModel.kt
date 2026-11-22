@@ -10,6 +10,7 @@ import com.qgming.zlib.core.model.Book
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -29,11 +30,31 @@ class PopularViewModel @Inject constructor(
     private val _state = MutableStateFlow(PopularUiState())
     val state = _state.asStateFlow()
     private var loadJob: Job? = null
+    private var recommendedJob: Job? = null
 
     init {
         loadPopular()
+        loadRecommended()
+        var previous: com.qgming.zlib.core.model.Session? = null
+        var initialized = false
         viewModelScope.launch {
+            bookRepository.sessionChanges.collect { session ->
+                if (initialized && (session?.remixUserId != previous?.remixUserId || session?.remixUserKey != previous?.remixUserKey)) {
+                    loadJob?.cancel(); loadJob = null
+                    recommendedJob?.cancel()
+                    _state.value = PopularUiState()
+                    if (session != null) { loadPopular(); loadRecommended() }
+                }
+                previous = session
+                initialized = true
+            }
+        }
+    }
+
+    private fun loadRecommended() {
+        recommendedJob = viewModelScope.launch {
             bookRepository.recommended().getOrNull()?.let { books ->
+                ensureActive()
                 _state.update { it.copy(recommended = books.distinctBy(Book::ref)) }
             }
         }
@@ -43,7 +64,9 @@ class PopularViewModel @Inject constructor(
         if (loadJob?.isActive == true) return
         loadJob = viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
-            when (val result = bookRepository.popular()) {
+            val result = bookRepository.popular()
+            ensureActive()
+            when (result) {
                 is AppResult.Success -> _state.update {
                     it.copy(loading = false, popular = result.value.distinctBy(Book::ref))
                 }

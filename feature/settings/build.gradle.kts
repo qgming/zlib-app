@@ -8,6 +8,13 @@ plugins {
     alias(libs.plugins.hilt)
 }
 
+val generateAboutAssets by tasks.registering(Sync::class) {
+    from(listOf(rootProject.file("LICENSE"), rootProject.file("NOTICE"), file("src/main/legal/APACHE-2.0.txt"))) {
+        into("licenses")
+    }
+    into(layout.buildDirectory.dir("generated/aboutAssets"))
+}
+
 android {
     namespace = "com.qgming.zlib.feature.settings"
     compileSdk = 37
@@ -25,7 +32,11 @@ android {
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
+
+    sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/aboutAssets").get().asFile)
 }
+
+tasks.named("preBuild").configure { dependsOn(generateAboutAssets) }
 
 kotlin {
     compilerOptions {
@@ -41,10 +52,15 @@ dependencies {
 
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
 
     implementation(libs.hilt.android)
     implementation(libs.hilt.navigation.compose)
     ksp(libs.hilt.compiler)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlin.test.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
