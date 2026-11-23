@@ -222,3 +222,7 @@ Android17 / SDK37.2 / 16KB页 / x86_64模拟器：覆盖安装保留已有数据
 最终执行 `test lint :app:assembleDebug :app:prepareReleaseAssets --max-workers=1` 成功（6分12秒），当前13个模块共274项单测，失败、错误、跳过均为0；lint报告无issue，调试包及启用R8和资源裁剪的正式通用包构建均通过。正式包检查为com.qgming.zlib、1.3.0/code5、minSdk33、targetSdk37、非debuggable，证书SHA-256与原发布签名一致，包含arm64-v8a/armeabi-v7a/x86/x86_64，16KB ZIP对齐与SHA256SUMS一致；APK资源实际包含“发现 / Discover”。六份许可资产与源文件逐字节相同，无独立NOTICE资产。
 
 最终正式通用包 `zhishi-1.3.0-universal.apk` 于本机2026-11-24 00:43通过 `adb -s emulator-5554 install -r` 覆盖安装成功，输出Success；安装后系统报告versionName1.3.0/versionCode5。未清除数据。此前页面自动化被另一设备会话占用，未接管，因此最新改名的证据为资源检查与安装成功；中英文交互验收来自用户上述反馈。没有创建Git标签、推送或发布，不据此次安装声称arm64真机、所有异常路径或线上1.2.0到1.3.0更新链路已验收。
+
+2026-11-24 00:58:18（北京时间）发布验证：用户确认日志并授权全部提交、发布，源码提交d236ad8036b500f292799bedc4e4bb864a66451e已推送，v1.3.0标签对应此提交。正式Release非草稿、非预发布、已设为Latest，正文与 `docs/releases/v1.3.0.txt` 逐字一致，保留开头移动端搜索服务异常声明。唯一通用APK、SHA256SUMS.txt、日志TXT三份附件均在草稿阶段核对GitHub摘要并在正式发布后重新下载，逐字节与本地相同。
+
+公开通用APK匿名下载HTTP200，4,905,150字节与SHA-256 ac102b57e42b31cc211e805ba9f76a1fef9a0689a0ecdfceed0aae51001b23db一致。已有GitHub认证读取latest为v1.3.0；独立无凭据latest API返回HTTP403限流，未记录为成功。没有为此次发布重复操控占用中的设备或完成真实1.2.0应用内更新安装，不把发布资产校验视作所有ABI真机及旧版更新链路已验收。

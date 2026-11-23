@@ -51,6 +51,8 @@
 
 1.2.0 及更早版本的独立架构包保留在历史 Release 中。每次发布都附有 `SHA256SUMS.txt`，可核对文件完整性。
 
+当前正式版为 **[v1.3.0](https://github.com/qgming/zlib-app/releases/tag/v1.3.0)**，可直接下载 **[通用 APK](https://github.com/qgming/zlib-app/releases/download/v1.3.0/zhishi-1.3.0-universal.apk)**。
+
 应用会在启动后检查新版，也可在「设置 → 关于 → 检查更新」手动触发。
 发现新版后显示真实发布日志；点击更新会在应用内下载并显示进度。现有 1.2.0 已支持选择唯一通用包，发布后可通过检查更新直接升级到 1.3.0，无需过渡版本。
 校验通过的 APK 会保存到已授权的下载目录，点击安装后由系统确认；不会静默安装。

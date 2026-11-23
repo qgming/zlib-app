@@ -7,9 +7,9 @@
 `app/build.gradle.kts` 的 `appVersionName` 使用 SemVer，`appVersionCode` 每次公开发布递增。
 Git 标签为 `v<appVersionName>`，例如 `v1.0.0`。同一版本的所有架构与通用包使用相同 versionCode，便于互相覆盖安装和后续更新。
 
-当前开发版本为 `1.3.0`（`versionCode=5`），尚未创建标签或发布。最新正式版为2026-11-23发布的 `v1.2.0`（`versionCode=4`），标签指向构建源码提交 `5784a9862152041539a65b3506852e0dabcc2222`。上一正式版本 `1.1.0`（`versionCode=3`）于同日发布为 `v1.1.0`，标签指向 `6c1ccb2103990b4d8fe8fed4dc8eeed4102b96ac`。
+当前正式版为 `1.3.0`（`versionCode=5`），于2026-11-24 00:58:18（北京时间，UTC为2026-11-23 16:58:18）发布为 `v1.3.0` 并设为Latest，标签指向构建源码提交 `d236ad8036b500f292799bedc4e4bb864a66451e`。上一正式版为2026-11-23发布的 `v1.2.0`（`versionCode=4`），标签指向 `5784a9862152041539a65b3506852e0dabcc2222`；`v1.1.0`（`versionCode=3`）标签指向 `6c1ccb2103990b4d8fe8fed4dc8eeed4102b96ac`。
 
-按ADR-071/072/074，1.3.0起只打包并交付正式通用APK；本机构建与公开发布独立记录，不把本地打包视为已发布。1.3.0日志在 `docs/releases/v1.3.0.txt`，开头含移动端搜索服务异常声明；用户已确认并授权全部提交、推送、打标签和正式发布（ADR-075），发布后的事实独立补充。
+按ADR-071/072/074，1.3.0起只打包并交付正式通用APK；本机构建与公开发布独立记录。1.3.0日志在 `docs/releases/v1.3.0.txt`，开头含移动端搜索服务异常声明；用户已确认并授权全部提交与发布（ADR-075），线上正文与文件逐字一致。
 
 ## 构建
 
@@ -77,11 +77,13 @@ APK 的包名、签名须匹配已安装应用，versionCode 必须更大，vers
 - 更新正文为 `docs/releases/v1.2.0.txt`；同时把已发布的 v1.0.0、v1.1.0 正文改为同格式纯文本（去掉安装说明），线上已同步替换。
 - 2026-11-23 发布 `https://github.com/qgming/zlib-app/releases/tag/v1.2.0`，非草稿、非预发布并标记为Latest。七个附件包括五种APK、SHA256SUMS.txt及v1.2.0.txt；草稿阶段核对名称、字节数与正文，发布后重新下载全部APK逐一比对SHA-256均一致。
 
-## 1.3.0 本地构建记录（未发布）
+## v1.3.0 构建与发布记录
 
 - 2026-11-24执行 `test lint :app:assembleDebug :app:prepareReleaseAssets --max-workers=1` 成功；274项单测通过，失败、错误、跳过均为0，13个当前模块lint无issue。
 - 输出仅含 `zhishi-1.3.0-universal.apk`（4,905,150字节）与 `SHA256SUMS.txt`，旧架构产物已由Sync输出同步移除。SHA-256为 `ac102b57e42b31cc211e805ba9f76a1fef9a0689a0ecdfceed0aae51001b23db`。
 - 原签名证书SHA-256 d964fb1414f44fc8eb0f4a3c4835a5c8fb70e4527e3f039bc70b0e1ccaca032e；包名com.qgming.zlib、versionName1.3.0/versionCode5、minSdk33、targetSdk37、非debuggable。四种原生ABI、16KB ZIP对齐、校验和及六份离线许可资产全文均已核对。
 - 正式通用包已在emulator-5554覆盖安装成功，系统版本复核为1.3.0/code5，未清除应用数据。用户在此次改名之前确认中英文测试正常；最新“发现 / Discover”已核对APK资源。其它ABI真机和线上旧版到新版的应用内安装链路仍需发布后验收。
-- 本次仅本地构建与安装，未创建标签、推送或公开发布；线上最新正式版仍为v1.2.0。
-- 用户随后要求今后仅打包正式通用版，本轮执行 `:app:prepareReleaseAssets --max-workers=1` 成功（17秒），未附带调试APK构建；正式包与上述SHA-256一致。README与1.3.0日志草稿已准备，等待用户确认日志及后续命令。
+- 日志确认前只进行本地构建与安装；用户随后要求今后仅打包正式通用版，执行 `:app:prepareReleaseAssets --max-workers=1` 成功（17秒），未附带调试APK构建，正式包与上述SHA-256一致。
+- 用户确认日志后授权全部提交及发布。构建源码以 `d236ad8036b500f292799bedc4e4bb864a66451e` 提交并推送main，`v1.3.0`标签指向该提交。2026-11-23 16:58:18 UTC正式发布 `https://github.com/qgming/zlib-app/releases/tag/v1.3.0`，非草稿、非预发布并设为Latest。
+- 三个附件为唯一 `zhishi-1.3.0-universal.apk`、`SHA256SUMS.txt`、`v1.3.0.txt`。草稿阶段核对正文、名称、字节数及GitHub SHA-256摘要；发布后重新下载全部附件逐字节比对本地一致，更新正文与确认后的TXT逐字一致。未上传调试包或独立架构包。
+- 通过已有GitHub认证读取latest确认v1.3.0；匿名latest API返回HTTP403限流，不标记为成功。公开通用APK匿名下载为HTTP200，4,905,150字节及SHA-256核对通过。未重新进行应用内旧版到新版下载/安装，不能把元数据和公开下载成功等同于该链路验收。
