@@ -193,3 +193,11 @@ Android17 / SDK37.2 / 16KB页 / x86_64模拟器：覆盖安装保留已有数据
 `:app:prepareReleaseAssets -PsplitApks=true` 成功，R8与资源裁剪开启。五个APK逐一验证原签名、包名com.qgming.zlib、版本1.1.0/code3、minSdk33、targetSdk37、非debuggable、对应原生ABI、16KB ZIP对齐与SHA-256。x86_64正式包完成覆盖安装及上述导航/相似图书/更新Toast回归。arm64及其它ABI真机、真实大文件断点恢复、失权与不可rename的SAF Provider、多账号异常和大目录扫描性能仍需专项验收，不能从本次模拟器或计时日志推断已通过。
 
 2026-11-23 08:12:25 UTC，v1.1.0已正式发布并设为Latest，标签指向6c1ccb2。草稿发布前核对七个附件（五个APK、SHA256SUMS.txt、v1.1.0.txt）的名称、状态、字节数及GitHub SHA-256摘要，正文与本地纯文本TXT一致。发布后通过已有GitHub认证读取latest确认非草稿、非预发布的v1.1.0，并重新下载全部七个附件逐一比对SHA-256成功。无凭据latest API请求遇到HTTP403 rate limit，未将其记录为成功；未重复进行旧版到新版的应用内下载/安装验收。
+
+## 10. 1.2.0 构建与回归记录（2026-11-23）
+
+当前版本1.2.0（versionCode=4），完整 `test` 通过：251项单测，失败、错误、跳过均为0；`lint` 无新增问题；`:app:assembleDebug` 与 `:app:prepareReleaseAssets -PsplitApks=true` 均通过。域名相关用例覆盖：重定向到允许清单外目标的无凭据校验与家族证明、校验失败不采用、冷启动复检、锁定重定向器后使用校验目标、探测期间不携带Cookie与remix头；Toast相关用例覆盖事件清理与宿主重建。
+
+五个正式APK逐一验证原签名（证书SHA-256 d964fb14…caca032e，DN CN=qgming）、包名com.qgming.zlib、versionName1.2.0/versionCode4、minSdk33、targetSdk37、非debuggable、对应原生ABI（universal含四种）、16KB ZIP对齐；发布后重新下载全部APK，SHA-256与SHA256SUMS.txt一致。更新正文为 `docs/releases/v1.2.0.txt`，与线上Release正文逐字一致；v1.0.0、v1.1.0的线上正文同时改为同格式纯文本，去掉安装说明。
+
+本次发布时本机没有已连接设备，未进行覆盖安装、真机界面回归或旧版到新版的更新链路验收；不据此标记任何ABI、SAF异常路径或多账号路径已通过。
