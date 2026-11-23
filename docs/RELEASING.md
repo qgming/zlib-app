@@ -7,7 +7,7 @@
 `app/build.gradle.kts` 的 `appVersionName` 使用 SemVer，`appVersionCode` 每次公开发布递增。
 Git 标签为 `v<appVersionName>`，例如 `v1.0.0`。同一版本的所有架构与通用包使用相同 versionCode，便于互相覆盖安装和后续更新。
 
-当前开发版本为 `1.1.0`（`versionCode=3`），已发布基线仍为 `v1.0.0`。版本修改不代表已创建新标签或正式发布。
+当前正式版本为 `1.1.0`（`versionCode=3`），已于2026-11-23发布为 `v1.1.0`。标签指向构建源码提交 `6c1ccb2103990b4d8fe8fed4dc8eeed4102b96ac`。
 
 ## 构建
 
@@ -65,4 +65,6 @@ APK 的包名、签名须匹配已安装应用，versionCode 必须更大，vers
 - 五个APK已校验原签名、包名com.qgming.zlib、versionName1.1.0/versionCode3、最低Android13、targetSdk37、非debuggable、原生ABI、16KB ZIP对齐与SHA-256。
 - 大小：arm64-v8a 4,597,686字节；armeabi-v7a 4,593,174字节；x86_64 4,594,720字节；x86 4,593,718字节；universal 4,693,550字节。
 - x86_64 Android17 / 16KB模拟器已覆盖安装正式包，相似图书导航与返回位置、关于版本、已是最新版Toast通过；其它ABI及复杂SAF故障不标为真机通过，详见TESTING.md。
-- 纯文本更新正文为 `docs/releases/v1.1.0.txt`，附数字序号。正式资产位于 `app/build/release/`，包含五个APK与SHA256SUMS.txt；构建不等于已上传或发布。
+- 纯文本更新正文为 `docs/releases/v1.1.0.txt`，附数字序号。正式资产位于 `app/build/release/`，包含五个APK与SHA256SUMS.txt。
+- 2026-11-23 08:12:25 UTC正式发布 `https://github.com/qgming/zlib-app/releases/tag/v1.1.0`，非草稿、非预发布并标记为Latest。七个附件包括五种APK、SHA256SUMS.txt及v1.1.0.txt；先验证草稿中的名称、字节数、SHA-256和正文，再发布。发布后重新下载全部附件，SHA-256均与本地一致，正文与TXT一致。
+- 无凭据latest API复核遇到HTTP403 rate limit；使用已有GitHub认证复核latest为v1.1.0。未据此声称无凭据应用检查或旧版到新版的安装链路已重新验收，详见TESTING.md。

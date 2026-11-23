@@ -191,3 +191,5 @@ Android17 / SDK37.2 / 16KB页 / x86_64模拟器：覆盖安装保留已有数据
 独立测试安装可显示首次目录引导，但此次UI自动化在系统文件选择器返回后的观测不稳定，取消/授权/重启的完整首次使用流程保留真机验收；本机状态机单测确认未保存目录不会初始化网络或进入Ready。没有为验证下载而消耗真实额度，也未操作真实收藏或删除真实云端记录；云端删除成功事件、失败不提示、退出清理反馈由既有MockWebServer用例覆盖，共用Toast宿主通过编译与lint。
 
 `:app:prepareReleaseAssets -PsplitApks=true` 成功，R8与资源裁剪开启。五个APK逐一验证原签名、包名com.qgming.zlib、版本1.1.0/code3、minSdk33、targetSdk37、非debuggable、对应原生ABI、16KB ZIP对齐与SHA-256。x86_64正式包完成覆盖安装及上述导航/相似图书/更新Toast回归。arm64及其它ABI真机、真实大文件断点恢复、失权与不可rename的SAF Provider、多账号异常和大目录扫描性能仍需专项验收，不能从本次模拟器或计时日志推断已通过。
+
+2026-11-23 08:12:25 UTC，v1.1.0已正式发布并设为Latest，标签指向6c1ccb2。草稿发布前核对七个附件（五个APK、SHA256SUMS.txt、v1.1.0.txt）的名称、状态、字节数及GitHub SHA-256摘要，正文与本地纯文本TXT一致。发布后通过已有GitHub认证读取latest确认非草稿、非预发布的v1.1.0，并重新下载全部七个附件逐一比对SHA-256成功。无凭据latest API请求遇到HTTP403 rate limit，未将其记录为成功；未重复进行旧版到新版的应用内下载/安装验收。
