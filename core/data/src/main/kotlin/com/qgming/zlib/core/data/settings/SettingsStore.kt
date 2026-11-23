@@ -25,6 +25,8 @@ private val Context.settingsDataStore: DataStore<Preferences> by preferencesData
 
 data class AppSettings(
     val customHosts: Set<String> = emptySet(),
+    /** Redirect targets accepted by the credential-free handshake; re-verified every probe (ADR-065). */
+    val discoveredHosts: Set<String> = emptySet(),
     val currentHost: String? = null,
     val lockedHost: String? = null,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -37,6 +39,7 @@ interface SettingsStore {
     suspend fun read(): AppSettings
     suspend fun setCurrentHost(host: String?)
     suspend fun setCustomHosts(hosts: Set<String>)
+    suspend fun setDiscoveredHosts(hosts: Set<String>)
     suspend fun setLockedHost(host: String?)
     suspend fun setThemeMode(mode: ThemeMode)
     suspend fun setBookGridColumns(columns: BookGridColumns)
@@ -70,6 +73,10 @@ class DataStoreSettingsStore @Inject constructor(
         prefs[CUSTOM_HOSTS] = hosts
     }
 
+    override suspend fun setDiscoveredHosts(hosts: Set<String>) = edit { prefs ->
+        if (hosts.isEmpty()) prefs.remove(DISCOVERED_HOSTS) else prefs[DISCOVERED_HOSTS] = hosts
+    }
+
     override suspend fun setLockedHost(host: String?) = edit { prefs ->
         if (host.isNullOrBlank()) prefs.remove(LOCKED_HOST) else prefs[LOCKED_HOST] = host
     }
@@ -92,6 +99,7 @@ class DataStoreSettingsStore @Inject constructor(
 
     private fun Preferences.toSettings(): AppSettings = AppSettings(
         customHosts = this[CUSTOM_HOSTS].orEmpty(),
+        discoveredHosts = this[DISCOVERED_HOSTS].orEmpty(),
         currentHost = this[CURRENT_HOST]?.takeIf { it.isNotBlank() },
         lockedHost = this[LOCKED_HOST]?.takeIf { it.isNotBlank() },
         themeMode = ThemeMode.fromPreference(this[THEME_MODE]),
@@ -101,6 +109,7 @@ class DataStoreSettingsStore @Inject constructor(
 
     companion object {
         private val CUSTOM_HOSTS = stringSetPreferencesKey("custom_hosts")
+        private val DISCOVERED_HOSTS = stringSetPreferencesKey("discovered_hosts")
         private val CURRENT_HOST = stringPreferencesKey("current_host")
         private val LOCKED_HOST = stringPreferencesKey("locked_host")
         private val THEME_MODE = stringPreferencesKey("theme_mode")

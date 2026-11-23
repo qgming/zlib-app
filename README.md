@@ -19,6 +19,7 @@
 
 <p>
   <a href="https://github.com/qgming/zlib-app/releases/latest">下载安装</a> ·
+  <a href="#预览">预览</a> ·
   <a href="#核心功能">核心功能</a> ·
   <a href="#快速开始">快速开始</a> ·
   <a href="#构建与打包">构建与打包</a> ·
@@ -34,6 +35,11 @@
 
 这是独立的非官方项目，与 Z-Library 无关联或授权关系，不提供图书内容或账号。
 请遵守所在地法律、作品版权及服务规则，仅访问和下载你有权使用的内容。
+
+## 预览
+
+<p align="center"><img src="docs/preview/zlib1.png" alt="芝士读书预览 1" width="33.33%"><img src="docs/preview/zlib2.png" alt="芝士读书预览 2" width="33.33%"><img src="docs/preview/zlib3.png" alt="芝士读书预览 3" width="33.33%"></p>
+<p align="center"><img src="docs/preview/zlib4.png" alt="芝士读书预览 4" width="33.33%"><img src="docs/preview/zlib5.png" alt="芝士读书预览 5" width="33.33%"><img src="docs/preview/zlib6.png" alt="芝士读书预览 6" width="33.33%"></p>
 
 ## 下载安装
 
@@ -156,11 +162,11 @@ keyPassword=<key-password>
 输出到 `app/build/release/`：
 
 ```text
-zhishi-1.1.0-arm64-v8a.apk
-zhishi-1.1.0-armeabi-v7a.apk
-zhishi-1.1.0-x86_64.apk
-zhishi-1.1.0-x86.apk
-zhishi-1.1.0-universal.apk
+zhishi-1.2.0-arm64-v8a.apk
+zhishi-1.2.0-armeabi-v7a.apk
+zhishi-1.2.0-x86_64.apk
+zhishi-1.2.0-x86.apk
+zhishi-1.2.0-universal.apk
 SHA256SUMS.txt
 ```
 
@@ -183,8 +189,11 @@ SHA256SUMS.txt
 
 ## 致谢与开源协议
 
+感谢 [Linux.do](https://linux.do/) 社区对项目的推广与反馈。
+
 感谢 [heartleo/zlib](https://github.com/heartleo/zlib)、[Miuix](https://github.com/compose-miuix-ui/miuix)
 及 AndroidX、Kotlin、OkHttp、Coil、Hilt、Room、DataStore 等项目。
 
-项目代码使用 **[MIT License](LICENSE)**。第三方组件遵循各自许可证，归属信息见 [NOTICE](NOTICE)。
-SharedView Kit 是独立 SDK，不能将示例工程的 MIT 许可视作 SDK 许可；来源与适用边界见 [app/libs/README.md](app/libs/README.md)。
+项目代码使用 **[MIT License](LICENSE)**。
+第三方组件遵循各自许可证，归属信息见 [NOTICE](NOTICE)。
+

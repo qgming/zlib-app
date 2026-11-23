@@ -5,17 +5,13 @@ import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -27,10 +23,10 @@ import com.qgming.zlib.core.designsystem.ZlibGlassBottomSheet
 import com.qgming.zlib.core.designsystem.ZlibLoading
 import com.qgming.zlib.core.designsystem.ZlibLocalFileTile
 import com.qgming.zlib.core.designsystem.ZlibMenuAction
-import com.qgming.zlib.core.designsystem.ZlibSnackbarHost
 import com.qgming.zlib.core.designsystem.ZlibStateCard
+import com.qgming.zlib.core.designsystem.ZlibToastHost
 import com.qgming.zlib.core.designsystem.fullWidthItem
-import com.qgming.zlib.core.designsystem.rememberZlibSnackbarHostState
+import com.qgming.zlib.core.designsystem.rememberZlibToastHostState
 import com.qgming.zlib.core.designsystem.userMessage
 import com.qgming.zlib.core.model.EbookFiles
 
@@ -38,44 +34,41 @@ import com.qgming.zlib.core.model.EbookFiles
 internal fun LocalFilesContent(padding: PaddingValues, viewModel: LocalFilesViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val action by viewModel.action.collectAsStateWithLifecycle()
-    val snackbar = rememberZlibSnackbarHostState(state.treeUri)
+    // A directory change cancels a toast that belongs to the previous tree.
+    val toast = rememberZlibToastHostState(state.treeUri)
     val context = LocalContext.current
     LaunchedEffect(viewModel) { viewModel.refresh() }
-    LaunchedEffect(viewModel, snackbar) { viewModel.events.collect { snackbar.showMessage(it) } }
-    LaunchedEffect(viewModel, context, snackbar) {
+    LaunchedEffect(viewModel, toast) { viewModel.events.collect { toast.showMessage(it) } }
+    LaunchedEffect(viewModel, context, toast) {
         viewModel.fileIntents.collect { event ->
             try {
                 launchFileIntent(context, event)
             } catch (_: ActivityNotFoundException) {
-                snackbar.showMessage(if (event.share) "没有可接收此文件的应用" else "没有可打开此格式的应用，请安装阅读器")
+                toast.showMessage(if (event.share) "没有可接收此文件的应用" else "没有可打开此格式的应用，请安装阅读器")
             } catch (_: SecurityException) {
-                snackbar.showMessage("无法访问文件，请在设置中重新授权下载目录")
+                toast.showMessage("无法访问文件，请在设置中重新授权下载目录")
                 viewModel.refresh()
             }
         }
     }
     LaunchedEffect(state.treeUri) { viewModel.dismissActions() }
+    ZlibToastHost(toast)
 
-    Box(Modifier.fillMaxSize()) {
-        ZlibBookGrid(padding = padding, refreshing = false, onRefresh = viewModel::refresh) {
-            when {
-                state.loading -> fullWidthItem("local-loading") { ZlibLoading() }
-                state.treeUri == null -> fullWidthItem("local-no-directory") {
-                    ZlibStateCard("尚未选择下载目录", "在设置中选择下载目录后，这里会显示其中的电子书文件。")
-                }
-                state.error != null -> fullWidthItem("local-error") {
-                    ZlibStateCard("无法读取下载目录", state.error!!.userMessage(), onAction = viewModel::refresh)
-                }
-                state.files.isEmpty() -> fullWidthItem("local-empty") {
-                    ZlibStateCard("暂无本机文件", "下载目录中没有支持的电子书文件。")
-                }
-                else -> items(state.files, key = { it.uri }) { file ->
-                    ZlibLocalFileTile(file, onClick = { viewModel.open(file) }, onLongClick = { viewModel.showActions(file) })
-                }
+    ZlibBookGrid(padding = padding, refreshing = false, onRefresh = viewModel::refresh) {
+        when {
+            state.loading -> fullWidthItem("local-loading") { ZlibLoading() }
+            state.treeUri == null -> fullWidthItem("local-no-directory") {
+                ZlibStateCard("尚未选择下载目录", "在设置中选择下载目录后，这里会显示其中的电子书文件。")
             }
-        }
-        Box(Modifier.align(Alignment.BottomCenter).padding(bottom = padding.calculateBottomPadding())) {
-            ZlibSnackbarHost(snackbar)
+            state.error != null -> fullWidthItem("local-error") {
+                ZlibStateCard("无法读取下载目录", state.error!!.userMessage(), onAction = viewModel::refresh)
+            }
+            state.files.isEmpty() -> fullWidthItem("local-empty") {
+                ZlibStateCard("暂无本机文件", "下载目录中没有支持的电子书文件。")
+            }
+            else -> items(state.files, key = { it.uri }) { file ->
+                ZlibLocalFileTile(file, onClick = { viewModel.open(file) }, onLongClick = { viewModel.showActions(file) })
+            }
         }
     }
     ZlibGlassBottomSheet(

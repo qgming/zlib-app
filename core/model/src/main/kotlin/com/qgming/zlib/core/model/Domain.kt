@@ -9,6 +9,11 @@ data class DomainCheck(
     val detail: String = "",
     /** Host that served the final response after redirects, when different. */
     val finalHost: String? = null,
+    /**
+     * Verified host this domain redirects to. Only set when the target answered the credential-free
+     * EAPI handshake (ADR-065); the repository then uses the target instead of [host].
+     */
+    val redirectTarget: String? = null,
     val checkedAtMillis: Long = 0L,
 ) {
     val healthy: Boolean get() = status == DomainStatus.HEALTHY

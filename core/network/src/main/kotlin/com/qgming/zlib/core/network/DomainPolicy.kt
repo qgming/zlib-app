@@ -27,19 +27,33 @@ object DomainPolicy {
         "z-library.qa",
         "z-library.sk",
         "z-library.website",
+        "z101.by",
         "zlib.bz",
+        "zlib.re",
     )
 
-    /** Probed concurrently on first launch (AGENTS.md §3.2: 8 hosts). */
+    /**
+     * Probed concurrently on first launch (AGENTS.md §3.2). The order is also the failover priority:
+     * hosts that answer the EAPI directly come first, DiamWall-protected hosts and the dead
+     * `z-lib.fm` certificate come last (ADR-065/066).
+     */
     val DEFAULT_PROBE_HOSTS: List<String> = listOf(
+        "zlib.bz",
+        "zlib.re",
+        "z101.by",
+        "z-lib.by",
         "z-lib.gd",
+        "z-lib.gl",
+        "z-library.ec",
+        "z-library.qa",
+        "z-library.website",
+        "article.sk",
+        "articles.sk",
+        "z-library.im",
         "z-lib.sk",
         "z-library.sk",
-        "z-library.im",
-        "z-lib.fm",
-        "z-lib.gl",
         "1lib.sk",
-        "zlib.bz",
+        "z-lib.fm",
     )
 
     private val hostPattern = Regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$")
@@ -54,6 +68,16 @@ object DomainPolicy {
         val h = host.lowercase()
         if (isBuiltIn(h)) return true
         return customHosts.any { it.equals(h, ignoreCase = true) }
+    }
+
+    /**
+     * True when [host] belongs to a domain family the server itself advertises. Used only to
+     * validate a redirect target before it enters the runtime allowlist (ADR-065).
+     */
+    fun isKnownDomainFamily(host: String, known: Set<String> = BUILT_IN_SUFFIXES.toSet()): Boolean {
+        val h = host.lowercase().trim()
+        if (h.isEmpty()) return false
+        return known.any { suffix -> h == suffix || h.endsWith(".$suffix") }
     }
 
     fun baseUrl(host: String): String = "https://$host"
@@ -98,6 +122,9 @@ object DomainPolicy {
         if (!hostPattern.matches(host)) return null
         return host
     }
+
+    /** True when [host] is the exact host of a redirect target that the runtime allowlist accepted. */
+    fun isForeignHostAcceptable(host: String): Boolean = normalizeHostInput(host) != null
 
     /** Validates and normalises a user-supplied mirror host. */
     fun validateCustomHost(raw: String?): AppResult<String> {

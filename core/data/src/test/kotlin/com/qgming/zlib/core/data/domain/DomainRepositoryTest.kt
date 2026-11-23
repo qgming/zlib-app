@@ -67,13 +67,13 @@ class DomainRepositoryTest {
             repository.setAutoSwitchEnabled(false)
             repository.probeAll()
             assertEquals("z-lib.gd", repository.currentHostOrNull())
-            assertEquals(DomainStatus.HTTP_ERROR, repository.checks.value.first().status)
+            assertEquals(DomainStatus.HTTP_ERROR, repository.checks.value.first { it.host == "z-lib.gd" }.status)
 
             assertIs<AppResult.Success<Unit>>(repository.setAutoSwitchEnabled(true))
             assertNull(repository.settings.value.lockedHost)
             repository.probeAll()
-            assertEquals("z-lib.sk", repository.currentHostOrNull())
-            assertEquals(16, server.requestCount)
+            assertEquals("zlib.bz", repository.currentHostOrNull())
+            assertEquals(DomainPolicy.DEFAULT_PROBE_HOSTS.size * 2, server.requestCount)
         }
     }
 
@@ -83,14 +83,73 @@ class DomainRepositoryTest {
             val result = repository.probeHost("z-lib.sk")
             assertTrue(result.healthy)
             assertEquals("z-lib.gd", repository.currentHostOrNull())
-            assertEquals(DomainStatus.UNKNOWN, repository.checks.value.first().status)
-            assertEquals(DomainStatus.HEALTHY, repository.checks.value[1].status)
+            assertEquals(DomainStatus.UNKNOWN, repository.checks.value.first { it.host == "z-lib.gd" }.status)
+            assertEquals(DomainStatus.HEALTHY, repository.checks.value.first { it.host == "z-lib.sk" }.status)
             assertFalse(repository.probing.value)
             assertEquals(1, server.requestCount)
             val request = server.takeRequest()
             assertEquals("/z-lib.sk/eapi/info/domains", request.path)
             assertNull(request.getHeader("Cookie"))
             assertNull(request.getHeader("remix-userkey"))
+        }
+    }
+
+    @Test
+    fun `verified redirect target is discovered and used without credentials`() = runTest {
+        fixture {
+            redirects["zlib.re"] = "zh.mirror.test"
+            unhealthy += DomainPolicy.DEFAULT_PROBE_HOSTS - "zlib.re"
+
+            repository.probeAll()
+
+            val redirector = repository.checks.value.first { it.host == "zlib.re" }
+            assertTrue(redirector.healthy)
+            assertEquals("zh.mirror.test", redirector.redirectTarget)
+            assertTrue(repository.checks.value.any { it.host == "zh.mirror.test" && it.healthy })
+            assertTrue(registry.isAllowed("zh.mirror.test"))
+            assertTrue(store.value.value.discoveredHosts.contains("zh.mirror.test"))
+            assertEquals("zh.mirror.test", repository.currentHostOrNull())
+
+            repeat(server.requestCount) { request ->
+                val recorded = server.takeRequest()
+                assertNull(recorded.getHeader("Cookie"), "no cookie during probing")
+                assertNull(recorded.getHeader("remix-userid"), "no credentials during probing")
+            }
+        }
+    }
+
+    @Test
+    fun `discovered redirect target is re-verified after a restart`() = runTest {
+        fixture {
+            redirects["zlib.re"] = "zh.mirror.test"
+            unhealthy += DomainPolicy.DEFAULT_PROBE_HOSTS - "zlib.re"
+            repository.probeAll()
+            assertEquals("zh.mirror.test", repository.currentHostOrNull())
+
+            // Fresh process: the in-memory trust list starts empty again.
+            val freshRegistry = AllowedHostRegistry()
+            val restarted = newRepository(freshRegistry)
+            restarted.initialize()
+
+            assertTrue(freshRegistry.isAllowed("zh.mirror.test"))
+            assertEquals("zh.mirror.test", restarted.currentHostOrNull())
+        }
+    }
+
+    @Test
+    fun `unverified redirect target never becomes usable`() = runTest {
+        fixture {
+            redirects["zlib.re"] = "phish.test"
+            unverified += "phish.test"
+            unhealthy += DomainPolicy.DEFAULT_PROBE_HOSTS - "zlib.re"
+
+            repository.probeAll()
+
+            val redirector = repository.checks.value.first { it.host == "zlib.re" }
+            assertFalse(redirector.healthy)
+            assertNull(redirector.redirectTarget)
+            assertFalse(registry.isAllowed("phish.test"))
+            assertEquals("z-lib.gd", repository.currentHostOrNull())
         }
     }
 
@@ -127,6 +186,40 @@ class DomainRepositoryTest {
         }
     }
 
+    @Test
+    fun `locked redirector keeps the lock while using its verified target`() = runTest {
+        fixture {
+            sessions.add(Session("1", "k", "z-lib.gd", emptyMap()))
+            redirects["zlib.re"] = "zh.mirror.test"
+            unhealthy += DomainPolicy.DEFAULT_PROBE_HOSTS - "zlib.re"
+
+            repository.setAutoSwitchEnabled(false)
+            val result = assertIs<AppResult.Success<String>>(repository.setCurrentHost("zlib.re"))
+            assertEquals("zlib.re", repository.settings.value.lockedHost)
+            assertEquals("zlib.re", result.value)
+
+            repository.probeAll()
+
+            assertEquals("zh.mirror.test", repository.currentHostOrNull())
+            assertEquals("zlib.re", repository.settings.value.lockedHost)
+            assertEquals("zh.mirror.test", sessions.current()?.domain)
+        }
+    }
+
+    @Test
+    fun `failed re-verification of a stored discovery removes it from the allowlist`() = runTest {
+        fixture(AppSettings(currentHost = "z-lib.gd", discoveredHosts = setOf("stale.test"))) {
+            unverified += "stale.test"
+
+            repository.probeAll()
+
+            val stale = repository.checks.value.first { it.host == "stale.test" }
+            assertFalse(stale.healthy)
+            assertFalse(registry.isAllowed("stale.test"))
+            assertTrue(store.value.value.discoveredHosts.isEmpty())
+        }
+    }
+
     private suspend fun TestScope.fixture(
         initial: AppSettings = AppSettings(currentHost = "z-lib.gd"),
         block: suspend Fixture.() -> Unit,
@@ -142,12 +235,23 @@ class DomainRepositoryTest {
 
     private class Fixture(scope: TestScope, initial: AppSettings) {
         val unhealthy = ConcurrentHashMap.newKeySet<String>()
+        val redirects = ConcurrentHashMap<String, String>()
+        val unverified = ConcurrentHashMap.newKeySet<String>()
         val server = MockWebServer().apply {
             dispatcher = object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     val host = request.path.orEmpty().removePrefix("/").substringBefore('/')
-                    return if (host in unhealthy) MockResponse().setResponseCode(503).setBody("unavailable")
-                    else MockResponse().setHeader("Content-Type", "application/json").setBody("""{"success":1,"domains":[]}""")
+                    if (host in unhealthy) return MockResponse().setResponseCode(503).setBody("unavailable")
+                    redirects[host]?.let { target ->
+                        return MockResponse().setResponseCode(302).setHeader("Location", "https://$target/")
+                    }
+                    val domains = if (host in unverified) {
+                        """{"domain":"$host"}"""
+                    } else {
+                        """{"domain":"z-library.sk"}"""
+                    }
+                    return MockResponse().setHeader("Content-Type", "application/json")
+                        .setBody("""{"success":1,"domains":[$domains]}""")
                 }
             }
             start()
@@ -169,9 +273,10 @@ class DomainRepositoryTest {
         val registry = AllowedHostRegistry()
         val repository = newRepository()
 
-        fun newRepository() = DomainRepository(
+        fun newRepository(registry: AllowedHostRegistry = this.registry) = DomainRepository(
             DomainProbe(
-                OkHttpClient(), dispatchers, isAllowedHost = registry::isAllowed,
+                OkHttpClient(), dispatchers, isAllowedHost = registry::isProbeAllowed,
+                isTrustedHost = registry::isAllowed,
                 baseUrlFor = { server.url("/$it").toString() }, requireHttps = false,
             ), store, sessions, registry, dispatchers,
         )
@@ -183,6 +288,7 @@ class DomainRepositoryTest {
         override suspend fun read() = value.value
         override suspend fun setCurrentHost(host: String?) { value.value = value.value.copy(currentHost = host) }
         override suspend fun setCustomHosts(hosts: Set<String>) { value.value = value.value.copy(customHosts = hosts) }
+        override suspend fun setDiscoveredHosts(hosts: Set<String>) { value.value = value.value.copy(discoveredHosts = hosts) }
         override suspend fun setLockedHost(host: String?) { value.value = value.value.copy(lockedHost = host) }
         override suspend fun setThemeMode(mode: ThemeMode) { value.value = value.value.copy(themeMode = mode) }
         override suspend fun setBookGridColumns(columns: BookGridColumns) { value.value = value.value.copy(bookGridColumns = columns) }

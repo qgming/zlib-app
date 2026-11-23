@@ -742,3 +742,57 @@ APK 只从 `qgming/zlib-app` 正式 Release 的匹配设备 ABI 或通用资产�
 
 云端下载记录删除成功与“已是最新版本”共用设计系统的 Toast 宿主，取代 ADR-047 在此处使用 Snackbar 的安排；短提示无按钮，页面退出或账号变化时取消未消失的提示，上一账号的未消费事件仍需清除。删除失败保留确认面板内错误与重试，不伪造成功。
 
+
+---
+
+## ADR-065：内置域名 zlib.re、体检顺序与重定向目标发现
+
+**状态**：接受（2026-11-23）；用户要求允许 EAPI 域名重定向到其他域名，先检查目标可用再使用，并新增 `zlib.re`、把大陆可用域名排在前列。
+
+**决策**：`DomainPolicy.BUILT_IN_SUFFIXES` 增加 `zlib.re`；`DEFAULT_PROBE_HOSTS` 改为 9 项，顺序即故障切换优先级，前三项为 `zlib.bz`、`zlib.re`、`z-library.im`（大陆环境可用域名排前），其余沿用原列表（**顺序部分与 `zlib.re` 之外的内置条目已由 ADR-066 取代**）。用户镜像与自动发现目标都只信任精确 host，不扩展到子域，也不改变 §3.2 的其他限制。
+
+内置域名允许 301/302/307 跳到 allowlist 之外的 host（实测 `z-lib.by → zh.z101.by`；`zlib.re` 当日先是 `zh.us101.ru`、稍后变为 `z-lib.by`，跳转目标本身会变）。跳转目标按以下规则处理：跟随跳转链时一律不携带 Cookie／`remix-userid`／`remix-userkey`；对目标 host 的 `/eapi/info/domains` 重新探测，最多 3 跳，且总是把路径重写为该端点；只有 HTTP 200、`success:1` 且 `domains` 数组含已知域名家族时才校验通过。校验通过后把精确目标 host 记入会话内运行时 allowlist 并作为当前域名使用，原域名卡片显示“重定向 → 目标”；未通过（HTML 验证、513/517、非 2xx、超时、无已知域名家族）时仅在原域名上报告失败，绝不使用该目标，也不向其发送任何凭据。
+
+已校验目标持久化到 DataStore `discovered_hosts`，仅用于下次冷启动的无凭据复检；复检通过才恢复信任，失败则移除（当前域名与锁定域名除外，避免用户看不到状态）。发现目标排在数据类末尾参与后续体检，不写入用户镜像列表，删除镜像不影响它们。探测目标是独立的无凭据客户端请求，凭据剥离与重定向拦截仍以运行时 allowlist 为准；因此本 ADR 不放松 §3.3 的“凭据绝不发给 allowlist 之外的 host”，只是把校验通过的精确 host 纳入运行时 allowlist。
+
+限制：本 ADR 不承诺跳转目标永远可用或一定属于官方；用户镜像、账号切换及真实跳转先后验收仍需独立真机确认。
+
+---
+
+## ADR-066：z101.by 纳入内置清单与探测顺序按真实可用性重排
+
+**状态**：接受（2026-11-23）；用户确认 `z101.by` 在浏览器中可用，并要求据此调整内置域名与顺序。
+
+**决策**：`BUILT_IN_SUFFIXES` 增加 `z101.by`（官方 `z-lib.by` 的 301 目标 `zh.z101.by` 所在域，裸 host 实测 `/eapi/info/domains` 返回 `success:1`，`/eapi/book/most-popular` 有真实书目）。ADR-065 的 9 项顺序与“前三项”条款被本条取代。
+
+`DEFAULT_PROBE_HOSTS` 扩为 16 项，顺序即故障切换优先级，按 2026-11-23 经用户系统代理的实测结果排列：直连返回 EAPI JSON 的 `zlib.bz`、`zlib.re`、`z101.by`、`z-lib.by`、`z-lib.gd`、`z-lib.gl`、`z-library.ec`、`z-library.qa`、`z-library.website`、`article.sk`、`articles.sk` 在前；`z-library.im`、`z-lib.sk`、`z-library.sk`、`1lib.sk` 这类需要浏览器执行 JS 挑战的 DiamWall 域名在后；证书过期的 `z-lib.fm` 最后。理由：体检把 DiamWall 判为不可用，若仍排在前列，自动切换会在这些域名上反复选到“浏览器能开、App 不能请求”的地址。
+
+体检新增 `307` + `Server: DiamWall`（或 `Set-Cookie` 含 `__diamwall`）→ `DIAMWALL` 的判定，取代此前因自重定向而误报的 `REDIRECT_LOOP`；不实现任何 JS／挑战绕过，也不为此引入 WebView。
+
+边界：此顺序只反映 2026-11-23 经该系统代理的可达性，不构成“永久可用”声明；DNS 污染环境下直连与代理结果不同，手机端仍以 App 内“全部体检”为准。`z-lib.fm` 保留在清单末尾而非删除，便于其证书恢复后继续使用。
+
+---
+
+## ADR-067：所有底部短提示统一为系统 Toast，移除 Snackbar
+
+**状态**：接受（2026-11-23）；用户要求把书架本机文件删除后的底部提示等所有“跳跳式”底部提示改成检查更新那种 Toast。
+
+**决策**：设计系统只保留一种短提示——`ZlibToastHost`（`android.widget.Toast`，`LENGTH_SHORT`，无按钮、无关闭、自动消失）。`ZlibSnackbar.kt`、`ZlibPage`/`ZlibOverlayHost` 的 `snackbarHost` 插槽及 Miuix `SnackbarHost` 依赖全部删除；feature 不得再自建底部提示条或顶部“提示卡片”。提示仍是一次性事件，不做可重放状态。
+
+`ZlibToastHost` 提供两种入口：`ZlibToastHost(messages: Flow<String>, key)` 用于已有事件流的页面，新增 `rememberZlibToastHostState()` + `state.showMessage(text)` + `ZlibToastHost(state)` 用于即时调用（链接无法打开、Intent 无接收应用、安装失败等）。同一页面只允许一个 Toast 宿主，避免两条通道各弹一次；`key`（会话代次、当前下载目录等）变化时取消未消失的提示，页面退出时 `onDispose` 取消。
+
+覆盖范围：云端下载记录删除成功、手动检查已是最新版、书架本机文件删除成功、打不开/分享不了文件、无法访问下载目录、账号与域名页操作结果、关于页链接失败、更新包安装失败。删除失败等需要重试或二次确认的错误仍留在确认面板内，不改成 Toast；分页/加载失败仍用列表内 `ZlibStateCard` 与重试，不改成 Toast。
+
+理由：系统 Toast 与平台行为一致、不遮挡列表底部操作、实现简单；Snackbar 在玻璃界面上会与底部导航和 SAF 返回冲突，且此前已出现两套并存。限制：Toast 无法承载按钮，故凡需要用户决策的反馈不得走 Toast；系统 Toast 文案长度与显示位置由系统决定，不保证所有 ROM 一致。
+
+---
+
+## ADR-068：1.2.0 版本范围、README 预览与更新日志分组
+
+**状态**：接受（2026-11-23）；用户要求把六张预览图加入 README、版本号改为 1.2.0，并提供按功能／优化／修复分组的更新日志。
+
+**决策**：`appVersionName` 改为 `1.2.0`、`appVersionCode` 改为 `4`，包名、签名与 ABI 规则不变；本轮尚未发布，发布记录与真机验收仍按 `docs/RELEASING.md` 独立补充。README 新增「预览」小节，用两段居中段落各排三张手机截图（每张 `width="33.33%"`、不写像素宽高），共 3 列 × 2 行，宽度随页面自适应；图片存于 `docs/preview/zlib1.png`–`zlib6.png`，随仓库分发，不引用外链。
+
+1.2.0 的更新日志只存放在 `docs/releases/v1.2.0.txt`，用于 GitHub Release 正文，不写进 README（README 的“更新日志”仍指向 Releases）。正文为纯文本编号，按「功能／优化／修复」分组，只写用户可感知的行为变化，不写安装步骤、架构选择、签名与校验说明。v1.0.0 由 Markdown 改为同格式的 `v1.0.0.txt`，v1.1.0 删除末尾安装说明并重排分组；两者均为已发布正文的校正版，线上 Release 需同步替换。
+
+1.2.0 的范围限定为本轮已实现的行为：域名重定向自动发现与目标校验、内置域名 `zlib.re` / `z101.by`、DiamWall 识别、体检顺序重排、全局短提示统一为 Toast（ADR-065/066/067）。ADR-060–064 描述的内容属于已发布的 1.1.0，不重复计入。

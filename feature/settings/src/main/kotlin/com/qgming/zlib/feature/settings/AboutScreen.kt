@@ -1,7 +1,6 @@
 package com.qgming.zlib.feature.settings
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
@@ -10,10 +9,9 @@ import com.qgming.zlib.core.designsystem.ZlibAboutHeader
 import com.qgming.zlib.core.designsystem.ZlibAboutLink
 import com.qgming.zlib.core.designsystem.ZlibCardList
 import com.qgming.zlib.core.designsystem.ZlibPage
-import com.qgming.zlib.core.designsystem.ZlibSnackbarHost
-import com.qgming.zlib.core.designsystem.rememberZlibSnackbarHostState
+import com.qgming.zlib.core.designsystem.ZlibToastHost
+import com.qgming.zlib.core.designsystem.rememberZlibToastHostState
 import com.qgming.zlib.core.network.GitHubReleaseClient
-import kotlinx.coroutines.launch
 
 data class AboutAppInfo(val name: String, val versionName: String, val versionCode: Long)
 
@@ -29,19 +27,18 @@ fun AboutScreen(
     onCheckUpdate: () -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
-    val scope = rememberCoroutineScope()
-    val snackbar = rememberZlibSnackbarHostState()
+    val toast = rememberZlibToastHostState()
     val cannotOpenLink = stringResource(R.string.about_link_failed)
     val openLink: (String) -> Unit = { url ->
         try {
             uriHandler.openUri(url)
         } catch (_: IllegalArgumentException) {
-            scope.launch { snackbar.showMessage(cannotOpenLink) }
+            toast.showMessage(cannotOpenLink)
         }
     }
+    ZlibToastHost(toast)
     ZlibPage(
         title = stringResource(R.string.about_title), onBack = onBack, expandable = true,
-        snackbarHost = { ZlibSnackbarHost(snackbar) },
     ) { padding ->
         ZlibCardList(padding) {
             item("identity") {

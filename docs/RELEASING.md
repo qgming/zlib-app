@@ -7,7 +7,7 @@
 `app/build.gradle.kts` 的 `appVersionName` 使用 SemVer，`appVersionCode` 每次公开发布递增。
 Git 标签为 `v<appVersionName>`，例如 `v1.0.0`。同一版本的所有架构与通用包使用相同 versionCode，便于互相覆盖安装和后续更新。
 
-当前正式版本为 `1.1.0`（`versionCode=3`），已于2026-11-23发布为 `v1.1.0`。标签指向构建源码提交 `6c1ccb2103990b4d8fe8fed4dc8eeed4102b96ac`。
+当前版本为 `1.2.0`（`versionCode=4`），尚未发布。上一正式版本 `1.1.0`（`versionCode=3`）已于2026-11-23发布为 `v1.1.0`。标签指向构建源码提交 `6c1ccb2103990b4d8fe8fed4dc8eeed4102b96ac`。
 
 ## 构建
 
@@ -42,7 +42,7 @@ Git 标签为 `v<appVersionName>`，例如 `v1.0.0`。同一版本的所有架�
 
 提交前检查 `git diff --cached`，禁止提交本机配置、密钥、凭据、下载文件、构建目录及 APK。
 将代码推送到 main，创建对应标签，再通过 GitHub Releases 上传五个 APK 和校验文件。
-先上传为 draft 并核对完整性，确认后发布为正式版本；更新正文保存在 `docs/releases/<tag>.txt`，使用纯文本，可用“1、”等序号，不使用Markdown标题、项目符号或强调语法，并与线上保持一致。v1.0.0历史正文仍保留原.md文件。
+先上传为 draft 并核对完整性，确认后发布为正式版本；更新正文保存在 `docs/releases/<tag>.txt`，使用纯文本，可用“1、”等序号，不使用Markdown标题、项目符号或强调语法，并与线上保持一致。正文按“功能／优化／修复”分组，只写用户能感知的行为变化；不写安装步骤、架构选择、签名与校验说明，这些内容由 README 与下载页承担。v1.0.0、v1.1.0 的正文已校正为该格式，GitHub 上已发布的旧正文需同步更新到一致。
 
 ## 应用内更新
 

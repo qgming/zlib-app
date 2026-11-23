@@ -37,17 +37,14 @@ internal val LocalZlibOverlayBackdrop = staticCompositionLocalOf<Backdrop?> { nu
 @Composable
 fun ZlibAppOverlay(content: @Composable () -> Unit) = ZlibOverlayHost(content = content)
 
+/** Bottom hints are toasts (ADR-067); this host only provides the glass backdrop and insets. */
 @Composable
-internal fun ZlibOverlayHost(
-    snackbarHost: @Composable () -> Unit = {},
-    content: @Composable () -> Unit,
-) {
+internal fun ZlibOverlayHost(content: @Composable () -> Unit) {
     val backdrop = if (LocalZlibGlass.current) rememberLayerBackdrop() else null
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = Color.Transparent,
         contentWindowInsets = WindowInsets(0),
-        snackbarHost = snackbarHost,
     ) {
         Box(Modifier.fillMaxSize().then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)) {
             CompositionLocalProvider(LocalZlibOverlayBackdrop provides backdrop, content = content)

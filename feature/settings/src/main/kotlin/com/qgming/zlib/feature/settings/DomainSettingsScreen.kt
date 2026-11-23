@@ -22,20 +22,21 @@ import com.qgming.zlib.core.designsystem.ZlibGlassBottomSheet
 import com.qgming.zlib.core.designsystem.ZlibMenuAction
 import com.qgming.zlib.core.designsystem.ZlibPage
 import com.qgming.zlib.core.designsystem.ZlibProbeDomainsButton
-import com.qgming.zlib.core.designsystem.ZlibSnackbarHost
-import com.qgming.zlib.core.designsystem.rememberZlibSnackbarHostState
+import com.qgming.zlib.core.designsystem.ZlibToastHost
+import com.qgming.zlib.core.designsystem.rememberZlibToastHostState
 
 @Composable
 fun DomainSettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val busy by viewModel.domainBusy.collectAsStateWithLifecycle()
     val form by viewModel.addDomain.collectAsStateWithLifecycle()
-    val snackbar = rememberZlibSnackbarHostState()
+    val toast = rememberZlibToastHostState()
     var actionHost by remember { mutableStateOf<String?>(null) }
     var removeHost by remember { mutableStateOf<String?>(null) }
     val controlsEnabled = !busy && !state.probing
 
-    LaunchedEffect(viewModel, snackbar) { viewModel.events.collect { snackbar.showMessage(it) } }
+    LaunchedEffect(viewModel, toast) { viewModel.events.collect { toast.showMessage(it) } }
+    ZlibToastHost(toast)
 
     ZlibPage(
         title = "域名管理", onBack = onBack,
@@ -45,7 +46,6 @@ fun DomainSettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hilt
                 ZlibAddDomainButton(onClick = viewModel::showAddDomain)
             }
         },
-        snackbarHost = { ZlibSnackbarHost(snackbar) },
     ) { padding ->
         ZlibCardList(padding) {
             item("auto-switch") {

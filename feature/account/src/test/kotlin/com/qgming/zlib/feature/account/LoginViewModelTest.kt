@@ -140,6 +140,7 @@ class LoginViewModelTest {
             override suspend fun read() = value.value
             override suspend fun setCurrentHost(host: String?) { value.value = value.value.copy(currentHost = host) }
             override suspend fun setCustomHosts(hosts: Set<String>) = Unit
+            override suspend fun setDiscoveredHosts(hosts: Set<String>) = Unit
             override suspend fun setLockedHost(host: String?) = Unit
             override suspend fun setThemeMode(mode: ThemeMode) = Unit
             override suspend fun setBookGridColumns(columns: BookGridColumns) = Unit

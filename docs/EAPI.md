@@ -268,6 +268,27 @@ GET /eapi/info/domains
 - 其它非 2xx → `HTTP_ERROR`
 - 连接失败/超时 → `NETWORK_ERROR`
 
+#### 跳转到 allowlist 之外时的发现（ADR-065）
+
+2026-11-23 实测：`z-lib.by` → `301 https://zh.z101.by/`，`zlib.re` → 当天先为 `302 https://zh.us101.ru/`、后为 `301 https://z-lib.by/`（跳转目标会变，多数目标都在内置 allowlist 之外），旧行为判 `INVALID`（“重定向到非允许域名”）。新行为：
+
+1. 仍以内置/用户域名为起点，只对这些 host 携带凭据；跳转目标一律**无 Cookie、无 remix 头**地探测。
+2. 对目标 host（HTTPS、合法主机名）请求 `https://<目标>/eapi/info/domains`，最多跟 3 跳，忽略跳转携带的路径（总是重写为上面的端点）。
+3. 只有 `200` + `success:1` + `domains` 数组中至少一项属于已知域名家族（`DomainPolicy.isKnownDomainFamily`，例如 `z-library.sk`、`1lib.sk`）才认为校验通过；随后把**精确目标 host** 加入会话内运行时 allowlist，作为当前域名使用，Redirector 卡片显示“重定向 → 目标”。
+4. 目标返回 HTML/513/517/非 2xx/超时，或 JSON 里没有已知域名家族 → 保留 Redirector 自身条目的失败状态（`INVALID` 文案“未通过校验”），绝不使用。
+5. 已校验目标记入 DataStore `discovered_hosts`；下次冷启动先无凭据复检，通过才重新获得信任，不通过即从列表移除（当前/锁定域名除外）。
+
+2026-11-23 经用户系统代理（`127.0.0.1:7897`）复测，区分出三类真实状态：
+
+| 类型 | 域名 | 观测 |
+|---|---|---|
+| 直连 EAPI 可用 | `zlib.bz`、`z101.by`、`z-lib.by`、`z-lib.gd`、`z-lib.gl`、`z-library.ec`、`z-library.qa`、`z-library.website`、`article.sk`、`articles.sk` | 200 + `success:1`，1.0–3.0s |
+| DiamWall 人机验证 | `z-library.im`、`z-lib.sk`、`z-library.sk`、`1lib.sk` | 首次命中 `307` 自重定向 + `Server: DiamWall` + `Set-Cookie: __diamwall=…`；带 cookie 重放后为 `513` 或再次 `307`，最终是挑战页。浏览器因执行 JS 挑战而可用，EAPI 客户端不绕过 → `DIAMWALL` |
+| 证书过期 | `z-lib.fm` | `schannel: SEC_E_CERT_EXPIRED`；浏览器也不可用 |
+| 跳转器 | `zlib.re` → `z-lib.by/`；`z-lib.by` 根路径偶发 `503` | 按 ADR-065 采用已校验目标，不另建条目 |
+
+体检对 `307 + Server: DiamWall`（或带 `__diamwall` cookie）直接判 `DIAMWALL`，不再误报重定向循环。`domains` 响应本身可以包含第三方代理（如 `proxy.zlibraryproxies.workers.dev`）；它只用于**校验**，不会被采纳为可用域名，也不会加入 allowlist。
+
 ### 2.10 云端书单（已移出范围）
 
 书单页面与模块已按 ADR-051 移除。2026-11-22 调查没有确认可用的书单 EAPI；第三方实现读取书单使用的是 JSON PAPI，而非本项目允许的 EAPI。本客户端不调用这些路径，不抓取网页，也不建立本地替代书单。

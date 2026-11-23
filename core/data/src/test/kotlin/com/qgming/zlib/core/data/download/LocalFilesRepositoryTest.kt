@@ -196,6 +196,7 @@ class LocalFilesRepositoryTest {
         override suspend fun setDownloadTreeUri(uri: String?) { value.value = value.value.copy(downloadTreeUri = uri) }
         override suspend fun setCurrentHost(host: String?) = Unit
         override suspend fun setCustomHosts(hosts: Set<String>) = Unit
+        override suspend fun setDiscoveredHosts(hosts: Set<String>) = Unit
         override suspend fun setLockedHost(host: String?) = Unit
         override suspend fun setThemeMode(mode: ThemeMode) = Unit
         override suspend fun setBookGridColumns(columns: BookGridColumns) = Unit

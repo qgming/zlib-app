@@ -54,6 +54,7 @@ class StartupCoordinatorTest {
             override suspend fun read() = settings.value
             override suspend fun setCurrentHost(host: String?) { settings.value = settings.value.copy(currentHost = host) }
             override suspend fun setCustomHosts(hosts: Set<String>) { settings.value = settings.value.copy(customHosts = hosts) }
+            override suspend fun setDiscoveredHosts(hosts: Set<String>) { settings.value = settings.value.copy(discoveredHosts = hosts) }
             override suspend fun setLockedHost(host: String?) { settings.value = settings.value.copy(lockedHost = host) }
             override suspend fun setThemeMode(mode: ThemeMode) { settings.value = settings.value.copy(themeMode = mode) }
             override suspend fun setBookGridColumns(columns: BookGridColumns) { settings.value = settings.value.copy(bookGridColumns = columns) }

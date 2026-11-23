@@ -18,6 +18,33 @@ class DomainPolicyTest {
     }
 
     @Test
+    fun `directly usable hosts are probed first`() {
+        assertEquals(listOf("zlib.bz", "zlib.re", "z101.by"), DomainPolicy.DEFAULT_PROBE_HOSTS.take(3))
+        assertEquals(DomainPolicy.DEFAULT_PROBE_HOSTS.distinct(), DomainPolicy.DEFAULT_PROBE_HOSTS)
+        // DiamWall-protected hosts and the expired-certificate host come last (ADR-066).
+        assertEquals(
+            listOf("z-library.im", "z-lib.sk", "z-library.sk", "1lib.sk", "z-lib.fm"),
+            DomainPolicy.DEFAULT_PROBE_HOSTS.takeLast(5),
+        )
+        assertTrue(DomainPolicy.isBuiltIn("zlib.re"))
+        assertTrue(DomainPolicy.isBuiltIn("z101.by"))
+        assertTrue(DomainPolicy.isAllowed("www.zlib.re"))
+        assertTrue(DomainPolicy.isAllowed("zh.z101.by"))
+        assertFalse(DomainPolicy.isAllowed("zlib.re.evil.test"))
+        assertFalse(DomainPolicy.isAllowed("z101.by.evil.test"))
+        assertTrue(DomainPolicy.DEFAULT_PROBE_HOSTS.all { DomainPolicy.isBuiltIn(it) })
+        assertEquals(DomainPolicy.BUILT_IN_SUFFIXES.toSet(), DomainPolicy.DEFAULT_PROBE_HOSTS.toSet())
+    }
+
+    @Test
+    fun `known domain families are recognised for redirect verification`() {
+        assertTrue(DomainPolicy.isKnownDomainFamily("z-library.sk"))
+        assertTrue(DomainPolicy.isKnownDomainFamily("www.z-lib.gd"))
+        assertFalse(DomainPolicy.isKnownDomainFamily("phish.test"))
+        assertFalse(DomainPolicy.isKnownDomainFamily("z-library.sk.evil.test"))
+    }
+
+    @Test
     fun `custom mirrors trust the exact host only`() {
         val custom = setOf("mirror.example.com")
         assertTrue(DomainPolicy.isAllowed("mirror.example.com", custom))

@@ -9,34 +9,28 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.qgming.zlib.core.designsystem.ZlibSnackbarHost
 import com.qgming.zlib.core.designsystem.ZlibToastHost
-import com.qgming.zlib.core.designsystem.rememberZlibSnackbarHostState
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.map
+import com.qgming.zlib.core.designsystem.rememberZlibToastHostState
 
 @Composable
 fun AppUpdateHost(info: AboutAppInfo, viewModel: AboutViewModel) {
     val state by viewModel.update.collectAsStateWithLifecycle()
     val download by viewModel.download.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val snackbar = rememberZlibSnackbarHostState()
+    val toast = rememberZlibToastHostState()
     val installFailed = stringResource(R.string.about_update_install_failed)
     val alreadyCurrent = stringResource(R.string.about_update_current)
-    val toastMessages = remember(viewModel, alreadyCurrent) {
-        viewModel.events.map { event ->
-            when (event) { AboutUpdateEvent.AlreadyCurrent -> alreadyCurrent }
+    LaunchedEffect(viewModel, alreadyCurrent) {
+        viewModel.events.collect { event ->
+            toast.showMessage(when (event) { AboutUpdateEvent.AlreadyCurrent -> alreadyCurrent })
         }
     }
-    ZlibToastHost(toastMessages)
+    ZlibToastHost(toast)
     fun openInstaller() {
         val file = viewModel.installerFile() ?: return
         try {
@@ -47,9 +41,9 @@ fun AppUpdateHost(info: AboutAppInfo, viewModel: AboutViewModel) {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             })
         } catch (_: ActivityNotFoundException) {
-            scope.launch { snackbar.showMessage(installFailed) }
+            toast.showMessage(installFailed)
         } catch (_: IllegalArgumentException) {
-            scope.launch { snackbar.showMessage(installFailed) }
+            toast.showMessage(installFailed)
         }
     }
     val installPermission = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -67,9 +61,8 @@ fun AppUpdateHost(info: AboutAppInfo, viewModel: AboutViewModel) {
             else try {
                 installPermission.launch(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:${context.packageName}".toUri()))
             } catch (_: ActivityNotFoundException) {
-                scope.launch { snackbar.showMessage(installFailed) }
+                toast.showMessage(installFailed)
             }
         },
     )
-    ZlibSnackbarHost(snackbar)
 }

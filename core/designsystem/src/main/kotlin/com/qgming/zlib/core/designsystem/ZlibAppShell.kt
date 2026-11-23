@@ -192,10 +192,9 @@ fun ZlibPage(
     expandable: Boolean = false,
     actions: @Composable RowScope.() -> Unit = {},
     topBarContent: @Composable () -> Unit = {},
-    snackbarHost: @Composable () -> Unit = {},
     content: @Composable (PaddingValues) -> Unit,
 ) {
-    ZlibOverlayHost(snackbarHost = snackbarHost) {
+    ZlibOverlayHost {
         PageFrame(
             title = title,
             appBarState = rememberTopAppBarState(),

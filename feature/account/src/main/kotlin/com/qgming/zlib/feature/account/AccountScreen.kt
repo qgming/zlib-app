@@ -26,9 +26,9 @@ import com.qgming.zlib.core.designsystem.ZlibGlassBottomSheet
 import com.qgming.zlib.core.designsystem.ZlibLoginForm
 import com.qgming.zlib.core.designsystem.ZlibMenuAction
 import com.qgming.zlib.core.designsystem.ZlibPage
-import com.qgming.zlib.core.designsystem.ZlibSnackbarHost
+import com.qgming.zlib.core.designsystem.ZlibToastHost
 import com.qgming.zlib.core.designsystem.ZlibStateCard
-import com.qgming.zlib.core.designsystem.rememberZlibSnackbarHostState
+import com.qgming.zlib.core.designsystem.rememberZlibToastHostState
 
 @Composable
 fun AccountScreen(onBack: (() -> Unit)?, viewModel: AccountViewModel = hiltViewModel()) {
@@ -38,10 +38,11 @@ fun AccountScreen(onBack: (() -> Unit)?, viewModel: AccountViewModel = hiltViewM
     var actionId by remember { mutableStateOf<String?>(null) }
     var logoutId by remember { mutableStateOf<String?>(null) }
     var confirmAutoSwitch by remember { mutableStateOf(false) }
-    val snackbar = rememberZlibSnackbarHostState()
-    LaunchedEffect(viewModel, snackbar) { viewModel.events.collect { snackbar.showMessage(it) } }
+    val toast = rememberZlibToastHostState()
+    LaunchedEffect(viewModel, toast) { viewModel.events.collect { toast.showMessage(it) } }
+    ZlibToastHost(toast)
 
-    ZlibPage(title = "账号", onBack = onBack, actions = { ZlibAddAccountButton(viewModel::showAdd) }, snackbarHost = { ZlibSnackbarHost(snackbar) }) { padding ->
+    ZlibPage(title = "账号", onBack = onBack, actions = { ZlibAddAccountButton(viewModel::showAdd) }) { padding ->
         ZlibCardList(padding) {
             if (state.accounts.isEmpty()) item("empty") {
                 ZlibStateCard("暂无已登录账号", "点击右上角添加账号。", "添加账号", viewModel::showAdd)

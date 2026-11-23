@@ -7,6 +7,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.Dispatcher
@@ -16,19 +17,30 @@ import okhttp3.mockwebserver.RecordedRequest
 
 class DomainProbeTest {
 
-    private fun probeOn(server: MockWebServer, allowed: (String) -> Boolean = { it == "probe.test" }): DomainProbe {
+    private fun probeOn(
+        server: MockWebServer,
+        allowed: (String) -> Boolean = { it == "probe.test" },
+        trusted: (String) -> Boolean = allowed,
+        followForeignRedirects: Boolean = true,
+    ): DomainProbe {
         val base = server.url("/").toString().trimEnd('/')
         return DomainProbe(
             client = OkHttpClient.Builder().build(),
             isAllowedHost = allowed,
+            isTrustedHost = trusted,
             baseUrlFor = { base },
             requireHttps = false,
             timeoutMillis = 5_000,
+            followForeignRedirects = followForeignRedirects,
         )
     }
 
-    private fun runProbe(server: MockWebServer, allowed: (String) -> Boolean = { it == "probe.test" }) =
-        runBlocking { probeOn(server, allowed).probe("probe.test") }
+    private fun runProbe(
+        server: MockWebServer,
+        allowed: (String) -> Boolean = { it == "probe.test" },
+        trusted: (String) -> Boolean = allowed,
+        followForeignRedirects: Boolean = true,
+    ) = runBlocking { probeOn(server, allowed, trusted, followForeignRedirects).probe("probe.test") }
 
     @Test
     fun `healthy json is classified healthy`() {
@@ -91,11 +103,32 @@ class DomainProbeTest {
     }
 
     @Test
+    fun `diamwall self redirect is classified diamwall`() {
+        val server = MockWebServer().apply {
+            dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse = MockResponse()
+                    .setResponseCode(307)
+                    .setHeader("Server", "DiamWall")
+                    .setHeader("Location", request.requestUrl.toString())
+                    .addHeader("Set-Cookie", "__diamwall=0x1; Path=/; Secure")
+            }
+            start()
+        }
+        try {
+            val check = runProbe(server, allowed = { true })
+            assertEquals(DomainStatus.DIAMWALL, check.status)
+            assertEquals("DiamWall 人机验证", check.detail)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
     fun `self redirect is a redirect loop`() {
         val server = MockWebServer().apply {
             dispatcher = object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse =
-                    MockResponse().setResponseCode(302).setHeader("Location", "/eapi/info/domains")
+                    MockResponse().setResponseCode(302).setHeader("Location", request.requestUrl.toString())
             }
             start()
         }
@@ -107,13 +140,13 @@ class DomainProbeTest {
     }
 
     @Test
-    fun `redirect outside the allowlist is invalid`() {
+    fun `redirect outside the allowlist is invalid when discovery is off`() {
         val server = MockWebServer().apply {
-            enqueue(MockResponse().setResponseCode(302).setHeader("Location", "http://evil.test/"))
+            enqueue(MockResponse().setResponseCode(302).setHeader("Location", "https://evil.test/"))
             start()
         }
         try {
-            val check = runProbe(server, allowed = { it == "probe.test" })
+            val check = runProbe(server, allowed = { it == "probe.test" }, followForeignRedirects = false)
             assertEquals(DomainStatus.INVALID, check.status)
             assertEquals("重定向到非允许域名", check.detail)
         } finally {
@@ -122,11 +155,119 @@ class DomainProbeTest {
     }
 
     @Test
+    fun `verified foreign redirect target is reported on the redirector`() {
+        val server = MockWebServer().apply {
+            dispatcher = scriptedDispatcher(
+                MockResponse().setResponseCode(302).setHeader("Location", "https://other.test/"),
+                MockResponse().setHeader("Content-Type", "application/json").setBody(
+                    """{"success":1,"domains":[{"domain":"z-library.sk"},{"domain":"1lib.sk"}]}""",
+                ),
+            )
+            start()
+        }
+        try {
+            val check = runProbe(server)
+            assertEquals(DomainStatus.HEALTHY, check.status)
+            assertEquals("probe.test", check.host)
+            assertEquals("other.test", check.redirectTarget)
+            assertTrue(check.detail.contains("other.test"))
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `foreign redirect target without a known domain family is rejected`() {
+        val server = MockWebServer().apply {
+            dispatcher = scriptedDispatcher(
+                MockResponse().setResponseCode(302).setHeader("Location", "https://phish.test/"),
+                MockResponse().setHeader("Content-Type", "application/json")
+                    .setBody("""{"success":1,"domains":[{"domain":"phish.test"}]}"""),
+            )
+            start()
+        }
+        try {
+            val check = runProbe(server)
+            assertEquals(DomainStatus.INVALID, check.status)
+            assertNull(check.redirectTarget)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `foreign redirect chain is followed to the final verified host`() {
+        val server = MockWebServer().apply {
+            dispatcher = scriptedDispatcher(
+                MockResponse().setResponseCode(302).setHeader("Location", "https://other.test/"),
+                MockResponse().setResponseCode(301).setHeader("Location", "https://third.test/"),
+                MockResponse().setHeader("Content-Type", "application/json")
+                    .setBody("""{"success":1,"domains":[{"domain":"z-lib.gd"}]}"""),
+            )
+            start()
+        }
+        try {
+            val check = runProbe(server)
+            assertEquals(DomainStatus.HEALTHY, check.status)
+            assertEquals("third.test", check.redirectTarget)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `foreign redirect target with html challenge is challenged`() {
+        val server = MockWebServer().apply {
+            dispatcher = scriptedDispatcher(
+                MockResponse().setResponseCode(302).setHeader("Location", "https://other.test/"),
+                MockResponse().setResponseCode(403).setBody("<html><title>Just a moment...</title></html>"),
+            )
+            start()
+        }
+        try {
+            val check = runProbe(server)
+            assertEquals(DomainStatus.CHALLENGED, check.status)
+            assertNull(check.redirectTarget)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    private fun scriptedDispatcher(vararg responses: MockResponse): Dispatcher =
+        object : Dispatcher() {
+            private var index = 0
+
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val response = responses[minOf(index, responses.lastIndex)]
+                index++
+                return response
+            }
+        }
+
+    @Test
     fun `invalid host never hits the network`() {
         val check = runBlocking {
             DomainProbe(OkHttpClient()).probe("http://z-lib.gd/path")
         }
         assertEquals(DomainStatus.INVALID, check.status)
+    }
+
+    @Test
+    fun `a host that is only a probe candidate must prove a known domain family`() {
+        val server = MockWebServer().apply {
+            enqueue(
+                MockResponse().setHeader("Content-Type", "application/json")
+                    .setBody("""{"success":1,"domains":[{"domain":"discovered.test"}]}"""),
+            )
+            start()
+        }
+        try {
+            val check = runProbe(server, allowed = { true }, trusted = { false })
+            assertEquals(DomainStatus.INVALID, check.status)
+            assertEquals("未通过域名家族校验", check.detail)
+        } finally {
+            server.shutdown()
+        }
     }
 
     @Test

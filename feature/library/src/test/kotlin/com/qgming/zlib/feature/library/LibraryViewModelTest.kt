@@ -275,7 +275,7 @@ class LibraryViewModelTest {
     }
 
     @Test
-    fun `logout clears pending success feedback and changes the snackbar session key`() = runTest {
+    fun `logout clears pending success feedback and changes the toast session key`() = runTest {
         withLibrary { server, sessions, _, viewModel ->
             server.enqueue(page("""{"id":1,"hash":"abc"}"""))
             viewModel.onSourceShown(CloudLibrarySource.DownloadHistory)

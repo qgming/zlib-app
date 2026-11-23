@@ -84,7 +84,8 @@ object AppModule {
     ): DomainProbe = DomainProbe(
         client = client,
         dispatchers = dispatchers,
-        isAllowedHost = registry::isAllowed,
+        isAllowedHost = registry::isProbeAllowed,
+        isTrustedHost = registry::isAllowed,
     )
 
     @Provides
