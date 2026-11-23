@@ -1,5 +1,9 @@
 package com.qgming.zlib.core.designsystem
 
+import androidx.compose.ui.res.stringResource
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -82,7 +86,7 @@ fun ZlibLoadingStatus(text: String, modifier: Modifier = Modifier) {
 fun ZlibStateCard(
     title: String,
     message: String,
-    actionLabel: String = "重试",
+    actionLabel: String = stringResource(TextR.string.text_retry),
     onAction: (() -> Unit)? = null,
 ) {
     ZlibCard {

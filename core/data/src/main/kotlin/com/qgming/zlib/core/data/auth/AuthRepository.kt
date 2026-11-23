@@ -1,5 +1,8 @@
 package com.qgming.zlib.core.data.auth
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import com.qgming.zlib.core.common.AppDispatchers
 import com.qgming.zlib.core.common.AppError
 import com.qgming.zlib.core.common.AppResult
@@ -35,7 +38,7 @@ class AuthRepository @Inject constructor(
 
     suspend fun loginWithPassword(email: String, password: String): AppResult<Session> {
         if (email.isBlank() || password.isBlank()) {
-            return AppResult.Failure(AppError.Parse("请输入邮箱和密码"))
+            return AppResult.Failure(AppError.Parse(appText(TextR.string.text_enter_your_email_and_password)))
         }
         ensureDomain()?.let { return AppResult.Failure(it) }
 
@@ -66,7 +69,7 @@ class AuthRepository @Inject constructor(
                 ?: return AppResult.Failure(AppError.NoDomain)
 
         if (!registry.isAllowed(target)) {
-            return AppResult.Failure(AppError.Parse("域名不在允许列表"))
+            return AppResult.Failure(AppError.Parse(appText(TextR.string.text_domain_is_not_on_the_allowed_list)))
         }
 
         val imported = when (val parsed = CookieImporter.parse(raw, target)) {
@@ -91,7 +94,7 @@ class AuthRepository @Inject constructor(
 
                 is AppResult.Failure -> when (profile.error) {
                     AppError.SessionExpired, AppError.NotLoggedIn ->
-                        AppResult.Failure(AppError.AuthFailed("Cookie 已失效或缺少登录态"))
+                        AppResult.Failure(AppError.AuthFailed(appText(TextR.string.text_cookie_has_expired_or_contains_no_valid_session)))
 
                     else -> profile
                 }
@@ -102,7 +105,7 @@ class AuthRepository @Inject constructor(
     suspend fun switchAccount(id: String): AppResult<Unit> {
         val expected = sessionManager.current()
         val entry = sessionManager.vault.value.entries.firstOrNull { it.session.remixUserId == id }
-            ?: return AppResult.Failure(AppError.Parse("账号已不存在"))
+            ?: return AppResult.Failure(AppError.Parse(appText(TextR.string.text_account_no_longer_exists)))
         val candidate = entry.session.withDomain(domainRepository.currentHostOrNull() ?: entry.session.domain)
         when (val profile = api.profile(candidate)) {
             is AppResult.Failure -> {
@@ -112,10 +115,10 @@ class AuthRepository @Inject constructor(
             is AppResult.Success -> {
                 sessionManager.updateProfile(entry.session, profile.value)
                 return downloads.withAccountChange {
-                    if (sessionManager.current() != expected) return@withAccountChange AppResult.Failure(AppError.Parse("当前账号已改变，请重试"))
+                    if (sessionManager.current() != expected) return@withAccountChange AppResult.Failure(AppError.Parse(appText(TextR.string.text_the_active_account_changed_please_retry)))
                     withContext(NonCancellable) {
                         if (sessionManager.activate(id, candidate.domain, expected)) AppResult.Success(Unit)
-                        else AppResult.Failure(AppError.Parse("无法切换账号，请重新登录"))
+                        else AppResult.Failure(AppError.Parse(appText(TextR.string.text_cannot_switch_accounts_please_sign_in_again)))
                     }
                 }
             }

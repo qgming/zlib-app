@@ -1,5 +1,9 @@
 package com.qgming.zlib.core.designsystem
 
+import androidx.compose.ui.res.stringResource
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,19 +37,19 @@ fun ZlibLoginForm(
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         if (useCookie) {
             TextField(
-                value = cookie, onValueChange = onCookieChange, label = "Cookie 内容",
+                value = cookie, onValueChange = onCookieChange, label = stringResource(TextR.string.text_cookie_content),
                 minLines = 3, maxLines = 6, enabled = !busy && enabled,
                 modifier = Modifier.fillMaxWidth(),
             )
         } else {
             TextField(
-                value = email, onValueChange = onEmailChange, label = "邮箱",
+                value = email, onValueChange = onEmailChange, label = stringResource(TextR.string.text_email),
                 singleLine = true, enabled = !busy && enabled,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                 modifier = Modifier.fillMaxWidth(),
             )
             TextField(
-                value = password, onValueChange = onPasswordChange, label = "密码",
+                value = password, onValueChange = onPasswordChange, label = stringResource(TextR.string.text_password),
                 singleLine = true, enabled = !busy && enabled,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 visualTransformation = PasswordVisualTransformation(),
@@ -54,7 +58,7 @@ fun ZlibLoginForm(
         }
         if (addingAccount) {
             Text(
-                "登录状态仅在本机加密保存，密码不会保存。",
+                stringResource(TextR.string.text_sessions_are_encrypted_on_this_device_passwords_are_never_saved),
                 style = MiuixTheme.textStyles.footnote1,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
             )
@@ -62,16 +66,16 @@ fun ZlibLoginForm(
         error?.let {
             Text(it, style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.error)
         }
-        if (busy) ZlibLoadingStatus("正在验证账号…")
+        if (busy) ZlibLoadingStatus(stringResource(TextR.string.text_verifying_account))
         Button(
             onClick = onSubmit,
             enabled = enabled && !busy && if (useCookie) cookie.isNotBlank() else email.isNotBlank() && password.isNotBlank(),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(if (addingAccount) "登录并添加" else "登录")
+            Text(if (addingAccount) stringResource(TextR.string.text_sign_in_and_add) else stringResource(TextR.string.text_sign_in))
         }
         Button(onClick = onToggleCookie, enabled = enabled && !busy, modifier = Modifier.fillMaxWidth()) {
-            Text(if (useCookie) "使用邮箱和密码登录" else "使用 Cookie 导入")
+            Text(if (useCookie) stringResource(TextR.string.text_use_email_and_password) else stringResource(TextR.string.text_import_cookie))
         }
     }
 }

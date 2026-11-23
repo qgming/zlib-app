@@ -1,5 +1,8 @@
 package com.qgming.zlib.feature.search
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
@@ -117,11 +120,11 @@ class SearchViewModel @Inject constructor(
     fun search() {
         val current = _state.value
         if (current.query.isBlank()) {
-            _state.update { it.copy(error = "请输入书名、作者或 ISBN") }
+            _state.update { it.copy(error = appText(TextR.string.text_enter_a_title_author_or_isbn)) }
             return
         }
         if (!current.filters.yearRangeValid) {
-            _state.update { it.copy(error = "起始年份不能大于结束年份") }
+            _state.update { it.copy(error = appText(TextR.string.text_the_start_year_cannot_be_later_than_the_end_year)) }
             return
         }
         // Restored selections may come from a previous server candidate list. Load the current
@@ -140,7 +143,7 @@ class SearchViewModel @Inject constructor(
                             _state.update { it.copy(loading = false, filterOptions = result.value, filters = filters) }
                             persistFilters(filters)
                             if (filters != current.filters) {
-                                _state.update { it.copy(error = "部分筛选项已不可用，请确认筛选后重新搜索") }
+                                _state.update { it.copy(error = appText(TextR.string.text_some_filters_are_no_longer_available_review_them_and_search_again)) }
                             } else {
                                 // Preserve an edited draft while restoring the last submitted text.
                                 val draft = _state.value.query
@@ -151,13 +154,13 @@ class SearchViewModel @Inject constructor(
                             }
                         }
                         is AppResult.Failure -> _state.update {
-                            it.copy(loading = false, error = "无法确认已保存的筛选条件，请打开筛选重试", optionsError = result.error.userMessage())
+                            it.copy(loading = false, error = appText(TextR.string.text_cannot_verify_saved_filters_open_filters_and_retry), optionsError = result.error.userMessage())
                         }
                     }
                 }
             } else {
                 val filters = current.filters.validated(current.filterOptions)
-                _state.update { it.copy(filters = filters, searched = true, error = "部分筛选项已不可用，请确认筛选后重新搜索") }
+                _state.update { it.copy(filters = filters, searched = true, error = appText(TextR.string.text_some_filters_are_no_longer_available_review_them_and_search_again)) }
                 persistFilters(filters)
             }
             return
@@ -257,7 +260,7 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch {
             val repository = historyRepository ?: return@launch
             try { action(repository) } catch (_: java.io.IOException) {
-                _state.update { it.copy(error = "无法保存最近搜索设置，请重试") }
+                _state.update { it.copy(error = appText(TextR.string.text_cannot_save_recent_searches_please_retry)) }
             }
         }
     }

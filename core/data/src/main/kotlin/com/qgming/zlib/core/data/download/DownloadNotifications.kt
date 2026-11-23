@@ -1,5 +1,8 @@
 package com.qgming.zlib.core.data.download
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -22,10 +25,10 @@ class DownloadNotifications @Inject constructor(
     fun ensureChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "下载",
+            appText(TextR.string.text_downloads),
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "图书下载进度与结果"
+            description = appText(TextR.string.text_book_download_progress_and_results)
             setShowBadge(false)
         }
         manager.createNotificationChannel(channel)
@@ -62,7 +65,7 @@ class DownloadNotifications @Inject constructor(
             builder(item, true)
                 .setOngoing(false)
                 .setAutoCancel(true)
-                .setContentText("下载失败：${label(code)}")
+                .setContentText(appText(TextR.string.text_download_failed, label(code)))
                 .build(),
         )
     }
@@ -73,8 +76,8 @@ class DownloadNotifications @Inject constructor(
             .setContentTitle(item?.title?.takeIf { it.isNotBlank() } ?: context.getString(R.string.zlib_download_title))
             .setContentText(
                 item?.let {
-                    if (completed) "下载完成" else progressText(it.bytesWritten, it.totalBytes)
-                } ?: "准备下载…",
+                    if (completed) appText(TextR.string.text_download_complete) else progressText(it.bytesWritten, it.totalBytes)
+                } ?: appText(TextR.string.text_preparing_download),
             )
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -82,8 +85,8 @@ class DownloadNotifications @Inject constructor(
 
         launchIntent()?.let { builder.setContentIntent(it) }
         if (item != null && !completed) {
-            builder.addAction(0, "暂停", action(DownloadServiceActions.PAUSE, item.id, 1))
-            builder.addAction(0, "取消", action(DownloadServiceActions.CANCEL, item.id, 2))
+            builder.addAction(0, appText(TextR.string.text_pause), action(DownloadServiceActions.PAUSE, item.id, 1))
+            builder.addAction(0, appText(TextR.string.text_cancel), action(DownloadServiceActions.CANCEL, item.id, 2))
         }
         return builder
     }
@@ -123,17 +126,17 @@ class DownloadNotifications @Inject constructor(
     }
 
     private fun label(code: String): String = when (code) {
-        "quota" -> "今日下载额度已用完"
-        "session" -> "登录已失效"
-        "domain" -> "域名被拦截"
-        "network" -> "网络错误"
-        "storage" -> "写入失败"
-        "storage_permission" -> "下载目录无法访问，请重新授权"
-        "range" -> "续传位置失效，请重试下载"
-        "invalid" -> "文件校验失败，请重试"
-        "incomplete" -> "下载尚未完整，已保留进度"
-        "http_404" -> "文件不存在"
-        else -> "请重试"
+        "quota" -> appText(TextR.string.text_daily_download_quota_exhausted)
+        "session" -> appText(TextR.string.text_session_expired)
+        "domain" -> appText(TextR.string.text_domain_blocked)
+        "network" -> appText(TextR.string.text_network_error)
+        "storage" -> appText(TextR.string.text_write_failed)
+        "storage_permission" -> appText(TextR.string.text_cannot_access_the_download_folder_grant_access_again)
+        "range" -> appText(TextR.string.text_the_resume_position_is_invalid_retry_the_download)
+        "invalid" -> appText(TextR.string.text_file_verification_failed_please_retry)
+        "incomplete" -> appText(TextR.string.text_download_incomplete_progress_is_saved)
+        "http_404" -> appText(TextR.string.text_file_not_found)
+        else -> appText(TextR.string.text_please_retry)
     }
 
     companion object {

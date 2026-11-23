@@ -1,5 +1,8 @@
 package com.qgming.zlib.core.data.library
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import com.qgming.zlib.core.common.AppError
 import com.qgming.zlib.core.common.AppResult
 import com.qgming.zlib.core.data.session.SessionManager
@@ -53,7 +56,7 @@ class FavoritesRepository internal constructor(
         val result = api.isBookSaved(id)
         synchronized(this) {
             if (sessions.current() != session) return AppResult.Failure(AppError.SessionExpired)
-            if (requestedRevision != revision.get()) return AppResult.Failure(AppError.Parse("收藏已更新，请重试"))
+            if (requestedRevision != revision.get()) return AppResult.Failure(AppError.Parse(appText(TextR.string.text_favorites_have_changed_please_retry)))
             if (result is AppResult.Success) cache[id] = result.value to (nanoTime() + 30_000_000_000L)
             result
         }

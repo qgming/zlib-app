@@ -1,5 +1,8 @@
 package com.qgming.zlib.core.data.download
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -15,9 +18,9 @@ internal class DownloadWriteException(cause: IOException) : IOException(cause.me
 internal class DownloadIncompleteException(
     val expected: Long,
     val actual: Long,
-) : IOException("下载不完整：预期 $expected 字节，实际 $actual 字节")
+) : IOException(appText(TextR.string.text_download_incomplete_expected_bytes_received_bytes, expected, actual))
 
-internal class DownloadEmptyException : IOException("下载内容为空")
+internal class DownloadEmptyException : IOException(appText(TextR.string.text_the_download_is_empty))
 
 /**
  * Copies exactly one response body (or one SAF document) with cooperative cancellation and an
@@ -32,8 +35,8 @@ internal object StreamCopy {
         expectedBytes: Long?,
         onProgress: suspend (written: Long) -> Unit = {},
     ): Long {
-        if (input == null) throw IOException("无法读取下载内容")
-        if (output == null) throw IOException("无法写入目标文件")
+        if (input == null) throw IOException(appText(TextR.string.text_cannot_read_the_download))
+        if (output == null) throw IOException(appText(TextR.string.text_cannot_write_the_destination_file))
 
         var written = 0L
         val buffer = ByteArray(BUFFER_SIZE)

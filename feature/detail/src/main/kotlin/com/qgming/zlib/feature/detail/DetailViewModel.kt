@@ -1,5 +1,8 @@
 package com.qgming.zlib.feature.detail
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qgming.zlib.core.common.AppResult
@@ -184,7 +187,7 @@ class DetailViewModel internal constructor(
             if (generation != requestGeneration || sessions.current() != requestSession) return@launch
             _state.update { it.copy(enqueuing = false) }
             _events.send(when (result) {
-                is AppResult.Success -> "${format.extension.uppercase()} 已加入下载队列"
+                is AppResult.Success -> appText(TextR.string.text_added_to_the_download_queue, format.extension.uppercase())
                 is AppResult.Failure -> result.error.userMessage()
             })
         }
@@ -201,7 +204,7 @@ class DetailViewModel internal constructor(
         viewModelScope.launch {
             val file = findExisting(selected)
             if (requestedGeneration != generation || sessions.current() != expectedSession) return@launch
-            if (file == null) _events.send("文件已不存在或无法读取，请重试下载") else _openFiles.send(file)
+            if (file == null) _events.send(appText(TextR.string.text_the_file_is_missing_or_unreadable_try_downloading_it_again)) else _openFiles.send(file)
         }
     }
 
@@ -216,7 +219,7 @@ class DetailViewModel internal constructor(
             if (requested != generation || sessions.current() != expected) return@launch
             _state.update { it.copy(enqueuing = false) }
             _events.send(when (result) {
-                is AppResult.Success -> "已重新加入下载队列"
+                is AppResult.Success -> appText(TextR.string.text_added_to_the_download_queue_again)
                 is AppResult.Failure -> result.error.userMessage()
             })
         }

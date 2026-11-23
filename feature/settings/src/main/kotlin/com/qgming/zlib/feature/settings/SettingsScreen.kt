@@ -1,5 +1,8 @@
 package com.qgming.zlib.feature.settings
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.PaddingValues
@@ -10,6 +13,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qgming.zlib.core.designsystem.ZlibCardList
@@ -20,21 +25,23 @@ import com.qgming.zlib.core.designsystem.ZlibPreferenceMenu
 import com.qgming.zlib.core.designsystem.ZlibStateCard
 import com.qgming.zlib.core.model.ThemeMode
 import com.qgming.zlib.core.model.BookGridColumns
+import com.qgming.zlib.core.common.AppLanguage
+import com.qgming.zlib.core.common.ApplicationLanguages
 
-private val ThemeOptions = listOf(
-    ThemeMode.SYSTEM to "跟随系统",
-    ThemeMode.LIGHT to "浅色",
-    ThemeMode.DARK to "深色",
+@Composable
+private fun themeOptions() = listOf(
+    ThemeMode.SYSTEM to stringResource(TextR.string.text_follow_system),
+    ThemeMode.LIGHT to stringResource(TextR.string.text_light),
+    ThemeMode.DARK to stringResource(TextR.string.text_dark),
 )
-private val ThemeOptionLabels = ThemeOptions.map { it.second }
-private val GridOptions = listOf(
-    BookGridColumns.AUTO to "自动",
-    BookGridColumns.TWO to "2 列",
-    BookGridColumns.THREE to "3 列",
-    BookGridColumns.FOUR to "4 列",
-    BookGridColumns.FIVE to "5 列",
+@Composable
+private fun gridOptions() = listOf(
+    BookGridColumns.AUTO to stringResource(TextR.string.text_automatic),
+    BookGridColumns.TWO to stringResource(TextR.string.text_2_columns),
+    BookGridColumns.THREE to stringResource(TextR.string.text_3_columns),
+    BookGridColumns.FOUR to stringResource(TextR.string.text_4_columns),
+    BookGridColumns.FIVE to stringResource(TextR.string.text_5_columns),
 )
-private val GridOptionLabels = GridOptions.map { it.second }
 
 @Composable
 fun SettingsScreen(
@@ -44,6 +51,12 @@ fun SettingsScreen(
     onOpenAbout: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
+    val themeOptions = themeOptions()
+    val gridOptions = gridOptions()
+    val context = LocalContext.current
+    val languageManager = remember(context) { ApplicationLanguages(context) }
+    val configuration = LocalConfiguration.current
+    val language = remember(configuration) { languageManager.selected }
     val state by viewModel.state.collectAsStateWithLifecycle()
     var notice by remember { mutableStateOf<String?>(null) }
     val directoryPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -57,16 +70,16 @@ fun SettingsScreen(
     ZlibCardList(padding) {
         notice?.let { message ->
             item(key = "notice") {
-                ZlibStateCard("设置提示", message, actionLabel = "知道了", onAction = { notice = null })
+                ZlibStateCard(appText(TextR.string.text_settings_notice), message, actionLabel = appText(TextR.string.text_ok), onAction = { notice = null })
             }
         }
         item(key = "account") {
             ZlibPreferenceGroup {
                 ZlibPreferenceLink(
                     title = state.account?.name?.takeIf(String::isNotBlank)
-                        ?: if (state.account == null) "Z-Library 账号" else "Z-Library 用户",
+                        ?: if (state.account == null) stringResource(TextR.string.text_z_library_account) else stringResource(TextR.string.text_z_library_user),
                     summary = state.account?.email?.takeIf(String::isNotBlank)
-                        ?: if (state.account == null) "查看账号与下载额度" else "未提供邮箱",
+                        ?: if (state.account == null) stringResource(TextR.string.text_view_accounts_and_download_quota) else stringResource(TextR.string.text_no_email_provided),
                     onClick = onOpenAccount,
                 )
             }
@@ -74,24 +87,30 @@ fun SettingsScreen(
         item(key = "appearance") {
             ZlibPreferenceGroup {
                 ZlibPreferenceMenu(
-                    title = "外观模式",
-                    options = ThemeOptionLabels,
-                    selectedIndex = ThemeOptions.indexOfFirst { it.first == state.themeMode },
-                    onSelect = { index -> viewModel.setThemeMode(ThemeOptions[index].first) },
+                    title = stringResource(TextR.string.text_theme_mode),
+                    options = themeOptions.map { it.second },
+                    selectedIndex = themeOptions.indexOfFirst { it.first == state.themeMode },
+                    onSelect = { index -> viewModel.setThemeMode(themeOptions[index].first) },
                 )
                 ZlibPreferenceMenu(
-                    title = "网络格数",
-                    options = GridOptionLabels,
-                    selectedIndex = GridOptions.indexOfFirst { it.first == state.bookGridColumns },
-                    onSelect = { index -> viewModel.setBookGridColumns(GridOptions[index].first) },
+                    title = stringResource(TextR.string.text_app_language),
+                    options = listOf(stringResource(TextR.string.text_follow_system), stringResource(TextR.string.text_simplified_chinese), stringResource(TextR.string.text_english)),
+                    selectedIndex = AppLanguage.entries.indexOf(language),
+                    onSelect = { index -> languageManager.select(AppLanguage.entries[index]) },
+                )
+                ZlibPreferenceMenu(
+                    title = stringResource(TextR.string.text_grid_columns),
+                    options = gridOptions.map { it.second },
+                    selectedIndex = gridOptions.indexOfFirst { it.first == state.bookGridColumns },
+                    onSelect = { index -> viewModel.setBookGridColumns(gridOptions[index].first) },
                 )
             }
         }
         item(key = "downloads") {
             ZlibPreferenceGroup {
                 ZlibPreferenceLink(
-                    title = "下载目录",
-                    summary = state.directory ?: "选择保存图书的文件夹",
+                    title = stringResource(TextR.string.text_download_folder),
+                    summary = state.directory ?: stringResource(TextR.string.text_choose_a_folder_for_your_books),
                     onClick = { directoryPicker.launch(null) },
                 )
             }
@@ -99,8 +118,8 @@ fun SettingsScreen(
         item(key = "domains") {
             ZlibPreferenceGroup {
                 ZlibPreferenceLink(
-                    title = "域名管理",
-                    summary = state.currentHost ?: "检测和管理镜像",
+                    title = stringResource(TextR.string.text_domain_management),
+                    summary = state.currentHost ?: stringResource(TextR.string.text_check_and_manage_mirrors),
                     onClick = onOpenDomains,
                 )
             }

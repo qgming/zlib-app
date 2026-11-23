@@ -1,5 +1,8 @@
 package com.qgming.zlib.core.network
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import com.qgming.zlib.core.common.AppResult
 
 /**
@@ -130,11 +133,11 @@ object DomainPolicy {
     fun validateCustomHost(raw: String?): AppResult<String> {
         val host = normalizeHostInput(raw)
             ?: return AppResult.Failure(
-                com.qgming.zlib.core.common.AppError.Parse("域名格式无效：只允许 HTTPS 主机名，不能带端口、路径或 IP。"),
+                com.qgming.zlib.core.common.AppError.Parse(appText(TextR.string.text_invalid_domain_use_an_https_hostname_without_a_port_path_or_ip_address)),
             )
         if (isBuiltIn(host)) {
             return AppResult.Failure(
-                com.qgming.zlib.core.common.AppError.Parse("这是内置域名，无需手动添加。"),
+                com.qgming.zlib.core.common.AppError.Parse(appText(TextR.string.text_this_domain_is_built_in_and_does_not_need_to_be_added)),
             )
         }
         return AppResult.Success(host)

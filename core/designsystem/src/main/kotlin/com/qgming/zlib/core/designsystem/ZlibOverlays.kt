@@ -1,5 +1,9 @@
 package com.qgming.zlib.core.designsystem
 
+import androidx.compose.ui.res.stringResource
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -117,7 +121,7 @@ fun ZlibConfirmDialog(
     ZlibGlassDialog(show = show, title = title, summary = summary, onDismiss = { if (!busy) onDismiss() }) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             GlassDialogButton(onClick = onDismiss, modifier = Modifier.weight(1f), enabled = !busy) {
-                Text("取消", style = MiuixTheme.textStyles.button)
+                Text(stringResource(TextR.string.text_cancel), style = MiuixTheme.textStyles.button)
             }
             GlassDialogButton(
                 onClick = onConfirm,
@@ -125,7 +129,7 @@ fun ZlibConfirmDialog(
                 enabled = show && !busy,
                 role = if (destructive) GlassDialogButtonRole.Destructive else GlassDialogButtonRole.Primary,
             ) {
-                Text(if (busy) "正在删除…" else confirmLabel, style = MiuixTheme.textStyles.button)
+                Text(if (busy) stringResource(TextR.string.text_deleting) else confirmLabel, style = MiuixTheme.textStyles.button)
             }
         }
     }

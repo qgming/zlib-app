@@ -1,5 +1,8 @@
 package com.qgming.zlib.core.data.domain
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import com.qgming.zlib.core.common.AppDispatchers
 import com.qgming.zlib.core.common.AppError
 import com.qgming.zlib.core.common.AppResult
@@ -90,9 +93,9 @@ class DomainRepository @Inject constructor(
 
     suspend fun probeHost(host: String): DomainCheck = mutex.withLock {
         val normalized = DomainPolicy.normalizeHostInput(host)
-            ?: return@withLock DomainCheck(host = host, status = DomainStatus.INVALID, detail = "域名格式无效")
+            ?: return@withLock DomainCheck(host = host, status = DomainStatus.INVALID, detail = appText(TextR.string.text_invalid_domain_format))
         if (!registry.isAllowed(normalized)) {
-            return@withLock DomainCheck(normalized, DomainStatus.INVALID, "域名不在允许列表")
+            return@withLock DomainCheck(normalized, DomainStatus.INVALID, appText(TextR.string.text_domain_is_not_on_the_allowed_list))
         }
         val check = checkHost(normalized)
         check.redirectTarget?.let { adoptDiscovered(it) }
@@ -103,9 +106,9 @@ class DomainRepository @Inject constructor(
 
     suspend fun setCurrentHost(host: String): AppResult<String> = mutex.withLock {
         val normalized = DomainPolicy.normalizeHostInput(host)
-            ?: return@withLock AppResult.Failure(AppError.Parse("域名格式无效"))
+            ?: return@withLock AppResult.Failure(AppError.Parse(appText(TextR.string.text_invalid_domain_format)))
         if (!registry.isAllowed(normalized)) {
-            return@withLock AppResult.Failure(AppError.Parse("域名不在允许列表"))
+            return@withLock AppResult.Failure(AppError.Parse(appText(TextR.string.text_domain_is_not_on_the_allowed_list)))
         }
         val resolved = resolveUsable(normalized)
         applyHost(resolved, lockHost = normalized)
@@ -138,7 +141,7 @@ class DomainRepository @Inject constructor(
 
     suspend fun removeCustomHost(host: String): AppResult<Unit> = mutex.withLock {
         val normalized = DomainPolicy.normalizeHostInput(host)
-            ?: return@withLock AppResult.Failure(AppError.Parse("域名格式无效"))
+            ?: return@withLock AppResult.Failure(AppError.Parse(appText(TextR.string.text_invalid_domain_format)))
         val hosts = currentSettings().customHosts - normalized
         settingsStore.setCustomHosts(hosts)
         registry.updateCustomHosts(hosts)
@@ -208,7 +211,7 @@ class DomainRepository @Inject constructor(
 
         val annotated = results + redirectTargets
             .filterNot { target -> results.any { it.host == target } }
-            .map { target -> DomainCheck(target, DomainStatus.HEALTHY, "由重定向自动发现") }
+            .map { target -> DomainCheck(target, DomainStatus.HEALTHY, appText(TextR.string.text_discovered_through_a_redirect)) }
         _checks.value = annotated.sortedBy { hostOrder(it.host) }
 
         if (switchToBest) {

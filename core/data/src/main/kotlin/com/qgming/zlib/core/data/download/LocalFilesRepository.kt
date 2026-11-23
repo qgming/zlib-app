@@ -1,5 +1,8 @@
 package com.qgming.zlib.core.data.download
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import android.content.Context
 import com.qgming.zlib.core.common.AppDispatchers
 import com.qgming.zlib.core.common.AppError
@@ -88,9 +91,9 @@ class LocalFilesRepository internal constructor(
         try {
             val current = resolve(file) ?: run {
                 refresh()
-                throw IOException("文件已不存在，请刷新本机列表")
+                throw IOException(appText(TextR.string.text_the_file_no_longer_exists_refresh_local_files))
             }
-            if (!store.isReadable(current)) throw IOException("无法读取本机文件，请在设置中重新授权下载目录")
+            if (!store.isReadable(current)) throw IOException(appText(TextR.string.text_cannot_read_the_local_file_grant_folder_access_again_in_settings))
             AppResult.Success(current.copy(book = file.book))
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -102,9 +105,9 @@ class LocalFilesRepository internal constructor(
     suspend fun deleteLocal(file: LocalFile): AppResult<Unit> = withContext(dispatchers.io) {
         try {
             val current = resolve(file)
-            if (current != null && !store.delete(current)) throw IOException("无法删除本机文件，请检查目录权限")
+            if (current != null && !store.delete(current)) throw IOException(appText(TextR.string.text_cannot_delete_the_local_file_check_folder_permissions))
             if (current != null && store.scan(file.treeUri).any { it.uri == file.uri }) {
-                throw IOException("文件仍存在，请重试删除")
+                throw IOException(appText(TextR.string.text_the_file_still_exists_try_deleting_it_again))
             }
             // Only after the actual document is gone. A missing file is already the desired state.
             clearFileReference(file.uri)
@@ -120,9 +123,9 @@ class LocalFilesRepository internal constructor(
 
     private suspend fun resolve(file: LocalFile): LocalFile? {
         val tree = settings.read().downloadTreeUri
-        if (tree == null || tree != file.treeUri) throw IOException("下载目录已改变，请重新选择文件")
+        if (tree == null || tree != file.treeUri) throw IOException(appText(TextR.string.text_the_download_folder_changed_select_the_file_again))
         val current = store.scan(tree).firstOrNull { it.uri == file.uri }
-        if (settings.read().downloadTreeUri != tree) throw IOException("下载目录已改变，请重新选择文件")
+        if (settings.read().downloadTreeUri != tree) throw IOException(appText(TextR.string.text_the_download_folder_changed_select_the_file_again))
         return current
     }
 }

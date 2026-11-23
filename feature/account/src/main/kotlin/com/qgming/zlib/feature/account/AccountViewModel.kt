@@ -1,5 +1,8 @@
 package com.qgming.zlib.feature.account
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qgming.zlib.core.common.AppResult
@@ -71,27 +74,27 @@ class AccountViewModel @Inject constructor(
             try {
                 val result = if (value.useCookie) auth.importCookies(value.cookie) else auth.loginWithPassword(value.email, value.password)
                 when (result) {
-                    is AppResult.Success -> { _form.value = AddAccountState(); _events.send("已添加并切换账号") }
+                    is AppResult.Success -> { _form.value = AddAccountState(); _events.send(appText(TextR.string.text_account_added_and_activated)) }
                     is AppResult.Failure -> _form.value = value.copy(busy = false, password = "", cookie = "", error = result.error.userMessage())
                 }
             } catch (cancellation: CancellationException) { throw cancellation }
-            catch (_: Exception) { _form.value = value.copy(busy = false, password = "", cookie = "", error = "无法保存账号，请重试") }
+            catch (_: Exception) { _form.value = value.copy(busy = false, password = "", cookie = "", error = appText(TextR.string.text_cannot_save_the_account_please_retry)) }
         }
     }
 
     fun refresh(id: String) = perform(id) {
         when (val result = accounts.refresh(id)) {
-            is AppResult.Success -> "账号已刷新"
+            is AppResult.Success -> appText(TextR.string.text_account_refreshed)
             is AppResult.Failure -> result.error.userMessage()
         }
     }
     fun switch(id: String) = perform(id) {
         when (val result = auth.switchAccount(id)) {
-            is AppResult.Success -> "已切换账号，暂停的下载可继续"
+            is AppResult.Success -> appText(TextR.string.text_account_switched_paused_downloads_can_be_resumed)
             is AppResult.Failure -> result.error.userMessage()
         }
     }
-    fun logout(id: String) = perform(id) { auth.logout(id); "已退出该账号" }
+    fun logout(id: String) = perform(id) { auth.logout(id); appText(TextR.string.text_signed_out_of_this_account) }
     fun setAutoSwitch(enabled: Boolean) { viewModelScope.launch { sessions.setAutoSwitch(enabled) } }
 
     private fun perform(id: String, action: suspend () -> String) {
@@ -100,7 +103,7 @@ class AccountViewModel @Inject constructor(
         viewModelScope.launch {
             try { _events.send(action()) }
             catch (cancellation: CancellationException) { throw cancellation }
-            catch (_: Exception) { _events.send("操作失败，请重试") }
+            catch (_: Exception) { _events.send(appText(TextR.string.text_action_failed_please_retry)) }
             finally { _busyId.value = null }
         }
     }

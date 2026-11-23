@@ -1,5 +1,8 @@
 package com.qgming.zlib.feature.library
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qgming.zlib.core.common.AppResult
@@ -21,14 +24,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
-enum class LibrarySection(val title: String) {
-    Local("本机"),
-    Saved("收藏"),
+enum class LibrarySection(private val titleRes: Int) {
+    Local(TextR.string.text_local),
+    Saved(TextR.string.text_favorites);
+
+    val title: String get() = appText(titleRes)
 }
 
-internal enum class CloudLibrarySource(val title: String, val emptyMessage: String) {
-    Saved("收藏", "这里显示 Z-Library 账号中的收藏。"),
-    DownloadHistory("云端下载记录", "这里显示 Z-Library 账号的下载记录，包括其他设备的下载。"),
+internal enum class CloudLibrarySource(private val titleRes: Int, private val emptyMessageRes: Int) {
+    Saved(TextR.string.text_favorites, TextR.string.text_your_z_library_favorites_appear_here),
+    DownloadHistory(TextR.string.text_cloud_download_history, TextR.string.text_your_z_library_download_history_appears_here_including_downloads_on_othe);
+
+    val title: String get() = appText(titleRes)
+    val emptyMessage: String get() = appText(emptyMessageRes)
 }
 
 internal enum class LibraryRequest { Initial, Refresh, Append }
@@ -215,7 +223,7 @@ class LibraryViewModel @Inject constructor(
                             page = previous.page?.let { it.copy(books = it.books.filterNot { it.id == book.id }) },
                         ))
                     }
-                    _events.send("已删除云端下载记录")
+                    _events.send(appText(TextR.string.text_cloud_download_record_deleted))
                     // A deletion shifts server offsets. Reload page one before allowing another append.
                     load(source, LibraryRequest.Refresh)
                 }

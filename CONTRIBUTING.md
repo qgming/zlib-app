@@ -34,7 +34,7 @@
 ## 5. PR 检查
 
 - [ ] `.\gradlew.bat test lint` 通过
-- [ ] `.\gradlew.bat :app:assembleDebug` 通过
+- [ ] `.\gradlew.bat :app:prepareReleaseAssets` 通过，生成签名正式通用 APK；常规打包不附带调试包或独立架构包
 - [ ] 没有提交 `key.properties` / `local.properties` / `*.jks` / secrets
 - [ ] 新增逻辑有测试；网络/数据库变更覆盖异常路径
 - [ ] 没有绕过 `AGENTS.md` §3 的安全红线

@@ -17,8 +17,8 @@ val keystoreProperties = Properties().apply {
         keystorePropertiesFile.inputStream().use { load(it) }
     }
 }
-val appVersionName = "1.2.0"
-val appVersionCode = 4
+val appVersionName = "1.3.0"
+val appVersionCode = 5
 
 android {
     namespace = "com.qgming.zlib"
@@ -58,14 +58,11 @@ android {
         }
     }
 
-    // GitHub side-loading uses one monotonically increasing versionCode for every ABI.
-    // Leave ordinary debug builds universal; opt in when preparing release assets.
+    // ADR-071: one universal APK for releases and debug builds. Existing ABI-specific
+    // installs can update to it through the updater's unique-universal fallback.
     splits {
         abi {
-            isEnable = providers.gradleProperty("splitApks").orNull == "true"
-            reset()
-            include("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
-            isUniversalApk = true
+            isEnable = false
         }
     }
 
@@ -88,22 +85,21 @@ android {
 
 tasks.register<Sync>("prepareReleaseAssets") {
     group = "distribution"
-    description = "Build signed ABI APKs and SHA256SUMS.txt for a GitHub Release."
+    description = "Build one signed universal APK and SHA256SUMS.txt for a GitHub Release."
     dependsOn("assembleRelease")
     from(layout.buildDirectory.dir("outputs/apk/release")) {
-        include("app-*-release.apk")
-        rename { name -> "zhishi-$appVersionName-${name.removePrefix("app-").removeSuffix("-release.apk")}.apk" }
+        include("app-release.apk")
+        rename { "zhishi-$appVersionName-universal.apk" }
     }
     into(layout.buildDirectory.dir("release"))
     doFirst {
-        check(providers.gradleProperty("splitApks").orNull == "true") { "Use -PsplitApks=true to prepare all release APKs." }
         check(keystorePropertiesFile.exists()) { "A private key.properties signing configuration is required." }
     }
     doLast {
         val apks = destinationDir.listFiles().orEmpty().filter { it.extension == "apk" }.sortedBy { it.name }
-        val expected = setOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86", "universal")
-            .map { "zhishi-$appVersionName-$it.apk" }.toSet()
-        check(apks.map { it.name }.toSet() == expected) { "Expected all four ABI APKs and a universal APK." }
+        check(apks.map { it.name } == listOf("zhishi-$appVersionName-universal.apk")) {
+            "Expected exactly one universal APK."
+        }
         val checksums = apks.joinToString("\n", postfix = "\n") { apk ->
             val digest = MessageDigest.getInstance("SHA-256")
             apk.inputStream().buffered().use { input ->

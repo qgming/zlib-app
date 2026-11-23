@@ -39,7 +39,7 @@
 | `:core:network` | OkHttp、`EapiClient`、Cookie/重定向策略、域名 allowlist/probe、独立无凭据 GitHub 发布查询 |
 | `:core:database` | Room entities/DAO/DB、迁移、FTS（如需） |
 | `:core:data` | Repository、下载队列、会话加密、设置 |
-| `:feature:search` | 阅读首页（热门与推荐）、独立搜索页、筛选与结果分页 |
+| `:feature:search` | 发现首页（热门与推荐）、独立搜索页、筛选与结果分页 |
 | `:feature:detail` | 详情、下载按钮、分享、收藏 |
 | `:feature:downloads` | 无封面的队列／已完成卡片、右侧暂停/继续/重试/X 移除记录、前台服务状态、顶栏云端下载记录入口 |
 | `:feature:library` | 书架“本机 / 收藏”；实际本机文件的打开/分享/删除，云端收藏和独立下载记录页的分页与刷新 |
@@ -79,6 +79,8 @@ ADR-051：`SessionVault` 保存多个 `SessionEntry(session, profile, expired)`�
 搜索状态：`Idle / Loading / Content / Empty / Error`；分页用 `Paging` 或手写 `page` 状态，二者只选一个（见 ADR）。
 
 搜索栏固定在顶栏下方；右上角筛选按钮打开玻璃底部面板，应用后以新条件从第 1 页搜索。分页使用上一次提交的请求，不受未提交的关键词或筛选草稿影响。
+
+ADR-069：搜索失败 envelope 的 `Access denied` / `拒绝访问` 单独映射为 `SearchRefused`，设计系统统一显示“Z-library 拒绝搜索”，覆盖首屏、作者搜索和追加分页；不触发会话过期或自动重试，其它端点不采用该文案。发现首页（名称见 ADR-073）通过与书架相同的顶栏标签切换“热门 / 推荐”，默认热门；两类列表的加载、空结果、错误与刷新状态独立，按会话隔离。app 分别持有两类网格滚动状态，双击底部发现仅滚动当前来源；切换来源复用已加载数据，下拉刷新只读取当前来源。
 
 ADR-062：SavedStateHandle 只恢复关键词、已提交条件及基本筛选，不保存结果或凭据，恢复后重查第一页。最近搜索独立 DataStore 默认记录最多10项，单击搜索、长按删除，右侧纯图标清空需二次确认，不显示开关或底部引导文案。筛选读取匿名 `/eapi/info/languages` 与 `/eapi/info/extensions`，失败回退固定候选；语言直接使用 API 返回名称，不做本地特殊映射或括号翻译。语言、格式为右侧触发的多选玻璃菜单，空选择表示全部，排序单选复用主题选择组件，出版年份放最后；排序按 `EAPI.md` 的8个精确取值。搜索和云端列表靠近末尾自动分页，错误停止、手动重试，空页/无新引用/末页停止。
 
@@ -188,6 +190,7 @@ sealed interface AppError {
   data object NoDomain : AppError
   data object NotLoggedIn : AppError
   data object SessionExpired : AppError
+  data object SearchRefused : AppError
   data class AuthFailed(val message: String?) : AppError
   data class Quota(val remaining: Int, val resetHint: String?) : AppError
   data class DomainBlocked(val status: DomainStatus) : AppError
@@ -221,7 +224,7 @@ Routes: login, search, downloads, download-history, account, domain-doctor, abou
 详情: 非导出的 BookDetailActivity，Intent 图书引用 id/hash
 ```
 
-`miuix-nav` 管理返回栈，主 tab 为阅读/书架/设置，首页“阅读”使用 Glass 系列的 `NotesOutline` 图标，书架使用 `BookOutline`，见 ADR-038；内容继续为热门和推荐。搜索和下载管理从阅读页顶栏进入，返回后回到原来的位置。双击底部“阅读”入口回到网格顶部并展开顶栏；使用系统双击间隔，切换其它 tab 重置识别。网格状态由 app 持有并传给首页，不引入 feature 依赖。当前未注册外部 URI 深链；下载通知通过应用内部显式 Intent 进入下载管理。
+`miuix-nav` 管理返回栈，主 tab 为发现/书架/设置（英文 Discover / Bookshelf / Settings，ADR-073），首页使用 Glass 系列的 `NotesOutline` 图标，书架使用 `BookOutline`，见 ADR-038；热门和推荐按 ADR-069 通过顶栏标签切换。搜索和下载管理从发现页顶栏进入，返回后回到原来的位置。双击底部“发现”入口回到当前来源网格顶部并展开顶栏；使用系统双击间隔，切换其它 tab 重置识别。两类网格状态由 app 独立持有并传给首页，不引入 feature 依赖。当前未注册外部 URI 深链；下载通知通过应用内部显式 Intent 进入下载管理。
 
 导航图对应 ADR-049/051 的当前实现；书单页面和模块已移除。所有 feature 由 app 通过回调组合，不互相依赖。
 
@@ -243,13 +246,17 @@ ADR-047：`ZlibGlassBottomSheet` 统一为所有面板内容增加横向系统�
 
 网格密度由设置的 `BookGridColumns` 统一控制：自动/2/3/4/5 列，保存到 DataStore，经 `ZlibTheme` 的 CompositionLocal 提供给所有 `ZlibBookGrid`，feature 不读取存储或互相依赖。默认“自动”，使用 `BoxWithConstraints` 的当前布局宽度，小于 360dp 为 2 列、360–599dp 为 3 列、600–839dp 为 4 列、840dp 及以上为 5 列；手动选择覆盖宽度规则，旋转/分屏只影响自动模式，见 ADR-036。设置按 ADR-050/056/057 依次为账号、外观、下载目录、域名管理、关于，下载与域名为独立卡片，ADR-056 移除分组标题，各组选项无左侧图标及图标预留空间，文字横向 20dp 内边距；内部无行间分割线，组间 12dp。设置分组和下载任务卡片圆角 24dp，其它卡片默认 16dp。账号入口主标题显示名称，副标题显示邮箱。
 
-ADR-053/055：中文显示名“芝士读书”由 `core:common` 共享字符串资源提供，桌面、启动、登录和通知一致；英语用 Zlib，不改包名和签名。设置末尾的“关于”不显示副标题，经 app 导航进入 `feature:settings`，app 将自己的图标 Painter 和 `BuildConfig` 版本信息传入，feature 不依赖 app。关于页复用设计系统的居中标识、24dp 无图标分组和原生入口；ADR-057 保留 Miuix 原生 56dp 最小行高，不设最大高度，随内容自然伸展，保留实时发布日志、协议与隐私和许可原生文档，最后的“关于作者”交系统打开 `https://github.com/qgming`；不再有反馈模板或项目与开发者页面。`AboutDocumentsViewModel` 仅在进入许可页后于 IO 读取 APK 内文本，错误可重试；构建任务将根 LICENSE／NOTICE 与 Apache-2.0 文本同步为 assets，防止维护副本漂移。
+ADR-053/055：中文显示名“芝士读书”由 `core:common` 共享字符串资源提供，桌面、启动、登录和通知一致；英语用 Zlib，不改包名和签名。设置末尾的“关于”不显示副标题，经 app 导航进入 `feature:settings`，app 将自己的图标 Painter 和 `BuildConfig` 版本信息传入，feature 不依赖 app。关于页复用设计系统的居中标识、24dp 无图标分组和原生入口；ADR-057 保留 Miuix 原生 56dp 最小行高，不设最大高度，随内容自然伸展，保留实时发布日志、协议与隐私和许可原生文档，最后的“关于作者”交系统打开 `https://github.com/qgming`；不再有反馈模板或项目与开发者页面。`AboutDocumentsViewModel` 仅在进入许可页后于 IO 读取 APK 内文本，错误可重试；构建任务将根 LICENSE 与依赖许可全文同步为 assets，防止维护副本漂移。按 ADR-072，根 NOTICE 只在仓库维护，不再加载为独立许可条目。
 
 ADR-055/056：`AboutViewModel` 在根页面共享，冷启动检查一次／用户手动检查 → `AppUpdateRepository` → `GitHubReleaseClient` 读取固定公开仓库的 `/repos/qgming/zlib-app/releases/latest`；日志页独立读取 `/releases?per_page=20` 的正式发布标题、tag 与真实正文，无预写假日志。更新客户端独立构建，无会话、Cookie、EAPI 拦截器或自动重试；最新 tag 按 SemVer 比较，404／未知版本／限流／网络错误分别显示。启动检查只在新版时自动弹面板，不阻塞登录／首页；日志可滚动，底部取消／更新保持可见。
 
 点击更新由 `UpdateDownloadManager` 启动独立 `UpdateDownloadService(dataSync)`，`ReleaseApkDownloader` 用匿名客户端下载匹配 ABI／通用 APK，逐跳只允许 GitHub 与发布资产 CDN HTTPS，限制跳数、长度及摘要。取消等待真实写入线程结束后再清理临时文件。`UpdateApkStore` 检查包名、相同签名、tag 与递增 versionCode，保存到用户授权的下载目录，保留私有验证副本用于安装。完成自动弹出同一面板的安装状态；用户点击后经 FileProvider 只授予私有 updates 单文件读取权限，必要时引导未知来源授权，再打开系统安装器。图书队列不参与更新下载，不自动安装、不定时检查。
 
 ADR-054：图标源保存于 `app/artwork/zhishi.svg`，app 使用对应的 Android 渐变矢量与 even-odd 透明镂空。桌面自适应资源组合奶油色背景和安全区内缩前景；关于页直接传入透明前景 Painter，不添加背景或圆角裁切，不引入运行时 SVG 解析。
+
+ADR-070：更新日志与许可页共用设计系统 `ZlibExpandableText`，整行标题切换、正文向下展开且可复制，24dp 圆角和12dp间距。日志可比较的版本优先、按版本降序，其余标签按发布时间降序置后，按 tag 去重，仅最新一项默认展开；许可按依赖族展示离线来源与完整许可，默认全部收起，SharedView SDK单独说明发布方条款。各项展开状态由页面保存，滚动或旋转不覆盖手动选择；开源文本及来源记录见 `feature/settings/src/main/legal/README.md`。
+
+ADR-072/073：当前开发版本1.3.0/code5。设置外观组依次为主题模式、软件语言、网络格数；`ApplicationLanguages`以Android13+原生`LocaleManager.applicationLocales`为语言唯一持久来源，空列表跟随系统，zh-CN/en为显式选择，manifest声明localeConfig。系统配置重建Activity，Compose使用stringResource读取当前资源，非Compose的ViewModel事件和Repository错误通过core:common的AppText应用资源桥接；JVM默认表从同一XML构建生成。中文首页统一“发现”，英文Discover，内部路由与双击回顶不变。许可页直接显示项目及各依赖，移除介绍与单独Project attribution条目，根NOTICE仍在仓库维护。
 
 ## 9. DI 与并发
 
@@ -287,4 +294,4 @@ feature/*/src/main/kotlin/com/qgming/zlib/feature/...
 
 ## 正式分发
 
-ADR-058：四种 ABI 与 universal APK 通过 `:app:prepareReleaseAssets -PsplitApks=true` 生成，原包名与签名不变。同一版本的所有架构共享递增 versionCode，GitHub Release 标签与 versionName 对应；真实日志及更新资产使用同一发布源，详见 `RELEASING.md`。
+ADR-071/074：从1.3.0起通过 `:app:prepareReleaseAssets` 只生成含四种ABI的 release universal 正式通用 APK 与SHA-256校验文件，替代ADR-058的五包构建要求，日常检查与打包不附带调试APK；原包名与签名不变，versionCode继续递增，GitHub Release标签与versionName对应。已发布1.2.0匹配不到独立ABI包时会选择唯一通用包，不需改旧客户端；真实日志及更新资产使用同一发布源，详见 `RELEASING.md`。

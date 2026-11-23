@@ -1,5 +1,8 @@
 package com.qgming.zlib.feature.library
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qgming.zlib.core.common.AppResult
@@ -51,7 +54,7 @@ class LocalFilesViewModel @Inject constructor(private val repository: LocalFiles
             when (val result = repository.deleteLocal(file)) {
                 is AppResult.Success -> {
                     _action.value = LocalFileAction()
-                    _events.send("已删除本机文件")
+                    _events.send(appText(TextR.string.text_local_file_deleted))
                 }
                 is AppResult.Failure -> _action.value = current.copy(error = result.error.userMessage())
             }

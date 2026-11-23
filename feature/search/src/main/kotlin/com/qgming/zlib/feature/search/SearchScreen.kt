@@ -1,5 +1,9 @@
 package com.qgming.zlib.feature.search
 
+import androidx.compose.ui.res.stringResource
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -89,7 +93,7 @@ fun SearchScreen(
     }
 
     ZlibPage(
-        title = "搜索",
+        title = stringResource(TextR.string.text_search),
         onBack = onBack,
         actions = {
             ZlibFilterButton(active = state.filters.isActive) {
@@ -110,14 +114,14 @@ fun SearchScreen(
                         if (history.queries.isNotEmpty()) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically) {
-                                Text("最近搜索", style = MiuixTheme.textStyles.title4)
+                                Text(stringResource(TextR.string.text_recent_searches), style = MiuixTheme.textStyles.title4)
                                 ZlibClearSearchHistoryButton(onClick = { confirmClearHistory = true })
                             }
                             history.queries.forEach { query ->
                                 Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).combinedClickable(
                                     role = Role.Button,
                                     onClick = { focusManager.clearFocus(); viewModel.searchRecent(query) },
-                                    onLongClickLabel = "删除搜索记录",
+                                    onLongClickLabel = stringResource(TextR.string.text_delete_search_history_entry),
                                     onLongClick = { viewModel.removeRecent(query) },
                                 ).padding(vertical = 12.dp)) {
                                     Text(query, style = MiuixTheme.textStyles.body2, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -129,14 +133,14 @@ fun SearchScreen(
                 state.loading -> fullWidthItem("search-loading") { ZlibLoading() }
                 state.error != null -> fullWidthItem("search-error") {
                     ZlibStateCard(
-                        title = "无法搜索",
+                        title = stringResource(TextR.string.text_cannot_search),
                         message = state.error.orEmpty(),
                         onAction = if (state.searched) submitSearch else null,
                     )
                 }
 
                 state.searched && state.books.isEmpty() -> fullWidthItem("search-empty") {
-                    ZlibStateCard(title = "没有找到图书", message = "试试其他关键词，或减少筛选条件。")
+                    ZlibStateCard(title = stringResource(TextR.string.text_no_books_found), message = stringResource(TextR.string.text_try_other_keywords_or_fewer_filters))
                 }
 
                 else -> items(state.books, key = { "result-${it.ref}" }) { book ->
@@ -148,19 +152,19 @@ fun SearchScreen(
                 state.loadingMore -> fullWidthItem("search-more-loading") { ZlibLoading() }
                 state.appendError != null -> fullWidthItem("search-more-error") {
                     ZlibStateCard(
-                        title = "无法加载更多图书",
+                        title = stringResource(TextR.string.text_cannot_load_more_books),
                         message = state.appendError.orEmpty(),
                         onAction = viewModel::loadMore,
                     )
                 }
 
                 state.searched && !state.hasMore && state.books.isNotEmpty() && !state.loading -> fullWidthItem("search-end") {
-                    Text("已显示全部结果", style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                    Text(stringResource(TextR.string.text_all_results_shown), style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
                 }
             }
         }
 
-        ZlibGlassBottomSheet(show = showFilters, title = "搜索筛选", onDismiss = dismissFilters) {
+        ZlibGlassBottomSheet(show = showFilters, title = stringResource(TextR.string.text_search_filters), onDismiss = dismissFilters) {
             FilterPanel(
                 filters = draft,
                 options = state.filterOptions,
@@ -176,9 +180,9 @@ fun SearchScreen(
         }
         ZlibConfirmDialog(
             show = confirmClearHistory,
-            title = "清空最近搜索？",
-            summary = "清空后无法恢复。",
-            confirmLabel = "清空",
+            title = stringResource(TextR.string.text_clear_recent_searches_2),
+            summary = stringResource(TextR.string.text_this_cannot_be_undone),
+            confirmLabel = stringResource(TextR.string.text_clear),
             destructive = true,
             onDismiss = { confirmClearHistory = false },
             onConfirm = {
@@ -205,8 +209,8 @@ private fun FilterPanel(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         ZlibExactMatchPreference(checked = filters.exact, onCheckedChange = { onChange(filters.copy(exact = it)) })
-        if (loadingOptions) Text("正在更新筛选选项…", style = MiuixTheme.textStyles.footnote1)
-        optionsError?.let { TextButton(text = "更新筛选选项失败，点击重试", onClick = onRetryOptions) }
+        if (loadingOptions) Text(stringResource(TextR.string.text_updating_filter_options), style = MiuixTheme.textStyles.footnote1)
+        optionsError?.let { TextButton(text = stringResource(TextR.string.text_could_not_update_filter_options_tap_to_retry), onClick = onRetryOptions) }
         val languages = remember(options.languages) {
             options.languages.sortedWith(compareBy<com.qgming.zlib.core.model.SearchLanguage> {
                 when (it.code) { "chinese" -> 0; "english" -> 1; else -> 2 }
@@ -214,27 +218,27 @@ private fun FilterPanel(
         }
         ZlibPreferenceGroup {
             ZlibMultiSelectPreference(
-                title = "语言", allLabel = "全部语言", options = languages,
+                title = stringResource(TextR.string.text_language), allLabel = stringResource(TextR.string.text_all_languages), options = languages,
                 selected = filters.languages, searchable = true,
                 onChange = { onChange(filters.copy(languages = it)) },
             )
             ZlibMultiSelectPreference(
-                title = "格式", allLabel = "全部格式",
+                title = stringResource(TextR.string.text_format), allLabel = stringResource(TextR.string.text_all_formats),
                 options = options.extensions.map { ZlibSelectionOption(it, it.uppercase()) },
                 selected = filters.extensions, onChange = { onChange(filters.copy(extensions = it)) },
             )
             ZlibPreferenceMenu(
-                title = "排序", options = SearchSort.entries.map { it.title },
+                title = stringResource(TextR.string.text_sort_by), options = SearchSort.entries.map { it.title },
                 selectedIndex = SearchSort.entries.indexOfFirst { it.wireValue == filters.order }.coerceAtLeast(0),
                 onSelect = { onChange(filters.copy(order = SearchSort.entries[it].wireValue)) },
             )
         }
-        Text("出版年份", style = MiuixTheme.textStyles.body2)
+        Text(stringResource(TextR.string.text_publication_year), style = MiuixTheme.textStyles.body2)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextField(
                 value = filters.yearFrom,
                 onValueChange = { onChange(filters.withYearFrom(it)) },
-                label = "起始年份",
+                label = stringResource(TextR.string.text_from_year),
                 singleLine = true,
                 modifier = Modifier.weight(1f),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
@@ -242,26 +246,26 @@ private fun FilterPanel(
             TextField(
                 value = filters.yearTo,
                 onValueChange = { onChange(filters.withYearTo(it)) },
-                label = "结束年份",
+                label = stringResource(TextR.string.text_to_year),
                 singleLine = true,
                 modifier = Modifier.weight(1f),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
             )
         }
         if (!filters.yearRangeValid) {
-            Text("起始年份不能大于结束年份", style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.error)
+            Text(stringResource(TextR.string.text_the_start_year_cannot_be_later_than_the_end_year), style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.error)
         }
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            TextButton(text = "重置", onClick = { onChange(SearchFilters()) }, modifier = Modifier.weight(1f))
+            TextButton(text = stringResource(TextR.string.text_reset), onClick = { onChange(SearchFilters()) }, modifier = Modifier.weight(1f))
             Button(
                 onClick = onApply,
                 enabled = filters.yearRangeValid,
                 modifier = Modifier.weight(2f),
                 colors = ButtonDefaults.buttonColorsPrimary(),
-            ) { Text("应用筛选") }
+            ) { Text(stringResource(TextR.string.text_apply_filters)) }
         }
     }
 }

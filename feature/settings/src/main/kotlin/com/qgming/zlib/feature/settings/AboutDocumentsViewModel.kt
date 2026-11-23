@@ -14,12 +14,20 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-data class AboutLicenses(val project: String, val notice: String, val apache: String)
+data class AboutLicenses(
+    val project: String,
+    val apache: String,
+    val heartleo: String,
+    val materialkolor: String,
+    val jakartaNotice: String,
+    val sharedView: String,
+)
 
 data class AboutDocumentsState(
     val licenses: AboutLicenses? = null,
     val loading: Boolean = false,
     val failed: Boolean = false,
+    val entries: List<AboutLicenseEntry> = emptyList(),
 )
 
 @HiltViewModel
@@ -27,7 +35,10 @@ class AboutDocumentsViewModel internal constructor(private val readLicenses: sus
     @Inject constructor(@ApplicationContext context: Context) : this({
         withContext(Dispatchers.IO) {
             fun read(name: String): String = context.assets.open("licenses/$name").bufferedReader().use { it.readText() }
-            AboutLicenses(read("LICENSE"), read("NOTICE"), read("APACHE-2.0.txt"))
+            AboutLicenses(
+                read("LICENSE"), read("APACHE-2.0.txt"), read("HEARTLEO-MIT.txt"),
+                read("MATERIALKOLOR-MIT.txt"), read("JAKARTA-NOTICE.txt"), read("SHAREDVIEW-NOTICE.txt"),
+            )
         }
     })
 
@@ -40,8 +51,10 @@ class AboutDocumentsViewModel internal constructor(private val readLicenses: sus
         viewModelScope.launch {
             try {
                 val licenses = readLicenses()
-                if (listOf(licenses.project, licenses.notice, licenses.apache).any(String::isBlank)) throw IOException("Empty license")
-                _state.value = AboutDocumentsState(licenses = licenses)
+                if (listOf(licenses.project, licenses.apache, licenses.heartleo, licenses.materialkolor, licenses.jakartaNotice, licenses.sharedView).any(String::isBlank)) {
+                    throw IOException("Empty license")
+                }
+                _state.value = AboutDocumentsState(licenses = licenses, entries = licenses.entries())
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: IOException) {

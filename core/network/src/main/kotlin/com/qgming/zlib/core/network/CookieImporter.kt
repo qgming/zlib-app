@@ -1,5 +1,8 @@
 package com.qgming.zlib.core.network
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import com.qgming.zlib.core.common.AppError
 import com.qgming.zlib.core.common.AppResult
 import com.qgming.zlib.core.model.Session
@@ -28,7 +31,7 @@ object CookieImporter {
 
     fun parse(raw: String, expectedHost: String? = null): AppResult<ImportedCookies> {
         val text = raw.trim().removePrefix("Cookie:").trim()
-        if (text.isEmpty()) return failure("Cookie 内容为空")
+        if (text.isEmpty()) return failure(appText(TextR.string.text_cookie_content_is_empty))
 
         val cookies = when {
             text.startsWith("{") || text.startsWith("[") -> parseJson(text)
@@ -36,12 +39,12 @@ object CookieImporter {
             else -> parseHeader(text)
         }
 
-        if (cookies.isEmpty()) return failure("没有解析到任何 Cookie")
+        if (cookies.isEmpty()) return failure(appText(TextR.string.text_no_cookies_could_be_parsed))
 
         val userId = cookies[Session.USER_ID_COOKIE].orEmpty()
         val userKey = cookies[Session.USER_KEY_COOKIE] ?: cookies[Session.USER_KEY_COOKIE_ALT].orEmpty()
         if (userId.isBlank() || userKey.isBlank()) {
-            return failure("Cookie 中缺少 remix_userid / remix_userkey")
+            return failure(appText(TextR.string.text_cookie_is_missing_remix_userid_remix_userkey))
         }
         return AppResult.Success(ImportedCookies(userId, userKey, cookies))
     }

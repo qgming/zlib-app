@@ -1,0 +1,4 @@
+<resources>
+    <string name="zlib_expanded">已展开</string>
+    <string name="zlib_collapsed">已收起</string>
+</resources>

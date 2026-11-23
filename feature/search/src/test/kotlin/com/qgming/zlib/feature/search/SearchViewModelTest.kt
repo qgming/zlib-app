@@ -24,6 +24,45 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class)
 class SearchViewModelTest {
     @Test
+    fun `search refusal uses Chinese on initial and appended results and keeps loaded books`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            MockWebServer().use { server ->
+                val client = EapiClient(
+                    OkHttpClient(), { server.url("/").toString() }, { null },
+                    dispatchers = object : AppDispatchers {
+                        override val io = dispatcher; override val default = dispatcher; override val main = dispatcher
+                    },
+                )
+                val viewModel = SearchViewModel(BookRepository(client), SavedStateHandle())
+                fun denied(message: String) = MockResponse().setResponseCode(400)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody("""{"success":0,"error":"$message"}""")
+
+                server.enqueue(denied("Access denied"))
+                viewModel.initializeQuery("作者姓名")
+                advanceUntilIdle()
+                assertEquals("Z-library 拒绝搜索", viewModel.state.value.error)
+                assertEquals(1, server.requestCount)
+
+                server.enqueue(bookPage(1, 1))
+                viewModel.search()
+                advanceUntilIdle()
+                server.enqueue(denied("拒绝访问"))
+                viewModel.loadMore()
+                advanceUntilIdle()
+                assertEquals("Z-library 拒绝搜索", viewModel.state.value.appendError)
+                assertEquals(listOf("1"), viewModel.state.value.books.map { it.id })
+                assertEquals(1, viewModel.state.value.page)
+                assertEquals(3, server.requestCount)
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
     fun `restored language outside fallback is verified against current options before search`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)

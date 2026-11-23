@@ -1,5 +1,9 @@
 package com.qgming.zlib.feature.settings
 
+import androidx.compose.ui.res.stringResource
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.lazy.items
@@ -39,7 +43,7 @@ fun DomainSettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hilt
     ZlibToastHost(toast)
 
     ZlibPage(
-        title = "域名管理", onBack = onBack,
+        title = stringResource(TextR.string.text_domain_management), onBack = onBack,
         actions = {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 ZlibProbeDomainsButton(enabled = controlsEnabled, onClick = viewModel::probeAll)
@@ -64,18 +68,18 @@ fun DomainSettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hilt
                 )
             }
         }
-        ZlibGlassBottomSheet(show = form.visible, title = "添加域名", onDismiss = viewModel::dismissAddDomain) {
+        ZlibGlassBottomSheet(show = form.visible, title = stringResource(TextR.string.text_add_domain), onDismiss = viewModel::dismissAddDomain) {
             ZlibAddDomainForm(
                 host = form.host, busy = form.busy, error = form.error,
                 onHostChange = viewModel::onDomainInput, onSubmit = viewModel::addCustomHost,
             )
         }
-        ZlibGlassBottomSheet(show = actionHost != null, title = "域名操作", onDismiss = { actionHost = null }) {
-            ZlibMenuAction("删除域名", enabled = controlsEnabled) { removeHost = actionHost; actionHost = null }
+        ZlibGlassBottomSheet(show = actionHost != null, title = stringResource(TextR.string.text_domain_actions), onDismiss = { actionHost = null }) {
+            ZlibMenuAction(stringResource(TextR.string.text_delete_domain), enabled = controlsEnabled) { removeHost = actionHost; actionHost = null }
         }
         ZlibConfirmDialog(
-            show = removeHost != null, title = "删除域名？", summary = removeHost.orEmpty(),
-            confirmLabel = "删除", destructive = true, onDismiss = { removeHost = null },
+            show = removeHost != null, title = stringResource(TextR.string.text_delete_domain_2), summary = removeHost.orEmpty(),
+            confirmLabel = stringResource(TextR.string.text_delete), destructive = true, onDismiss = { removeHost = null },
             onConfirm = { removeHost?.let(viewModel::removeCustomHost); removeHost = null },
         )
     }

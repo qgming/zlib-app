@@ -1,5 +1,8 @@
 package com.qgming.zlib.feature.settings
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qgming.zlib.core.common.AppResult
@@ -57,7 +60,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             val name = downloadRepository.downloadDirectoryName()
             directory.value = if (name != null && !downloadRepository.downloadDirectoryAccessible()) {
-                "目录无法访问，请重新选择授权"
+                appText(TextR.string.text_folder_unavailable_choose_it_again_to_grant_access)
             } else name
         }
     }
@@ -90,7 +93,7 @@ class SettingsViewModel @Inject constructor(
 
     fun probeAll() = domainAction {
         domainRepository.probeAll(switchToBest = true)
-        _events.send("全部域名体检完成")
+        _events.send(appText(TextR.string.text_all_domain_checks_complete))
     }
 
     fun probeHost(host: String) = domainAction {
@@ -117,14 +120,14 @@ class SettingsViewModel @Inject constructor(
                 when (val result = domainRepository.addCustomHost(form.host)) {
                     is AppResult.Success -> {
                         _addDomain.value = AddDomainState()
-                        _events.send("已添加 ${result.value}")
+                        _events.send(appText(TextR.string.text_added, result.value))
                     }
                     is AppResult.Failure -> _addDomain.value = form.copy(error = result.error.userMessage())
                 }
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Exception) {
-                _addDomain.value = form.copy(error = "无法添加域名，请重试")
+                _addDomain.value = form.copy(error = appText(TextR.string.text_cannot_add_domain_please_retry))
             } finally {
                 _domainBusy.value = false
                 _addDomain.update { it.copy(busy = false) }
@@ -134,14 +137,14 @@ class SettingsViewModel @Inject constructor(
 
     fun removeCustomHost(host: String) = domainAction {
         when (val result = domainRepository.removeCustomHost(host)) {
-            is AppResult.Success -> _events.send("已移除 $host")
+            is AppResult.Success -> _events.send(appText(TextR.string.text_removed, host))
             is AppResult.Failure -> _events.send(result.error.userMessage())
         }
     }
 
     fun selectHost(host: String) = domainAction {
         when (val result = domainRepository.setCurrentHost(host)) {
-            is AppResult.Success -> _events.send("已切换到 ${result.value}")
+            is AppResult.Success -> _events.send(appText(TextR.string.text_switched_to, result.value))
             is AppResult.Failure -> _events.send(result.error.userMessage())
         }
     }
@@ -160,7 +163,7 @@ class SettingsViewModel @Inject constructor(
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Exception) {
-                _events.send("域名操作失败，请重试")
+                _events.send(appText(TextR.string.text_domain_action_failed_please_retry))
             } finally {
                 _domainBusy.value = false
             }
@@ -181,8 +184,8 @@ class SettingsViewModel @Inject constructor(
                 is AppResult.Success -> {
                     directory.value = downloadRepository.downloadDirectoryName()
                     _events.send(if (result.value.pausedTasks > 0) {
-                        "下载目录已保存，${result.value.pausedTasks} 个任务可在下载管理中继续"
-                    } else "下载目录已保存")
+                        appText(TextR.string.text_download_folder_saved_resume_tasks_in_download_manager, result.value.pausedTasks)
+                    } else appText(TextR.string.text_download_folder_saved))
                 }
 
                 is AppResult.Failure -> _events.send(result.error.userMessage())

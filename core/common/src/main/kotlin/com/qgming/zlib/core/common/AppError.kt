@@ -21,6 +21,7 @@ sealed interface AppError {
     data object NoDomain : AppError
     data object NotLoggedIn : AppError
     data object SessionExpired : AppError
+    data object SearchRefused : AppError
     data class AuthFailed(val message: String? = null) : AppError
     data class Quota(val remaining: Int?, val resetHint: String? = null) : AppError
     data class DomainBlocked(val status: DomainStatus) : AppError

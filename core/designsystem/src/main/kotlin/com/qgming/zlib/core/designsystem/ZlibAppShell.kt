@@ -1,5 +1,9 @@
 package com.qgming.zlib.core.designsystem
 
+import androidx.compose.ui.res.stringResource
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import android.os.SystemClock
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection
@@ -84,10 +88,12 @@ import top.yukonga.miuix.kmp.material.GlassDefaults
 import top.yukonga.miuix.kmp.material.GlassShadows
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-enum class ZlibTab(val label: String, internal val icon: ImageVector) {
-    Popular("阅读", MiuixIcons.Glass.Normal.NotesOutline),
-    Library("书架", MiuixIcons.Glass.BookOutline),
-    Settings("设置", MiuixIcons.Glass.SettingsOutline),
+enum class ZlibTab(private val labelRes: Int, internal val icon: ImageVector) {
+    Popular(TextR.string.text_discover, MiuixIcons.Glass.Normal.NotesOutline),
+    Library(TextR.string.text_bookshelf, MiuixIcons.Glass.BookOutline),
+    Settings(TextR.string.text_settings, MiuixIcons.Glass.SettingsOutline);
+
+    val label: String get() = appText(labelRes)
 }
 
 private data class TopBarGlass(val backdrop: Backdrop, val scrolled: Boolean)
@@ -232,17 +238,17 @@ private fun PageFrame(
     val safeInsets = WindowInsets.systemBars.union(WindowInsets.displayCutout)
     val navigationIcon: @Composable () -> Unit = {
         onBack?.let {
-            TopBarButton(MiuixIcons.Glass.ChevronBackward, "返回", it, backdrop != null)
+            TopBarButton(MiuixIcons.Glass.ChevronBackward, stringResource(TextR.string.text_back), it, backdrop != null)
         }
     }
     val topActions: @Composable RowScope.() -> Unit = {
         actions()
         onSearch?.let {
-            TopBarButton(MiuixIcons.Glass.Search, "搜索", it, backdrop != null)
+            TopBarButton(MiuixIcons.Glass.Search, stringResource(TextR.string.text_search), it, backdrop != null)
         }
         onDownloads?.let {
             if (onSearch != null) Spacer(Modifier.width(8.dp))
-            TopBarButton(MiuixIcons.Glass.Download, "下载管理", it, backdrop != null)
+            TopBarButton(MiuixIcons.Glass.Download, stringResource(TextR.string.text_download_manager), it, backdrop != null)
         }
     }
 
@@ -321,11 +327,11 @@ fun ZlibFilterButton(active: Boolean, onClick: () -> Unit) {
     val colors = MiuixTheme.colorScheme
     TopBarButton(
         icon = MiuixIcons.Glass.Tune,
-        description = "搜索筛选",
+        description = stringResource(TextR.string.text_search_filters),
         onClick = onClick,
         glass = LocalZlibGlass.current,
         tint = if (active) colors.primary else colors.onSurface,
-        modifier = if (active) Modifier.semantics { stateDescription = "已启用筛选" } else Modifier,
+        modifier = if (active) Modifier.semantics { stateDescription = appText(TextR.string.text_filters_enabled) } else Modifier,
     )
 }
 
@@ -333,7 +339,7 @@ fun ZlibFilterButton(active: Boolean, onClick: () -> Unit) {
 fun ZlibBookInfoButton(enabled: Boolean, onClick: () -> Unit) {
     TopBarButton(
         icon = MiuixIcons.Glass.Normal.Info,
-        description = "书籍信息",
+        description = stringResource(TextR.string.text_book_information),
         onClick = onClick,
         glass = LocalZlibGlass.current,
         enabled = enabled,
@@ -345,24 +351,24 @@ fun ZlibBookInfoButton(enabled: Boolean, onClick: () -> Unit) {
 fun ZlibDownloadHistoryButton(onClick: () -> Unit) {
     TopBarButton(
         icon = MiuixIcons.Glass.Normal.Cloud,
-        description = "云端下载记录", onClick = onClick, glass = LocalZlibGlass.current,
+        description = stringResource(TextR.string.text_cloud_download_history), onClick = onClick, glass = LocalZlibGlass.current,
     )
 }
 
 @Composable
 fun ZlibAddAccountButton(onClick: () -> Unit) {
-    TopBarButton(MiuixIcons.Glass.Normal.Add, "添加账号", onClick, LocalZlibGlass.current)
+    TopBarButton(MiuixIcons.Glass.Normal.Add, stringResource(TextR.string.text_add_account), onClick, LocalZlibGlass.current)
 }
 
 @Composable
 fun ZlibAddDomainButton(onClick: () -> Unit) {
-    TopBarButton(MiuixIcons.Glass.Normal.Add, "添加域名", onClick, LocalZlibGlass.current)
+    TopBarButton(MiuixIcons.Glass.Normal.Add, stringResource(TextR.string.text_add_domain), onClick, LocalZlibGlass.current)
 }
 
 @Composable
 fun ZlibProbeDomainsButton(enabled: Boolean, onClick: () -> Unit) {
     TopBarButton(
-        MiuixIcons.Glass.Normal.Refresh, "全部体检", onClick, LocalZlibGlass.current,
+        MiuixIcons.Glass.Normal.Refresh, stringResource(TextR.string.text_check_all_domains), onClick, LocalZlibGlass.current,
         enabled = enabled,
         tint = if (enabled) MiuixTheme.colorScheme.onSurface else MiuixTheme.colorScheme.onSurfaceVariantSummary,
     )
@@ -412,7 +418,7 @@ private fun ZlibBottomBar(
     backdrop: Backdrop?,
 ) {
     val tabs = ZlibTab.entries
-    val items = remember { tabs.map { GlassNavigationItem(icon = it.icon, label = it.label) } }
+    val items = tabs.map { GlassNavigationItem(icon = it.icon, label = it.label) }
     val barWidth = 64.dp * tabs.size + GlassNavigationBarDefaults.ContentPaddingHorizontal * 2
 
     Box(

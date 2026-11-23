@@ -1,5 +1,8 @@
 package com.qgming.zlib.core.data.download
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -53,7 +56,7 @@ class DownloadDirectoryStore @Inject constructor(
         withContext(dispatchers.io) {
             try {
                 if (!DocumentsContract.isTreeUri(uri)) {
-                    return@withContext failure("下载目录地址无效，请重新选择")
+                    return@withContext failure(appText(TextR.string.text_invalid_download_folder_choose_it_again))
                 }
                 val hadFullGrant = hasPersistedAccess(uri)
                 if (!hadFullGrant) {
@@ -61,7 +64,7 @@ class DownloadDirectoryStore @Inject constructor(
                         context.contentResolver.takePersistableUriPermission(uri, PERSIST_FLAGS)
                     } catch (t: SecurityException) {
                         return@withContext AppResult.Failure(
-                            AppError.Storage(IOException("无法保存下载目录授权，请重新选择", t)),
+                            AppError.Storage(IOException(appText(TextR.string.text_cannot_retain_folder_permission_choose_the_folder_again), t)),
                         )
                     }
                 }
@@ -122,11 +125,11 @@ class DownloadDirectoryStore @Inject constructor(
         }
 
     private fun accessProblem(uri: Uri): String? {
-        if (!hasPersistedAccess(uri)) return "没有下载目录的长期读写权限，请重新选择"
+        if (!hasPersistedAccess(uri)) return appText(TextR.string.text_persistent_folder_access_is_missing_choose_the_folder_again)
         val tree = runCatching { DocumentFile.fromTreeUri(context, uri) }.getOrNull()
-            ?: return "无法打开下载目录，请重新选择"
-        if (!tree.isDirectory) return "所选位置不是文件夹"
-        if (!tree.canRead() || !tree.canWrite()) return "所选文件夹不可读写，请重新选择"
+            ?: return appText(TextR.string.text_cannot_open_the_download_folder_choose_it_again)
+        if (!tree.isDirectory) return appText(TextR.string.text_the_selected_location_is_not_a_folder)
+        if (!tree.canRead() || !tree.canWrite()) return appText(TextR.string.text_the_folder_cannot_be_read_or_written_choose_another_folder)
         return null
     }
 

@@ -1,5 +1,9 @@
 package com.qgming.zlib.core.designsystem
 
+import androidx.compose.ui.res.stringResource
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -39,33 +43,33 @@ fun ZlibAccountCard(entry: AccountEntry, busy: Boolean, onClick: () -> Unit, onL
     ZlibCard(
         cornerRadius = 24.dp,
         modifier = Modifier.combinedClickable(
-            enabled = !busy, role = Role.Button, onClickLabel = "切换账号", onLongClickLabel = "账号操作",
+            enabled = !busy, role = Role.Button, onClickLabel = stringResource(TextR.string.text_switch_account), onLongClickLabel = stringResource(TextR.string.text_account_actions),
             onClick = onClick, onLongClick = onLongClick,
         ),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(profile?.name?.takeIf(String::isNotBlank) ?: "Z-Library 用户", style = MiuixTheme.textStyles.title3,
+                    Text(profile?.name?.takeIf(String::isNotBlank) ?: stringResource(TextR.string.text_z_library_user), style = MiuixTheme.textStyles.title3,
                         modifier = Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
-                        if (profile?.membershipKnown == true) { if (profile.isPremium) "Premium 会员" else "标准账号" } else "账号",
+                        if (profile?.membershipKnown == true) { if (profile.isPremium) stringResource(TextR.string.text_premium) else stringResource(TextR.string.text_standard) } else stringResource(TextR.string.text_account),
                         style = MiuixTheme.textStyles.footnote2, color = primary,
                         modifier = Modifier.background(primary.copy(alpha = 0.12f), RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 3.dp),
                     )
                 }
                 Spacer(Modifier.height(6.dp))
-                Text(profile?.email?.takeIf(String::isNotBlank) ?: "账号 ${entry.id}", style = MiuixTheme.textStyles.footnote1,
+                Text(profile?.email?.takeIf(String::isNotBlank) ?: stringResource(TextR.string.text_account_2, entry.id), style = MiuixTheme.textStyles.footnote1,
                     color = colors.onSurfaceVariantSummary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    when { busy -> "正在更新…"; entry.expired -> "登录已失效，点击重新验证"; entry.current -> "当前使用"; else -> "点击切换" },
+                    when { busy -> stringResource(TextR.string.text_updating); entry.expired -> stringResource(TextR.string.text_session_expired_tap_to_verify_again); entry.current -> stringResource(TextR.string.text_active); else -> stringResource(TextR.string.text_tap_to_switch) },
                     style = MiuixTheme.textStyles.footnote1,
                     color = if (entry.current) primary else colors.onSurfaceVariantSummary,
                 )
             }
             Spacer(Modifier.width(16.dp))
-            Box(Modifier.size(80.dp).semantics { contentDescription = if (quotaKnown) "今日剩余 ${quota?.remaining} 本，共 ${quota?.allowed} 本" else "额度未知" }, contentAlignment = Alignment.Center) {
+            Box(Modifier.size(80.dp).semantics { contentDescription = if (quotaKnown) appText(TextR.string.text_of_downloads_remaining_today, quota?.remaining, quota?.allowed) else appText(TextR.string.text_quota_unknown) }, contentAlignment = Alignment.Center) {
                 Canvas(Modifier.size(76.dp)) {
                     val stroke = Stroke(6.dp.toPx(), cap = StrokeCap.Round)
                     drawArc(track, -90f, 360f, false, style = stroke)
@@ -76,7 +80,7 @@ fun ZlibAccountCard(entry: AccountEntry, busy: Boolean, onClick: () -> Unit, onL
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(if (quotaKnown) "${quota?.remaining}" else "—", style = MiuixTheme.textStyles.title3)
-                    Text("剩余", style = MiuixTheme.textStyles.footnote2, color = colors.onSurfaceVariantSummary)
+                    Text(stringResource(TextR.string.text_remaining_2), style = MiuixTheme.textStyles.footnote2, color = colors.onSurfaceVariantSummary)
                 }
             }
         }
@@ -88,8 +92,8 @@ fun ZlibAutoSwitchPreference(enabled: Boolean, onChange: (Boolean) -> Unit) {
     ZlibCard(cornerRadius = 24.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                Text("额度耗尽自动切换", style = MiuixTheme.textStyles.body2)
-                Text("仅切换至仍有额度的已登录账号", style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                Text(stringResource(TextR.string.text_switch_when_quota_is_exhausted), style = MiuixTheme.textStyles.body2)
+                Text(stringResource(TextR.string.text_only_switch_to_signed_in_accounts_with_remaining_quota), style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
             }
             Switch(checked = enabled, onCheckedChange = onChange)
         }

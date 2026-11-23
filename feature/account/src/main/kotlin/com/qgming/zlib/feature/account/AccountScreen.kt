@@ -1,5 +1,9 @@
 package com.qgming.zlib.feature.account
 
+import androidx.compose.ui.res.stringResource
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -42,10 +46,10 @@ fun AccountScreen(onBack: (() -> Unit)?, viewModel: AccountViewModel = hiltViewM
     LaunchedEffect(viewModel, toast) { viewModel.events.collect { toast.showMessage(it) } }
     ZlibToastHost(toast)
 
-    ZlibPage(title = "账号", onBack = onBack, actions = { ZlibAddAccountButton(viewModel::showAdd) }) { padding ->
+    ZlibPage(title = stringResource(TextR.string.text_account), onBack = onBack, actions = { ZlibAddAccountButton(viewModel::showAdd) }) { padding ->
         ZlibCardList(padding) {
             if (state.accounts.isEmpty()) item("empty") {
-                ZlibStateCard("暂无已登录账号", "点击右上角添加账号。", "添加账号", viewModel::showAdd)
+                ZlibStateCard(stringResource(TextR.string.text_no_signed_in_accounts), stringResource(TextR.string.text_tap_the_button_at_the_top_right_to_add_an_account), stringResource(TextR.string.text_add_account), viewModel::showAdd)
             }
             items(state.accounts, key = { it.id }) { entry ->
                 ZlibAccountCard(entry, busy != null,
@@ -59,25 +63,25 @@ fun AccountScreen(onBack: (() -> Unit)?, viewModel: AccountViewModel = hiltViewM
                 }
             }
         }
-        ZlibGlassBottomSheet(show = actionId != null, title = "账号操作", onDismiss = { actionId = null }) {
+        ZlibGlassBottomSheet(show = actionId != null, title = stringResource(TextR.string.text_account_actions), onDismiss = { actionId = null }) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                ZlibMenuAction("刷新账号", enabled = busy == null) { actionId?.let(viewModel::refresh); actionId = null }
-                ZlibMenuAction("退出登录", enabled = busy == null) { logoutId = actionId; actionId = null }
+                ZlibMenuAction(stringResource(TextR.string.text_refresh_account), enabled = busy == null) { actionId?.let(viewModel::refresh); actionId = null }
+                ZlibMenuAction(stringResource(TextR.string.text_sign_out), enabled = busy == null) { logoutId = actionId; actionId = null }
             }
         }
         ZlibConfirmDialog(
-            show = logoutId != null, title = "退出该账号？",
-            summary = "清除该账号的登录会话。本机图书和下载任务保留，当前下载会暂停。",
-            confirmLabel = "退出登录", destructive = true, onDismiss = { logoutId = null },
+            show = logoutId != null, title = stringResource(TextR.string.text_sign_out_of_this_account),
+            summary = stringResource(TextR.string.text_remove_this_account_s_session_local_books_and_download_tasks_are_kept_ac),
+            confirmLabel = stringResource(TextR.string.text_sign_out), destructive = true, onDismiss = { logoutId = null },
             onConfirm = { logoutId?.let(viewModel::logout); logoutId = null },
         )
         ZlibConfirmDialog(
-            show = confirmAutoSwitch, title = "开启额度耗尽自动切换？",
-            summary = "仅在服务器确认额度已耗尽时，尝试切换至仍有额度的已登录账号。平台可能限制多账号使用，无法保证不会触发验证或封禁。",
-            confirmLabel = "开启", onDismiss = { confirmAutoSwitch = false },
+            show = confirmAutoSwitch, title = stringResource(TextR.string.text_switch_accounts_when_quota_is_exhausted),
+            summary = stringResource(TextR.string.text_only_switch_after_the_server_confirms_an_exhausted_quota_and_only_to_sig),
+            confirmLabel = stringResource(TextR.string.text_enable), onDismiss = { confirmAutoSwitch = false },
             onConfirm = { viewModel.setAutoSwitch(true); confirmAutoSwitch = false },
         )
-        ZlibGlassBottomSheet(show = form.visible, title = "添加账号", onDismiss = viewModel::dismissAdd) {
+        ZlibGlassBottomSheet(show = form.visible, title = stringResource(TextR.string.text_add_account), onDismiss = viewModel::dismissAdd) {
             Column(Modifier.fillMaxWidth().heightIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 ZlibLoginForm(
                     useCookie = form.useCookie, email = form.email, password = form.password,

@@ -1,5 +1,8 @@
 package com.qgming.zlib.core.data.download
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import android.content.Context
 import android.database.ContentObserver
 import android.provider.DocumentsContract
@@ -33,9 +36,9 @@ internal class SafLocalFileStore(context: Context) : LocalFileStore {
         val root = DocumentsContract.buildDocumentUriUsingTree(tree, rootId)
         resolver.query(root, arrayOf(DocumentsContract.Document.COLUMN_MIME_TYPE), null, null, null)?.use {
             if (!it.moveToFirst() || it.getString(0) != DocumentsContract.Document.MIME_TYPE_DIR) {
-                throw IOException("无法读取下载目录，请在设置中重新选择")
+                throw IOException(appText(TextR.string.text_cannot_read_the_download_folder_choose_it_again_in_settings))
             }
-        } ?: throw IOException("无法读取下载目录，请在设置中重新选择")
+        } ?: throw IOException(appText(TextR.string.text_cannot_read_the_download_folder_choose_it_again_in_settings))
 
         val result = mutableListOf<LocalFile>()
         val pending = ArrayDeque<String>().apply { add(rootId) }
@@ -64,7 +67,7 @@ internal class SafLocalFileStore(context: Context) : LocalFileStore {
                         )
                     }
                 }
-            } ?: throw IOException("无法读取下载目录，请检查文件权限")
+            } ?: throw IOException(appText(TextR.string.text_cannot_read_the_download_folder_check_file_permissions))
         }
         SafeLog.d("LocalScan", "directories=${visited.size} entries=$inspected books=${result.size} elapsedMs=${(System.nanoTime() - started) / 1_000_000}")
         return result.distinctBy(LocalFile::uri)

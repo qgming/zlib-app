@@ -1,5 +1,9 @@
 package com.qgming.zlib.feature.downloads
 
+import androidx.compose.ui.res.stringResource
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -60,39 +64,39 @@ fun DownloadsScreen(
     }
     val (records, tasks) = loadedQueue.orEmpty().partition { it.state == DownloadState.COMPLETED }
 
-    ZlibPage(title = "下载管理", onBack = onBack, actions = { ZlibDownloadHistoryButton(onOpenHistory) }) { padding ->
+    ZlibPage(title = stringResource(TextR.string.text_download_manager), onBack = onBack, actions = { ZlibDownloadHistoryButton(onOpenHistory) }) { padding ->
         ZlibCardList(padding) {
             notice?.let { message ->
                 item(key = "download-notice") {
-                    ZlibStateCard("下载提示", message, actionLabel = "知道了", onAction = { notice = null })
+                    ZlibStateCard(appText(TextR.string.text_download_notice), message, actionLabel = appText(TextR.string.text_ok), onAction = { notice = null })
                 }
             }
             if (loadedQueue == null) {
                 item(key = "download-loading") { ZlibLoading() }
             } else if (loadedQueue.isEmpty()) {
                 item(key = "download-empty") {
-                    ZlibStateCard(title = "暂无下载任务", message = "在图书详情页点击「下载」，任务会出现在这里。")
+                    ZlibStateCard(title = stringResource(TextR.string.text_no_download_tasks), message = stringResource(TextR.string.text_tap_download_in_a_book_s_details_to_add_a_task_here))
                 }
             }
             if (tasks.isNotEmpty()) {
-                item(key = "download-tasks") { ZlibSectionTitle("下载任务") }
+                item(key = "download-tasks") { ZlibSectionTitle(stringResource(TextR.string.text_download_tasks)) }
                 items(tasks, key = { it.id }) { item -> DownloadRow(item, viewModel, onShowFailure = { failure = item }) }
             }
             if (records.isNotEmpty()) {
-                item(key = "download-records") { ZlibSectionTitle("已完成") }
+                item(key = "download-records") { ZlibSectionTitle(stringResource(TextR.string.text_completed)) }
                 items(records, key = { it.id }) { item -> DownloadRow(item, viewModel, onShowFailure = { failure = item }) }
             }
         }
-        ZlibGlassBottomSheet(show = failure != null, title = "下载未完成", onDismiss = { failure = null }) {
+        ZlibGlassBottomSheet(show = failure != null, title = stringResource(TextR.string.text_download_incomplete), onDismiss = { failure = null }) {
             failure?.let { item ->
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(item.error.orEmpty().errorLabel(), style = MiuixTheme.textStyles.body2)
                     when (item.error) {
-                        "session", "quota" -> ZlibMenuAction("管理账号与额度") { failure = null; onOpenAccount() }
-                        "domain" -> ZlibMenuAction("更换域名") { failure = null; onOpenDomains() }
-                        "storage", "storage_permission" -> ZlibMenuAction("重新选择下载目录") { failure = null; directoryPicker.launch(null) }
+                        "session", "quota" -> ZlibMenuAction(stringResource(TextR.string.text_manage_accounts_and_quota)) { failure = null; onOpenAccount() }
+                        "domain" -> ZlibMenuAction(stringResource(TextR.string.text_switch_domain)) { failure = null; onOpenDomains() }
+                        "storage", "storage_permission" -> ZlibMenuAction(stringResource(TextR.string.text_choose_download_folder_again)) { failure = null; directoryPicker.launch(null) }
                     }
-                    if (item.error != "quota") ZlibMenuAction("重试下载") { failure = null; viewModel.retry(item.id) }
+                    if (item.error != "quota") ZlibMenuAction(stringResource(TextR.string.text_retry_download)) { failure = null; viewModel.retry(item.id) }
                 }
             }
         }
@@ -129,7 +133,7 @@ private fun DownloadRow(
                         },
                     )
                 }
-                if (item.state == DownloadState.FAILED) TextButton(text = "查看原因", onClick = onShowFailure)
+                if (item.state == DownloadState.FAILED) TextButton(text = stringResource(TextR.string.text_view_details), onClick = onShowFailure)
                 item.totalBytes?.let { total ->
                     if (progress != null && (item.state == DownloadState.DOWNLOADING || item.state == DownloadState.PAUSED)) {
                         Spacer(Modifier.height(8.dp))
@@ -164,28 +168,28 @@ private fun DownloadRow(
 }
 
 private fun DownloadState.label(): String = when (this) {
-    DownloadState.QUEUED -> "排队中"
-    DownloadState.RESOLVING -> "解析地址"
-    DownloadState.DOWNLOADING -> "下载中"
-    DownloadState.COMPLETED -> "已完成"
-    DownloadState.FAILED -> "失败"
-    DownloadState.PAUSED -> "已暂停"
-    DownloadState.CANCELLED -> "已取消"
+    DownloadState.QUEUED -> appText(TextR.string.text_queued)
+    DownloadState.RESOLVING -> appText(TextR.string.text_resolving_url)
+    DownloadState.DOWNLOADING -> appText(TextR.string.text_downloading)
+    DownloadState.COMPLETED -> appText(TextR.string.text_completed)
+    DownloadState.FAILED -> appText(TextR.string.text_failed)
+    DownloadState.PAUSED -> appText(TextR.string.text_paused)
+    DownloadState.CANCELLED -> appText(TextR.string.text_canceled)
 }
 
 private fun String.errorLabel(): String = when (this) {
-    "quota" -> "今日额度已用完"
-    "session" -> "登录已失效"
-    "domain" -> "域名被拦截"
-    "network" -> "网络错误"
-    "storage" -> "写入失败"
-    "storage_permission" -> "下载目录权限失效，请重新授权"
-    "range" -> "续传区间异常，已保留任务，请重试"
-    "invalid" -> "文件校验失败，请重试"
-    "incomplete" -> "下载尚未完整，已保留进度，请重试续传"
-    "http_416" -> "续传位置已失效，请重试下载"
-    "http_404" -> "文件不存在"
-    else -> "请重试"
+    "quota" -> appText(TextR.string.text_daily_quota_exhausted)
+    "session" -> appText(TextR.string.text_session_expired)
+    "domain" -> appText(TextR.string.text_domain_blocked)
+    "network" -> appText(TextR.string.text_network_error)
+    "storage" -> appText(TextR.string.text_write_failed)
+    "storage_permission" -> appText(TextR.string.text_download_folder_permission_expired_grant_access_again)
+    "range" -> appText(TextR.string.text_invalid_resume_range_the_task_is_retained_please_retry)
+    "invalid" -> appText(TextR.string.text_file_verification_failed_please_retry)
+    "incomplete" -> appText(TextR.string.text_download_incomplete_progress_is_saved_retry_to_resume_2)
+    "http_416" -> appText(TextR.string.text_resume_position_expired_retry_the_download)
+    "http_404" -> appText(TextR.string.text_file_not_found)
+    else -> appText(TextR.string.text_please_retry)
 }
 
 private fun Long.sizeText(): String = when {

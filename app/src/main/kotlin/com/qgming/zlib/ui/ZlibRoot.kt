@@ -1,5 +1,8 @@
 package com.qgming.zlib.ui
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -55,6 +58,8 @@ import com.qgming.zlib.feature.library.LibraryScreen
 import com.qgming.zlib.feature.library.LibrarySection
 import com.qgming.zlib.feature.library.LibraryTabs
 import com.qgming.zlib.feature.search.PopularScreen
+import com.qgming.zlib.feature.search.ReadingSource
+import com.qgming.zlib.feature.search.ReadingTabs
 import com.qgming.zlib.feature.search.SearchScreen
 import com.qgming.zlib.feature.settings.DomainSettingsScreen
 import com.qgming.zlib.feature.settings.AboutAppInfo
@@ -160,16 +165,16 @@ fun ZlibRoot(viewModel: AppViewModel = hiltViewModel(), downloadRequest: Int = 0
 
 @Composable
 private fun DirectoryWelcome(busy: Boolean, error: String?, onChoose: () -> Unit) {
-    ZlibPage(title = "选择下载目录") { padding ->
+    ZlibPage(title = stringResource(TextR.string.text_choose_download_folder)) { padding ->
         ZlibCardList(padding) {
             item {
                 ZlibCard(cornerRadius = 24.dp) {
-                    Text("欢迎使用芝士读书", style = MiuixTheme.textStyles.title3)
+                    Text(stringResource(TextR.string.text_welcome_to_zlib), style = MiuixTheme.textStyles.title3)
                     Spacer(Modifier.height(12.dp))
-                    Text("先选择一个文件夹，用来保存下载的图书和应用更新。选择完成后即可登录。", style = MiuixTheme.textStyles.body2)
+                    Text(stringResource(TextR.string.text_choose_a_folder_for_downloaded_books_and_app_updates_then_sign_in), style = MiuixTheme.textStyles.body2)
                     Spacer(Modifier.height(20.dp))
                     Button(onClick = onChoose, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (busy) "正在保存…" else "选择文件夹")
+                        Text(if (busy) stringResource(TextR.string.text_saving) else stringResource(TextR.string.text_choose_folder))
                     }
                     error?.let {
                         Spacer(Modifier.height(12.dp))
@@ -194,7 +199,7 @@ private fun SplashScreen() {
             ZlibLoadingIndicator()
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "正在检查会话与域名…",
+                text = stringResource(TextR.string.text_checking_session_and_domains),
                 style = MiuixTheme.textStyles.footnote1,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
             )
@@ -218,19 +223,19 @@ private fun StartupFailedScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("无法连接 Z-Library", style = MiuixTheme.textStyles.title3)
+            Text(stringResource(TextR.string.text_cannot_connect_to_z_library), style = MiuixTheme.textStyles.title3)
             Text(
                 text = message,
                 style = MiuixTheme.textStyles.body2,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
             )
             Button(onClick = onRetry) {
-                Text("重新体检")
+                Text(stringResource(TextR.string.text_check_again))
             }
             ZlibCard {
-                Text("手动添加镜像", style = MiuixTheme.textStyles.body2)
+                Text(stringResource(TextR.string.text_add_a_mirror), style = MiuixTheme.textStyles.body2)
                 Text(
-                    text = "如果内置域名全部不可用，可添加你信任的 HTTPS 镜像主机。",
+                    text = stringResource(TextR.string.text_if_the_built_in_domains_are_unavailable_add_a_trusted_https_mirror_host),
                     style = MiuixTheme.textStyles.footnote1,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 )
@@ -257,7 +262,7 @@ private fun StartupFailedScreen(
                     },
                     enabled = host.isNotBlank(),
                 ) {
-                    Text("添加并重试")
+                    Text(stringResource(TextR.string.text_add_and_retry))
                 }
             }
         }
@@ -350,8 +355,15 @@ private fun HomeTabs(
     val selectedTab = ZlibTab.entries.firstOrNull { it.name == tabName } ?: ZlibTab.Popular
     var librarySectionName by rememberSaveable { mutableStateOf(LibrarySection.Local.name) }
     val librarySection = LibrarySection.entries.firstOrNull { it.name == librarySectionName } ?: LibrarySection.Local
+    var readingSourceName by rememberSaveable { mutableStateOf(ReadingSource.Popular.name) }
+    val readingSource = ReadingSource.entries.firstOrNull { it.name == readingSourceName } ?: ReadingSource.Popular
     val tabStateHolder = rememberSaveableStateHolder()
-    val readingGridState = rememberLazyGridState()
+    val popularGridState = rememberLazyGridState()
+    val recommendedGridState = rememberLazyGridState()
+    val readingGridState = when (readingSource) {
+        ReadingSource.Popular -> popularGridState
+        ReadingSource.Recommended -> recommendedGridState
+    }
     val scope = rememberCoroutineScope()
 
     ZlibAppShell(
@@ -361,14 +373,18 @@ private fun HomeTabs(
         onOpenDownloads = onOpenDownloads,
         onReadingDoubleTap = { scope.launch { readingGridState.animateScrollToItem(0) } },
         topBarContent = { tab ->
-            if (tab == ZlibTab.Library) {
-                LibraryTabs(selected = librarySection, onSelect = { librarySectionName = it.name })
+            when (tab) {
+                ZlibTab.Popular -> ReadingTabs(selected = readingSource, onSelect = { readingSourceName = it.name })
+                ZlibTab.Library -> LibraryTabs(selected = librarySection, onSelect = { librarySectionName = it.name })
+                ZlibTab.Settings -> Unit
             }
         },
     ) { tab, padding ->
         tabStateHolder.SaveableStateProvider(tab.name) {
             when (tab) {
-                ZlibTab.Popular -> PopularScreen(padding = padding, onOpenBook = onOpenBook, gridState = readingGridState)
+                ZlibTab.Popular -> PopularScreen(
+                    padding = padding, onOpenBook = onOpenBook, source = readingSource, gridState = readingGridState,
+                )
                 ZlibTab.Library -> LibraryScreen(
                     padding = padding,
                     section = librarySection,

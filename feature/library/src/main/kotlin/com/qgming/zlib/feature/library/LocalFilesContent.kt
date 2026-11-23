@@ -1,5 +1,9 @@
 package com.qgming.zlib.feature.library
 
+import androidx.compose.ui.res.stringResource
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.Context
@@ -44,9 +48,9 @@ internal fun LocalFilesContent(padding: PaddingValues, viewModel: LocalFilesView
             try {
                 launchFileIntent(context, event)
             } catch (_: ActivityNotFoundException) {
-                toast.showMessage(if (event.share) "没有可接收此文件的应用" else "没有可打开此格式的应用，请安装阅读器")
+                toast.showMessage(if (event.share) appText(TextR.string.text_no_app_can_receive_this_file) else appText(TextR.string.text_no_app_can_open_this_format_please_install_a_reader))
             } catch (_: SecurityException) {
-                toast.showMessage("无法访问文件，请在设置中重新授权下载目录")
+                toast.showMessage(appText(TextR.string.text_cannot_access_the_file_grant_folder_access_again_in_settings))
                 viewModel.refresh()
             }
         }
@@ -58,13 +62,13 @@ internal fun LocalFilesContent(padding: PaddingValues, viewModel: LocalFilesView
         when {
             state.loading -> fullWidthItem("local-loading") { ZlibLoading() }
             state.treeUri == null -> fullWidthItem("local-no-directory") {
-                ZlibStateCard("尚未选择下载目录", "在设置中选择下载目录后，这里会显示其中的电子书文件。")
+                ZlibStateCard(stringResource(TextR.string.text_no_download_folder_selected), stringResource(TextR.string.text_choose_a_download_folder_in_settings_to_see_its_e_books_here))
             }
             state.error != null -> fullWidthItem("local-error") {
-                ZlibStateCard("无法读取下载目录", state.error!!.userMessage(), onAction = viewModel::refresh)
+                ZlibStateCard(stringResource(TextR.string.text_cannot_read_download_folder), state.error!!.userMessage(), onAction = viewModel::refresh)
             }
             state.files.isEmpty() -> fullWidthItem("local-empty") {
-                ZlibStateCard("暂无本机文件", "下载目录中没有支持的电子书文件。")
+                ZlibStateCard(stringResource(TextR.string.text_no_local_files), stringResource(TextR.string.text_the_download_folder_contains_no_supported_e_books))
             }
             else -> items(state.files, key = { it.uri }) { file ->
                 ZlibLocalFileTile(file, onClick = { viewModel.open(file) }, onLongClick = { viewModel.showActions(file) })
@@ -76,18 +80,18 @@ internal fun LocalFilesContent(padding: PaddingValues, viewModel: LocalFilesView
         onDismiss = viewModel::dismissActions,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            ZlibMenuAction("分享文件") { action.file?.let { viewModel.open(it, share = true) } }
-            ZlibMenuAction("删除本机文件", onClick = viewModel::confirmDeletion)
+            ZlibMenuAction(stringResource(TextR.string.text_share_file)) { action.file?.let { viewModel.open(it, share = true) } }
+            ZlibMenuAction(stringResource(TextR.string.text_delete_local_file), onClick = viewModel::confirmDeletion)
         }
     }
     ZlibConfirmDialog(
         show = action.file != null && action.confirming,
-        title = "删除本机文件？",
+        title = stringResource(TextR.string.text_delete_local_file_2),
         summary = buildString {
-            append("将从下载目录中删除「${action.file?.name.orEmpty()}」，不影响云端收藏或下载记录。")
-            action.error?.let { append("\n\n删除失败：$it") }
+            append(stringResource(TextR.string.text_delete_from_the_download_folder_cloud_favorites_and_history_are_kept, action.file?.name.orEmpty()))
+            action.error?.let { append(stringResource(TextR.string.text_n_ndelete_failed, it)) }
         },
-        confirmLabel = if (action.error == null) "删除" else "重试删除",
+        confirmLabel = if (action.error == null) stringResource(TextR.string.text_delete) else stringResource(TextR.string.text_retry_deletion),
         onDismiss = viewModel::dismissActions, onConfirm = viewModel::delete,
         destructive = true, busy = action.busy,
     )
@@ -105,5 +109,5 @@ private fun launchFileIntent(context: Context, event: LocalFileIntent) {
         clipData = ClipData.newRawUri(file.name, uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
-    context.startActivity(if (event.share) Intent.createChooser(intent, "分享「${file.title}」") else intent)
+    context.startActivity(if (event.share) Intent.createChooser(intent, appText(TextR.string.text_share, file.title)) else intent)
 }

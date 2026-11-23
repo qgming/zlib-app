@@ -1,5 +1,9 @@
 package com.qgming.zlib.core.designsystem
 
+import androidx.compose.ui.res.stringResource
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
@@ -32,13 +36,13 @@ fun ZlibBookTile(
     book: Book,
     onClick: (ZlibBookOpenRequest) -> Unit,
     onLongClick: (() -> Unit)? = null,
-    onLongClickLabel: String = "文件操作",
+    onLongClickLabel: String = stringResource(TextR.string.text_file_actions),
 ) {
     val source = if (LocalZlibBookSnapshotsEnabled.current) rememberCoverSource() else null
     BookTile(
         title = book.title, authors = book.authors, coverUrl = book.coverUrl,
         coverSource = source,
-        onClickLabel = "查看图书详情", onClick = { onClick(ZlibBookOpenRequest(book, source)) },
+        onClickLabel = stringResource(TextR.string.text_view_book_details), onClick = { onClick(ZlibBookOpenRequest(book, source)) },
         onLongClickLabel = onLongClickLabel, onLongClick = onLongClick,
     )
 }
@@ -47,8 +51,8 @@ fun ZlibBookTile(
 fun ZlibLocalFileTile(file: LocalFile, onClick: () -> Unit, onLongClick: () -> Unit) {
     BookTile(
         title = file.title, authors = file.book?.authors.orEmpty(), coverUrl = file.book?.coverUrl.orEmpty(),
-        onClickLabel = "打开本机文件", onClick = onClick,
-        onLongClickLabel = "文件操作", onLongClick = onLongClick,
+        onClickLabel = stringResource(TextR.string.text_open_local_file), onClick = onClick,
+        onLongClickLabel = stringResource(TextR.string.text_file_actions), onLongClick = onLongClick,
     )
 }
 

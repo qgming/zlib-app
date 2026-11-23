@@ -1,5 +1,8 @@
 package com.qgming.zlib.core.designsystem
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -14,11 +17,13 @@ import top.yukonga.miuix.kmp.icon.glass.Pause
 import top.yukonga.miuix.kmp.icon.glass.Play
 import top.yukonga.miuix.kmp.icon.glass.Refresh
 
-enum class ZlibDownloadAction(val label: String, internal val icon: ImageVector) {
-    Pause("暂停下载", MiuixIcons.Glass.Normal.Pause),
-    Resume("继续下载", MiuixIcons.Glass.Normal.Play),
-    Retry("重试下载", MiuixIcons.Glass.Normal.Refresh),
-    Remove("移除任务记录", MiuixIcons.Glass.Normal.Close),
+enum class ZlibDownloadAction(private val labelRes: Int, internal val icon: ImageVector) {
+    Pause(TextR.string.text_pause_download, MiuixIcons.Glass.Normal.Pause),
+    Resume(TextR.string.text_resume_download, MiuixIcons.Glass.Normal.Play),
+    Retry(TextR.string.text_retry_download, MiuixIcons.Glass.Normal.Refresh),
+    Remove(TextR.string.text_remove_task_record, MiuixIcons.Glass.Normal.Close);
+
+    val label: String get() = appText(labelRes)
 }
 
 @Composable

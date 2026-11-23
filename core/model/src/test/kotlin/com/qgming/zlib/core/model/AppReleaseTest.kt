@@ -45,4 +45,13 @@ class AppReleaseTest {
         assertNull(release.copy(apks = listOf(x86)).apkFor(listOf("arm64-v8a")))
         assertNull(release.copy(apks = listOf(universal, universal.copy(name = "second.apk"))).apkFor(listOf("arm64-v8a")))
     }
+
+    @Test fun `universal-only release is selected for every previously distributed ABI`() {
+        val universal = ReleaseApk("zhishi-1.3.0-universal.apk", "https://github.com/qgming/zlib-app/releases/download/v1.3.0/zhishi-1.3.0-universal.apk", 5_000_000)
+        val release = AppRelease("v1.3.0", "Release notes", "", apks = listOf(universal))
+        listOf(listOf("arm64-v8a", "armeabi-v7a"), listOf("arm64-v8a"), listOf("armeabi-v7a"), listOf("x86_64", "x86"), listOf("x86")).forEach { abis ->
+            assertEquals(universal, release.apkFor(abis), abis.toString())
+        }
+        assertTrue(compareReleaseVersions(release.tag, "1.2.0")!! > 0)
+    }
 }

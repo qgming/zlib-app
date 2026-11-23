@@ -70,6 +70,8 @@ order=popular       # 可选
 
 响应：`books[]` + `pagination.current` + `pagination.total_pages`。
 
+2026-11-23 后续匿名复测：`z101.by` 与 `z-library.ec` 对中文／英文关键词的仅 `message`、无筛选分页、单个排序、单个语言及多个筛选共 20 次请求，均返回 HTTP 400、`{"success":0,"error":"Access denied"}`；同日另测直连／代理结果一致，热门仍可返回书目。此记录不等同于用户手机有效会话的复核，也不证明所有账号或域名永久不可搜索。ADR-069 仅将此明确的搜索拒绝映射为“Z-library 拒绝搜索”，不改变参数、不改用网页或其它接口、不自动重试；中文 `拒绝访问` 采用相同映射。域名信息体检成功不代表搜索端点可用。
+
 `books[]` 的关键字段（服务端可能给字符串/数字/null）：
 
 ```json
@@ -370,6 +372,7 @@ z-library.website, zlib.bz
 
 | 现象 | 分类 | 客户端动作 |
 |---|---|---|
+| 搜索失败 envelope 的 `Access denied` / `拒绝访问` | `SearchRefused` | 显示“Z-library 拒绝搜索”；保留手动重试，不自动重试或判为会话过期 |
 | 400 + `Invalid credentials` / `Please login` | `SessionExpired` | 当前域重试一次；仍失败 → 重新登录 |
 | 400 + `Incorrect email or password` | `AuthFailed` | 提示凭据错误；不要重试 |
 | `Authorization failed`（登录） | `AuthFailed` | 引导 Cookie 导入 |

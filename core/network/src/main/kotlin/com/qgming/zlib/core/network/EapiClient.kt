@@ -1,5 +1,8 @@
 package com.qgming.zlib.core.network
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import com.qgming.zlib.core.common.AppDispatchers
 import com.qgming.zlib.core.common.AppErrorException
 import com.qgming.zlib.core.common.AppError
@@ -81,7 +84,7 @@ class EapiClient(
                     ?: ""
 
                 if (userId.isBlank() || userKey.isBlank()) {
-                    throw AppErrorException(AppError.Parse("登录成功但响应中缺少 remix 凭据"))
+                    throw AppErrorException(AppError.Parse(appText(TextR.string.text_signed_in_but_the_response_is_missing_remix_credentials)))
                 }
 
                 if (cookies[Session.USER_ID_COOKIE].isNullOrBlank()) cookies[Session.USER_ID_COOKIE] = userId
@@ -113,9 +116,9 @@ class EapiClient(
         bookList(EapiEndpoints.MOST_POPULAR, sessionProvider())
 
     suspend fun similarBooks(id: String, hash: String): AppResult<List<Book>> {
-        if (!BookMapper.isSafeRef(id, hash)) return AppResult.Failure(AppError.Parse("图书引用无效"))
+        if (!BookMapper.isSafeRef(id, hash)) return AppResult.Failure(AppError.Parse(appText(TextR.string.text_invalid_book_reference)))
         return execute("/eapi/book/$id/$hash/similar", null, sessionProvider(), isGet = true).mapCatching {
-            if (it.root.array("books") == null) throw AppErrorException(AppError.Parse("相似图书响应缺少 books 列表"))
+            if (it.root.array("books") == null) throw AppErrorException(AppError.Parse(appText(TextR.string.text_similar_books_response_is_missing_the_books_list)))
             BookMapper.listFrom(it.root).filterNot { book -> book.ref == "$id:$hash" }.distinctBy(Book::ref)
         }
     }
@@ -126,19 +129,19 @@ class EapiClient(
         val extensions = execute("/eapi/info/extensions", null, session = null, isGet = true)
         if (extensions is AppResult.Failure) return extensions
         return (languages as AppResult.Success).mapCatching { response ->
-            val languageObject = response.root.obj("languages") ?: throw AppErrorException(AppError.Parse("语言列表格式异常"))
+            val languageObject = response.root.obj("languages") ?: throw AppErrorException(AppError.Parse(appText(TextR.string.text_invalid_language_list)))
             val extensionArray = (extensions as AppResult.Success).value.root.array("extensions")
-                ?: throw AppErrorException(AppError.Parse("格式列表格式异常"))
+                ?: throw AppErrorException(AppError.Parse(appText(TextR.string.text_invalid_format_list)))
             val options = languageObject.map { (code, value) ->
-                val label = value.stringOrNull() ?: throw AppErrorException(AppError.Parse("语言名称无效"))
-                if (code.isBlank() || code.length > 80 || code.any { it.isISOControl() }) throw AppErrorException(AppError.Parse("语言代码无效"))
+                val label = value.stringOrNull() ?: throw AppErrorException(AppError.Parse(appText(TextR.string.text_invalid_language_name)))
+                if (code.isBlank() || code.length > 80 || code.any { it.isISOControl() }) throw AppErrorException(AppError.Parse(appText(TextR.string.text_invalid_language_code)))
                 SearchLanguage(code, label)
             }
             val formats = extensionArray.map {
                 it.stringOrNull()?.lowercase()?.takeIf { code -> code.matches(Regex("[a-z0-9]{1,20}")) }
-                    ?: throw AppErrorException(AppError.Parse("格式代码无效"))
+                    ?: throw AppErrorException(AppError.Parse(appText(TextR.string.text_invalid_format_code)))
             }.distinct()
-            if (options.isEmpty() || formats.isEmpty()) throw AppErrorException(AppError.Parse("筛选列表为空"))
+            if (options.isEmpty() || formats.isEmpty()) throw AppErrorException(AppError.Parse(appText(TextR.string.text_filter_options_are_empty)))
             SearchFilterOptions(options, formats)
         }
     }
@@ -150,7 +153,7 @@ class EapiClient(
         accountBooks(EapiEndpoints.DOWNLOADED, page, includeHistoryDate = true)
 
     suspend fun deleteDownloadHistory(id: String): AppResult<Unit> {
-        if (!NUMERIC_BOOK_ID.matches(id)) return AppResult.Failure(AppError.Parse("删除记录需要数字图书 ID"))
+        if (!NUMERIC_BOOK_ID.matches(id)) return AppResult.Failure(AppError.Parse(appText(TextR.string.text_deleting_a_record_requires_a_numeric_book_id)))
         val auth = sessionProvider() ?: return AppResult.Failure(AppError.NotLoggedIn)
         return execute(EapiEndpoints.deleteHistory(id), null, auth, isGet = true, allowRetry = false)
             .mapCatching { }
@@ -158,7 +161,7 @@ class EapiClient(
 
     /** Favorite membership is by numeric ID, including list entries without a download hash. */
     suspend fun isBookSaved(id: String): AppResult<Boolean> {
-        if (!NUMERIC_BOOK_ID.matches(id)) return AppResult.Failure(AppError.Parse("收藏需要数字图书 ID"))
+        if (!NUMERIC_BOOK_ID.matches(id)) return AppResult.Failure(AppError.Parse(appText(TextR.string.text_favorites_require_a_numeric_book_id)))
         val auth = sessionProvider() ?: return AppResult.Failure(AppError.NotLoggedIn)
         var page = 1
         while (true) {
@@ -166,16 +169,16 @@ class EapiClient(
             val result = execute("${EapiEndpoints.SAVED}?page=$page&limit=50", null, auth, isGet = true)
             if (result is AppResult.Failure) return result
             val root = (result as AppResult.Success).value.root
-            val books = root.array("books") ?: return AppResult.Failure(AppError.Parse("响应缺少 books 字段"))
+            val books = root.array("books") ?: return AppResult.Failure(AppError.Parse(appText(TextR.string.text_response_is_missing_the_books_field)))
             val ids = books.map { (it as? JsonObject)?.stringOrNull("id") }
             if (ids.any { it == id }) return AppResult.Success(true)
-            if (ids.any { it == null }) return AppResult.Failure(AppError.Parse("收藏列表缺少图书 ID"))
+            if (ids.any { it == null }) return AppResult.Failure(AppError.Parse(appText(TextR.string.text_the_favorites_list_is_missing_book_ids)))
             val pagination = root.obj("pagination")
             val current = pagination?.intOrNull("current")
             val total = pagination?.intOrNull("total_pages")
             if (page == 1 && books.isEmpty() && total == 0) return AppResult.Success(false)
             if (current != page || total == null || total < current) {
-                return AppResult.Failure(AppError.Parse("无法确认收藏列表的分页状态"))
+                return AppResult.Failure(AppError.Parse(appText(TextR.string.text_cannot_determine_favorites_pagination)))
             }
             if (current == total) return AppResult.Success(false)
             page++
@@ -183,7 +186,7 @@ class EapiClient(
     }
 
     suspend fun setBookSaved(id: String, saved: Boolean): AppResult<Unit> {
-        if (!NUMERIC_BOOK_ID.matches(id)) return AppResult.Failure(AppError.Parse("收藏需要数字图书 ID"))
+        if (!NUMERIC_BOOK_ID.matches(id)) return AppResult.Failure(AppError.Parse(appText(TextR.string.text_favorites_require_a_numeric_book_id)))
         val auth = sessionProvider() ?: return AppResult.Failure(AppError.NotLoggedIn)
         val path = if (saved) EapiEndpoints.saveBook(id) else EapiEndpoints.unsaveBook(id)
         return execute(path, null, auth, isGet = true).mapCatching { Unit }
@@ -195,7 +198,7 @@ class EapiClient(
         return execute("$path?page=$requestedPage&limit=50", form = null, session = auth, isGet = true)
             .mapCatching { exchange ->
                 if (exchange.root.array("books") == null) {
-                    throw AppErrorException(AppError.Parse("响应缺少 books 字段"))
+                    throw AppErrorException(AppError.Parse(appText(TextR.string.text_response_is_missing_the_books_field)))
                 }
                 exchange.root.toBookPage(requestedPage, includeHistoryDate)
             }
@@ -214,7 +217,7 @@ class EapiClient(
         session = null,
         isGet = true,
     ).mapCatching { exchange ->
-        val array = exchange.root.array("domains") ?: throw AppErrorException(AppError.Parse("缺少 domains 字段"))
+        val array = exchange.root.array("domains") ?: throw AppErrorException(AppError.Parse(appText(TextR.string.text_response_is_missing_the_domains_field)))
         val hosts = array.mapNotNull { element ->
             val raw = element.stringOrNull()
                 ?: (element as? JsonObject)?.let {
@@ -229,7 +232,7 @@ class EapiClient(
 
     suspend fun search(query: SearchQuery, page: Int = 1, limit: Int = 50): AppResult<BookPage> {
         if (query.message.isBlank()) {
-            return AppResult.Failure(AppError.Parse("搜索关键词不能为空"))
+            return AppResult.Failure(AppError.Parse(appText(TextR.string.text_search_keywords_cannot_be_empty)))
         }
         val requestedPage = page.coerceAtLeast(1)
         val builder = FormBody.Builder()
@@ -243,8 +246,20 @@ class EapiClient(
         query.languages.forEach { builder.add("languages[]", it.lowercase()) }
         query.extensions.forEach { builder.add("extensions[]", it.lowercase()) }
 
-        return execute(EapiEndpoints.SEARCH, builder.build(), sessionProvider())
-            .mapCatching { exchange -> exchange.root.toBookPage(requestedPage) }
+        return when (val result = execute(EapiEndpoints.SEARCH, builder.build(), sessionProvider())
+            .mapCatching { exchange -> exchange.root.toBookPage(requestedPage) }) {
+            is AppResult.Success -> result
+            is AppResult.Failure -> {
+                val error = result.error
+                if (error is AppError.Server &&
+                    (error.message.equals("Access denied", ignoreCase = true) || error.message == "拒绝访问")
+                ) {
+                    AppResult.Failure(AppError.SearchRefused)
+                } else {
+                    result
+                }
+            }
+        }
     }
 
     private fun JsonObject.toBookPage(requestedPage: Int, includeHistoryDate: Boolean = false): BookPage {
@@ -261,29 +276,29 @@ class EapiClient(
 
     suspend fun bookDetail(id: String, hash: String): AppResult<Book> {
         if (!BookMapper.isSafeRef(id, hash)) {
-            return AppResult.Failure(AppError.Parse("图书 ID 或 hash 无效"))
+            return AppResult.Failure(AppError.Parse(appText(TextR.string.text_invalid_book_id_or_hash)))
         }
         val auth = sessionProvider()
         return execute(EapiEndpoints.detail(id, hash), null, auth, isGet = true)
             .mapCatching { exchange ->
                 val obj = exchange.root.obj("book") ?: exchange.root
-                BookMapper.fromJson(obj) ?: throw AppErrorException(AppError.Parse("详情缺少 id/hash"))
+                BookMapper.fromJson(obj) ?: throw AppErrorException(AppError.Parse(appText(TextR.string.text_book_details_are_missing_an_id_or_hash)))
             }
     }
 
     suspend fun bookFormats(id: String, hash: String): AppResult<List<BookFormat>> {
-        if (!BookMapper.isSafeRef(id, hash)) return AppResult.Failure(AppError.Parse("图书 ID 或 hash 无效"))
+        if (!BookMapper.isSafeRef(id, hash)) return AppResult.Failure(AppError.Parse(appText(TextR.string.text_invalid_book_id_or_hash)))
         val auth = sessionProvider() ?: return AppResult.Failure(AppError.NotLoggedIn)
         return execute(EapiEndpoints.formats(id, hash), null, auth, isGet = true).mapCatching { exchange ->
             val rows = exchange.root.array("books")
-                ?: throw AppErrorException(AppError.Parse("格式响应缺少 books 列表"))
+                ?: throw AppErrorException(AppError.Parse(appText(TextR.string.text_format_response_is_missing_the_books_list)))
             val formats = rows.map { element ->
                 val row = element as? JsonObject
                 val formatId = row?.stringOrNull("id").orEmpty()
                 val formatHash = row?.stringOrNull("hash").orEmpty()
                 val extension = row?.stringOrNull("extension").orEmpty().trim().lowercase()
                 if (!BookMapper.isSafeRef(formatId, formatHash) || !FILE_EXTENSION.matches(extension)) {
-                    throw AppErrorException(AppError.Parse("格式列表包含无效文件信息，请重试"))
+                    throw AppErrorException(AppError.Parse(appText(TextR.string.text_the_format_list_contains_invalid_file_information_please_retry)))
                 }
                 BookFormat(
                     id = formatId,
@@ -329,7 +344,7 @@ class EapiClient(
             } catch (blocked: BlockedRedirectException) {
                 Outcome.Err(AppError.DomainBlocked(DomainStatus.INVALID), retryable = false)
             } catch (illegal: IllegalArgumentException) {
-                Outcome.Err(AppError.Parse("请求参数无效"), retryable = false)
+                Outcome.Err(AppError.Parse(appText(TextR.string.text_invalid_request_parameters)), retryable = false)
             } catch (io: IOException) {
                 Outcome.Err(AppError.Network(io), retryable = true)
             }
@@ -381,7 +396,7 @@ class EapiClient(
             val code = response.code
             val body = response.body?.string().orEmpty()
             if (!allowRetry && response.isRedirect) {
-                return Outcome.Err(AppError.Server(code, "删除请求发生重定向，请刷新记录后重试"), retryable = false)
+                return Outcome.Err(AppError.Server(code, appText(TextR.string.text_the_delete_request_was_redirected_refresh_history_and_retry)), retryable = false)
             }
             val setCookies = response.headers.values("Set-Cookie")
             val root = parseObject(body)
@@ -391,7 +406,7 @@ class EapiClient(
                     1 -> return Outcome.Ok(Exchange(root, setCookies, code))
                     0 -> return Outcome.Err(mapEnvelopeError(root, code), retryable = false)
                     else -> if (code in 200..299) {
-                        return Outcome.Err(AppError.Parse("响应缺少 success 字段"), retryable = false)
+                        return Outcome.Err(AppError.Parse(appText(TextR.string.text_response_is_missing_the_success_field)), retryable = false)
                     }
                 }
             }
@@ -403,16 +418,16 @@ class EapiClient(
                 return Outcome.Err(AppError.DomainBlocked(DomainStatus.CHALLENGED), retryable = false)
             }
             if (code == 502 || code == 503 || code == 504) {
-                return Outcome.Err(AppError.Server(code, "服务暂时不可用（HTTP $code）"), retryable = true)
+                return Outcome.Err(AppError.Server(code, appText(TextR.string.text_service_temporarily_unavailable_http, code)), retryable = true)
             }
             if (code == 401 || code == 403) {
                 return Outcome.Err(AppError.DomainBlocked(DomainStatus.CHALLENGED), retryable = false)
             }
             return Outcome.Err(
                 error = if (code in 200..299) {
-                    AppError.Parse("服务器返回了非 JSON 响应")
+                    AppError.Parse(appText(TextR.string.text_the_server_returned_a_non_json_response))
                 } else {
-                    AppError.Server(code, "请求失败（HTTP $code）")
+                    AppError.Server(code, appText(TextR.string.text_request_failed_http, code))
                 },
                 retryable = false,
             )
@@ -432,7 +447,7 @@ class EapiClient(
 
             lower.contains("incorrect email or password") -> AppError.AuthFailed(message)
             lower.contains("authorization failed") -> AppError.AuthFailed(message)
-            else -> AppError.Server(httpCode, message.ifBlank { "请求失败（HTTP $httpCode）" })
+            else -> AppError.Server(httpCode, message.ifBlank { appText(TextR.string.text_request_failed_http_2, httpCode) })
         }
     }
 

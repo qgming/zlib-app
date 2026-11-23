@@ -1,5 +1,9 @@
 package com.qgming.zlib.feature.detail
 
+import androidx.compose.ui.res.stringResource
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -96,14 +100,14 @@ fun DetailScreen(
                     clipData = ClipData.newRawUri(file.book.title, uri)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 })
-            } catch (_: ActivityNotFoundException) { notice = "没有可打开此格式的应用，请安装阅读器" }
-            catch (_: SecurityException) { notice = "无法访问文件，请重新授权下载目录" }
+            } catch (_: ActivityNotFoundException) { notice = appText(TextR.string.text_no_app_can_open_this_format_please_install_a_reader) }
+            catch (_: SecurityException) { notice = appText(TextR.string.text_cannot_access_the_file_grant_download_folder_access_again) }
         }
     }
     LaunchedEffect(state.book) { if (state.book == null) notice = null }
 
     ZlibPage(
-        title = "图书详情",
+        title = stringResource(TextR.string.text_book_details),
         onBack = onBack,
         actions = {
             ZlibBookInfoButton(enabled = state.book != null, onClick = { showInfo = true })
@@ -115,7 +119,7 @@ fun DetailScreen(
             if (book == null) {
                 fullWidthItem("detail-loading") {
                     if (error != null) {
-                        ZlibStateCard(title = "无法加载图书详情", message = error, onAction = viewModel::retry)
+                        ZlibStateCard(title = stringResource(TextR.string.text_cannot_load_book_details), message = error, onAction = viewModel::retry)
                     } else {
                         ZlibLoading()
                     }
@@ -123,14 +127,14 @@ fun DetailScreen(
             } else {
                 favorite.error?.let { message ->
                     fullWidthItem("favorite-error") {
-                        ZlibStateCard("无法同步收藏", message, onAction = favoriteViewModel::retry)
+                        ZlibStateCard(stringResource(TextR.string.text_cannot_sync_favorites), message, onAction = favoriteViewModel::retry)
                     }
                 }
                 fullWidthItem("detail-header") { BookHeader(book, onSearchContributor) }
                 if (state.book == null) {
                     fullWidthItem("detail-error") {
                         if (error != null) {
-                            ZlibStateCard("无法加载图书详情", error, onAction = viewModel::retry)
+                            ZlibStateCard(stringResource(TextR.string.text_cannot_load_book_details), error, onAction = viewModel::retry)
                         } else {
                             ZlibLoading()
                         }
@@ -151,12 +155,12 @@ fun DetailScreen(
                 }
                 if (state.book != null) {
                     if (similar.loading || similar.error != null || similar.books.isNotEmpty()) {
-                        fullWidthItem("similar-heading") { ZlibSectionTitle("相似图书") }
+                        fullWidthItem("similar-heading") { ZlibSectionTitle(stringResource(TextR.string.text_similar_books)) }
                     }
                     when {
                         similar.loading -> fullWidthItem("similar-loading") { ZlibLoading() }
                         similar.error != null -> fullWidthItem("similar-error") {
-                            ZlibStateCard("无法加载相似图书", similar.error.orEmpty(), onAction = similarViewModel::retry)
+                            ZlibStateCard(stringResource(TextR.string.text_cannot_load_similar_books), similar.error.orEmpty(), onAction = similarViewModel::retry)
                         }
                         else -> items(similar.books, key = { "similar-${it.ref}" }) { similarBook ->
                             ZlibBookTile(book = similarBook, onClick = onOpenBook)
@@ -166,10 +170,10 @@ fun DetailScreen(
             }
         }
 
-        ZlibGlassBottomSheet(show = showInfo && state.book != null, title = "书籍信息", onDismiss = { showInfo = false }) {
+        ZlibGlassBottomSheet(show = showInfo && state.book != null, title = stringResource(TextR.string.text_book_information), onDismiss = { showInfo = false }) {
             state.book?.let { BookInfoPanel(it) }
         }
-        ZlibGlassBottomSheet(show = state.formats != null, title = "选择下载格式", onDismiss = viewModel::dismissFormats) {
+        ZlibGlassBottomSheet(show = state.formats != null, title = stringResource(TextR.string.text_choose_download_format), onDismiss = viewModel::dismissFormats) {
             state.formats?.let { menu ->
                 Column(
                     Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
@@ -177,7 +181,7 @@ fun DetailScreen(
                 ) {
                     when {
                         menu.loading -> ZlibLoading()
-                        menu.error != null -> ZlibStateCard("无法获取其他格式", menu.error, onAction = viewModel::showFormats)
+                        menu.error != null -> ZlibStateCard(stringResource(TextR.string.text_cannot_load_other_formats), menu.error, onAction = viewModel::showFormats)
                     }
                     menu.options.forEach { format ->
                         val size = format.sizeText.ifBlank { format.sizeBytes?.sizeText().orEmpty() }
@@ -185,8 +189,8 @@ fun DetailScreen(
                         val label = listOfNotNull(
                             format.extension.uppercase(),
                             size.takeIf(String::isNotBlank),
-                            "当前格式".takeIf { format.ref == state.book?.ref },
-                            "文件 ${format.id}".takeIf { duplicateExtension },
+                            stringResource(TextR.string.text_current_format).takeIf { format.ref == state.book?.ref },
+                            stringResource(TextR.string.text_file, format.id).takeIf { duplicateExtension },
                         ).joinToString(" · ")
                         ZlibMenuAction(
                             text = label, enabled = !menu.loading && !state.enqueuing,
@@ -194,15 +198,15 @@ fun DetailScreen(
                         )
                     }
                     if (!menu.loading && menu.options.isEmpty()) {
-                        Text("暂无可下载的格式", style = MiuixTheme.textStyles.body2)
+                        Text(stringResource(TextR.string.text_no_downloadable_formats), style = MiuixTheme.textStyles.body2)
                     }
                 }
             }
         }
-        ZlibGlassBottomSheet(show = state.existing != null, title = "本机已有此文件", onDismiss = viewModel::dismissExisting) {
+        ZlibGlassBottomSheet(show = state.existing != null, title = stringResource(TextR.string.text_file_already_exists_locally), onDismiss = viewModel::dismissExisting) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                ZlibMenuAction("打开已有文件", onClick = viewModel::openExisting)
-                ZlibMenuAction("重新下载并保留已有文件", onClick = viewModel::redownload)
+                ZlibMenuAction(stringResource(TextR.string.text_open_existing_file), onClick = viewModel::openExisting)
+                ZlibMenuAction(stringResource(TextR.string.text_download_again_and_keep_the_existing_file), onClick = viewModel::redownload)
             }
         }
     }
@@ -260,7 +264,7 @@ private fun ContributorText(authors: String, onSearch: (String) -> Unit) {
         names.forEach { name ->
             addLink(
                 LinkAnnotation.Clickable(
-                    tag = "搜索作者：${name.query}",
+                    tag = appText(TextR.string.text_search_author, name.query),
                     styles = TextLinkStyles(style = SpanStyle(color = blue, fontWeight = FontWeight.Medium)),
                     linkInteractionListener = { onSearch(name.query) },
                 ),
@@ -294,24 +298,24 @@ private fun BookActions(
                 enabled = !downloading,
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColorsPrimary(),
-            ) { Text("下载图书") }
+            ) { Text(stringResource(TextR.string.text_download_book)) }
             Button(
                 onClick = onFavorite,
                 enabled = favorite.saved != null && !favorite.busy,
                 modifier = Modifier.weight(1f).semantics {
                     selected = favorite.saved == true
                     stateDescription = when {
-                        favorite.busy -> "正在同步收藏"
-                        favorite.saved == true -> "已收藏，点击取消收藏"
-                        favorite.saved == false -> "未收藏"
-                        else -> "收藏状态未知"
+                        favorite.busy -> appText(TextR.string.text_syncing_favorites)
+                        favorite.saved == true -> appText(TextR.string.text_saved_tap_to_remove_from_favorites)
+                        favorite.saved == false -> appText(TextR.string.text_not_saved)
+                        else -> appText(TextR.string.text_favorite_status_unknown)
                     }
                 },
                 colors = if (favorite.saved == true) ButtonDefaults.buttonColors(
                     color = Color(0xFFE53935).copy(alpha = 0.1f),
                     contentColor = Color(0xFFE53935),
                 ) else ButtonDefaults.buttonColors(),
-            ) { Text(if (favorite.saved == true) "已收藏" else "添加收藏") }
+            ) { Text(if (favorite.saved == true) stringResource(TextR.string.text_saved) else stringResource(TextR.string.text_add_to_favorites)) }
         }
         if (message != null) {
             Text(
@@ -332,14 +336,14 @@ private fun BookInfoPanel(book: Book) {
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState()),
         ) {
-            MetaRow("出版社", book.publisher)
-            MetaRow("出版年份", book.year)
-            MetaRow("语言", book.language)
-            MetaRow("版次", book.edition)
-            MetaRow("页数", book.pages?.toString().orEmpty())
+            MetaRow(stringResource(TextR.string.text_publisher), book.publisher)
+            MetaRow(stringResource(TextR.string.text_publication_year), book.year)
+            MetaRow(stringResource(TextR.string.text_language), book.language)
+            MetaRow(stringResource(TextR.string.text_edition), book.edition)
+            MetaRow(stringResource(TextR.string.text_pages), book.pages?.toString().orEmpty())
             MetaRow("ISBN-10", book.isbn10)
             MetaRow("ISBN-13", book.isbn13)
-            MetaRow("分类", book.categories.joinToString(" / "))
+            MetaRow(stringResource(TextR.string.text_categories), book.categories.joinToString(" / "))
         }
     }
 }
@@ -349,7 +353,7 @@ private fun DescriptionCard(description: String) {
     val formatted = remember(description) { AnnotatedString.fromHtml(BookDescription.html(description)) }
     if (formatted.isBlank()) return
     ZlibCard {
-        Text("简介", style = MiuixTheme.textStyles.title4)
+        Text(stringResource(TextR.string.text_description), style = MiuixTheme.textStyles.title4)
         Spacer(Modifier.height(12.dp))
         SelectionContainer {
             Text(

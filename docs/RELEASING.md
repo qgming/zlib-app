@@ -7,26 +7,24 @@
 `app/build.gradle.kts` 的 `appVersionName` 使用 SemVer，`appVersionCode` 每次公开发布递增。
 Git 标签为 `v<appVersionName>`，例如 `v1.0.0`。同一版本的所有架构与通用包使用相同 versionCode，便于互相覆盖安装和后续更新。
 
-当前版本为 `1.2.0`（`versionCode=4`），已于2026-11-23发布为 `v1.2.0`，标签指向构建源码提交 `5784a9862152041539a65b3506852e0dabcc2222`。上一正式版本 `1.1.0`（`versionCode=3`）于同日发布为 `v1.1.0`，标签指向 `6c1ccb2103990b4d8fe8fed4dc8eeed4102b96ac`。
+当前开发版本为 `1.3.0`（`versionCode=5`），尚未创建标签或发布。最新正式版为2026-11-23发布的 `v1.2.0`（`versionCode=4`），标签指向构建源码提交 `5784a9862152041539a65b3506852e0dabcc2222`。上一正式版本 `1.1.0`（`versionCode=3`）于同日发布为 `v1.1.0`，标签指向 `6c1ccb2103990b4d8fe8fed4dc8eeed4102b96ac`。
+
+按ADR-071/072/074，1.3.0起只打包并交付正式通用APK；本机构建与公开发布独立记录，不把本地打包视为已发布。1.3.0日志在 `docs/releases/v1.3.0.txt`，开头含移动端搜索服务异常声明；用户已确认并授权全部提交、推送、打标签和正式发布（ADR-075），发布后的事实独立补充。
 
 ## 构建
 
 使用 AGENTS.md 规定的工具链，并在本机通过未提交的 `key.properties` 配置原签名。
 
 ```powershell
-.\gradlew.bat test lint :app:prepareReleaseAssets -PsplitApks=true
+.\gradlew.bat test lint :app:prepareReleaseAssets
 ```
 
-`app/build/release/` 生成以下独立可安装包，而非要求组合安装的 split APK：
+`app/build/release/` 只生成以下单一可安装包与校验文件：
 
-- `zhishi-<version>-arm64-v8a.apk`
-- `zhishi-<version>-armeabi-v7a.apk`
-- `zhishi-<version>-x86_64.apk`
-- `zhishi-<version>-x86.apk`
 - `zhishi-<version>-universal.apk`
 - `SHA256SUMS.txt`
 
-普通调试构建不带 `-PsplitApks=true`，仍输出一个通用 APK。
+通用包包含 `arm64-v8a`、`armeabi-v7a`、`x86_64`、`x86` 四种架构。ABI拆分已关闭，不再使用 `-PsplitApks=true`；任务只收集 `app-release.apk` 并同步输出目录，避免残留旧架构包。日常构建不附带 `:app:assembleDebug`，不生成调试APK；只有用户另行明确要求时才单独构建调试包。已发布1.0.0–1.2.0的五包记录保留，不替换线上旧资产。
 正式包启用 R8 代码优化及资源裁剪，依赖的 consumer rules 自动合并；SharedView Kit 的 ROM 接口及占位实现必须保留。`app/build/outputs/mapping/release/` 保留 mapping 供发布版本问题定位，不上传为 APK 资产。
 
 ## 校验
@@ -34,19 +32,20 @@ Git 标签为 `v<appVersionName>`，例如 `v1.0.0`。同一版本的所有架�
 1. `test`、`lint` 通过；保留已知 warning 的记录，不将未实测设备标为已验收。
 2. 对每个 APK 执行 SDK `apksigner verify --verbose --print-certs`，确认各包及已安装版本的签名一致。
 3. 用 `aapt dump badging` 检查包名、versionName、versionCode、minSdk、targetSdk，正式包不得含 `debuggable`。
-4. 检查 ZIP 内 `lib/<abi>/` 仅包含对应架构；universal 包应包含四种架构，且各包原生库完整。
+4. 检查通用APK的 ZIP 内 `lib/<abi>/` 包含四种架构，且各架构原生库完整。
 5. 用 `zipalign -c -P 16 -v 4 <apk>` 检查 APK 对齐；核对 `SHA256SUMS.txt`。
-6. 在设备上覆盖安装相应架构版本；不能仅凭构建成功宣称所有 ABI 真机测试通过。
+6. 从旧独立架构版覆盖安装新通用版，验证数据保留；不能仅凭构建成功宣称所有ABI或真实线上更新链路已验收。
 
 ## 上传
 
 提交前检查 `git diff --cached`，禁止提交本机配置、密钥、凭据、下载文件、构建目录及 APK。
-将代码推送到 main，创建对应标签，再通过 GitHub Releases 上传五个 APK 和校验文件。
+将代码推送到 main，创建对应标签，再通过 GitHub Releases 上传一个通用 APK 和校验文件。
 先上传为 draft 并核对完整性，确认后发布为正式版本；更新正文保存在 `docs/releases/<tag>.txt`，使用纯文本，可用“1、”等序号，不使用Markdown标题、项目符号或强调语法，并与线上保持一致。正文按“功能／优化／修复”分组，只写用户能感知的行为变化；不写安装步骤、架构选择、签名与校验说明，这些内容由 README 与下载页承担。v1.0.0、v1.1.0 的正文已校正为该格式，GitHub 上已发布的旧正文需同步更新到一致。
 
 ## 应用内更新
 
 客户端仅查询公开正式 Release，排除 draft 和 prerelease。按设备支持顺序选择文件名中含精确 ABI 的 APK，找不到时回退唯一通用包。
+该行为已存在于正式1.2.0，因此其arm64-v8a等独立安装包能直接更新到只提供 `zhishi-1.3.0-universal.apk` 的Release，不需要过渡版本。Release中只能有一个没有ABI后缀的APK，避免通用候选不唯一；非APK的校验文件和更新日志不参与候选。
 APK 的包名、签名须匹配已安装应用，versionCode 必须更大，versionName 须匹配 Release 标签。GitHub 返回资产摘要时同时校验 SHA-256。
 下载在用户点击更新后才开始，完成后保存在已授权 SAF 下载目录；用户再次点击安装，由系统确认。不会静默安装。
 
@@ -77,3 +76,12 @@ APK 的包名、签名须匹配已安装应用，versionCode 必须更大，vers
 - 本次发布时本机无已连接设备，未进行覆盖安装与真机回归，不标记任何ABI为真机通过；旧版到新版的安装链路仍需后续带设备验收。
 - 更新正文为 `docs/releases/v1.2.0.txt`；同时把已发布的 v1.0.0、v1.1.0 正文改为同格式纯文本（去掉安装说明），线上已同步替换。
 - 2026-11-23 发布 `https://github.com/qgming/zlib-app/releases/tag/v1.2.0`，非草稿、非预发布并标记为Latest。七个附件包括五种APK、SHA256SUMS.txt及v1.2.0.txt；草稿阶段核对名称、字节数与正文，发布后重新下载全部APK逐一比对SHA-256均一致。
+
+## 1.3.0 本地构建记录（未发布）
+
+- 2026-11-24执行 `test lint :app:assembleDebug :app:prepareReleaseAssets --max-workers=1` 成功；274项单测通过，失败、错误、跳过均为0，13个当前模块lint无issue。
+- 输出仅含 `zhishi-1.3.0-universal.apk`（4,905,150字节）与 `SHA256SUMS.txt`，旧架构产物已由Sync输出同步移除。SHA-256为 `ac102b57e42b31cc211e805ba9f76a1fef9a0689a0ecdfceed0aae51001b23db`。
+- 原签名证书SHA-256 d964fb1414f44fc8eb0f4a3c4835a5c8fb70e4527e3f039bc70b0e1ccaca032e；包名com.qgming.zlib、versionName1.3.0/versionCode5、minSdk33、targetSdk37、非debuggable。四种原生ABI、16KB ZIP对齐、校验和及六份离线许可资产全文均已核对。
+- 正式通用包已在emulator-5554覆盖安装成功，系统版本复核为1.3.0/code5，未清除应用数据。用户在此次改名之前确认中英文测试正常；最新“发现 / Discover”已核对APK资源。其它ABI真机和线上旧版到新版的应用内安装链路仍需发布后验收。
+- 本次仅本地构建与安装，未创建标签、推送或公开发布；线上最新正式版仍为v1.2.0。
+- 用户随后要求今后仅打包正式通用版，本轮执行 `:app:prepareReleaseAssets --max-workers=1` 成功（17秒），未附带调试APK构建；正式包与上述SHA-256一致。README与1.3.0日志草稿已准备，等待用户确认日志及后续命令。

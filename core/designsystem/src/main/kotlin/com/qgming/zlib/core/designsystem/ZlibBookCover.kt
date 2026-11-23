@@ -1,5 +1,9 @@
 package com.qgming.zlib.core.designsystem
 
+import androidx.compose.ui.res.stringResource
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -111,7 +115,7 @@ private fun ClassicBookCover(title: String, authors: String, modifier: Modifier)
         ) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Text(
-                    text = title.trim().ifBlank { "未命名" },
+                    text = title.trim().ifBlank { stringResource(TextR.string.text_untitled) },
                     fontFamily = FontFamily.Serif,
                     fontWeight = FontWeight.Medium,
                     fontSize = titleSize.sp,
@@ -126,7 +130,7 @@ private fun ClassicBookCover(title: String, authors: String, modifier: Modifier)
             Spacer(Modifier.fillMaxWidth(0.3f).height(0.5.dp).background(CoverGold))
             Spacer(Modifier.height(ruleBottomGap))
             Text(
-                text = authors.trim().ifBlank { "作者不详" },
+                text = authors.trim().ifBlank { stringResource(TextR.string.text_unknown_author) },
                 fontFamily = FontFamily.Serif,
                 fontSize = authorSize.sp,
                 lineHeight = (authorSize * 1.4f).sp,

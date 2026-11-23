@@ -1,5 +1,8 @@
 package com.qgming.zlib.core.data.download
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import android.content.Context
 import androidx.documentfile.provider.DocumentFile
 import com.qgming.zlib.core.common.AppDispatchers
@@ -68,7 +71,7 @@ class DownloadEngine @Inject constructor(
         directoryStore.ensureLoaded()
         val tree = directoryStore.tree()
             ?: return failed(
-                AppError.Storage(IOException("下载目录不可用，请在设置中重新选择并授权")),
+                AppError.Storage(IOException(appText(TextR.string.text_download_folder_unavailable_select_and_authorize_it_again_in_settings))),
                 DownloadCodes.STORAGE_PERMISSION,
             )
 
@@ -76,7 +79,7 @@ class DownloadEngine @Inject constructor(
         val existing = tree.findFile(partName)
         if (existing != null && !existing.isFile) {
             return failed(
-                AppError.Storage(IOException("下载临时文件位置被占用，请检查下载目录")),
+                AppError.Storage(IOException(appText(TextR.string.text_the_temporary_file_location_is_occupied_check_the_download_folder))),
                 DownloadCodes.STORAGE,
             )
         }
@@ -86,7 +89,7 @@ class DownloadEngine @Inject constructor(
             if (t is CancellationException) throw t
             return failed(AppError.Storage(t), storageCode(t))
         } ?: return failed(
-            AppError.Storage(IOException("无法创建下载临时文件，请检查目录授权")),
+            AppError.Storage(IOException(appText(TextR.string.text_cannot_create_a_temporary_download_file_check_folder_permissions))),
             DownloadCodes.STORAGE_PERMISSION,
         )
 
@@ -94,7 +97,7 @@ class DownloadEngine @Inject constructor(
         val offset = DownloadRange.resumeOffset(readStatSize(part))
         val partPrefix = if (offset > 0) {
             readPrefix(part) ?: return failed(
-                AppError.Storage(IOException("无法读取续传文件，请检查目录授权")),
+                AppError.Storage(IOException(appText(TextR.string.text_cannot_read_the_partial_download_check_folder_permissions))),
                 DownloadCodes.STORAGE_PERMISSION,
             )
         } else {
@@ -116,7 +119,7 @@ class DownloadEngine @Inject constructor(
                 // A stale or already-complete part cannot be validated by size; restart from zero.
                 runCatching { part.delete() }
                 return failed(
-                    AppError.Server(416, "续传文件已失效，将从零重新下载"),
+                    AppError.Server(416, appText(TextR.string.text_the_partial_file_is_no_longer_valid_the_download_will_restart)),
                     DownloadCodes.RANGE,
                 )
             }
@@ -130,10 +133,10 @@ class DownloadEngine @Inject constructor(
                 val body = runCatching { resp.body.string() }.getOrDefault("")
                 val lower = body.lowercase()
                 return if (lower.contains("daily limit") || lower.contains("daily download")) {
-                    failed(AppError.Quota(null, "今日下载额度已用完"), DownloadCodes.QUOTA)
+                    failed(AppError.Quota(null, appText(TextR.string.text_daily_download_quota_exhausted)), DownloadCodes.QUOTA)
                 } else {
                     failed(
-                        AppError.Server(resp.code, "下载返回了网页，请切换域名后重试"),
+                        AppError.Server(resp.code, appText(TextR.string.text_the_download_returned_a_web_page_switch_domains_and_retry)),
                         DownloadCodes.INVALID,
                     )
                 }
@@ -160,13 +163,13 @@ class DownloadEngine @Inject constructor(
             val append = offset > 0 && check is DownloadCheck.Append
             if (append && !looksLikeBook(partPrefix, contentExtension)) {
                 runCatching { part.delete() }
-                return failed(AppError.Parse("续传文件已损坏，已清理，请重试"), DownloadCodes.INVALID)
+                return failed(AppError.Parse(appText(TextR.string.text_the_damaged_partial_file_was_removed_please_retry)), DownloadCodes.INVALID)
             }
             if (!append) {
                 val prefix = runCatching { resp.peekBody(8).bytes() }.getOrDefault(ByteArray(0))
                 if (!looksLikeBook(prefix, contentExtension)) {
                     return failed(
-                        AppError.Server(resp.code, "下载内容不是有效图书文件"),
+                        AppError.Server(resp.code, appText(TextR.string.text_the_download_is_not_a_valid_book_file)),
                         DownloadCodes.INVALID,
                     )
                 }
@@ -194,7 +197,7 @@ class DownloadEngine @Inject constructor(
                 if (t is CancellationException) throw t
                 return failed(AppError.Storage(t), storageCode(t))
             } ?: return failed(
-                AppError.Storage(IOException("无法写入下载临时文件，请检查目录授权")),
+                AppError.Storage(IOException(appText(TextR.string.text_cannot_write_the_temporary_file_check_folder_permissions))),
                 DownloadCodes.STORAGE_PERMISSION,
             )
 
@@ -216,11 +219,11 @@ class DownloadEngine @Inject constructor(
                 throw cancelled
             } catch (incomplete: DownloadIncompleteException) {
                 return failed(
-                    AppError.Parse("下载不完整，已保留进度，可重试续传"),
+                    AppError.Parse(appText(TextR.string.text_download_incomplete_progress_is_saved_retry_to_resume)),
                     DownloadCodes.INCOMPLETE,
                 )
             } catch (empty: DownloadEmptyException) {
-                return failed(AppError.Parse("下载内容为空，请重试"), DownloadCodes.INCOMPLETE)
+                return failed(AppError.Parse(appText(TextR.string.text_the_download_is_empty_please_retry)), DownloadCodes.INCOMPLETE)
             } catch (read: DownloadReadException) {
                 coroutineContext.ensureActive()
                 return failed(AppError.Network(read), DownloadCodes.NETWORK)
@@ -239,17 +242,17 @@ class DownloadEngine @Inject constructor(
             when (val verdict = DownloadRange.completion(check, offset, sessionWritten)) {
                 CompletionCheck.Complete -> Unit
                 is CompletionCheck.Short -> return failed(
-                    AppError.Parse("下载不完整，已保留进度，可重试续传"),
+                    AppError.Parse(appText(TextR.string.text_download_incomplete_progress_is_saved_retry_to_resume)),
                     DownloadCodes.INCOMPLETE,
                 )
 
                 is CompletionCheck.UnknownTotal -> return failed(
-                    AppError.Parse("无法确认下载是否完整，请重试"),
+                    AppError.Parse(appText(TextR.string.text_cannot_verify_download_completeness_please_retry)),
                     DownloadCodes.INCOMPLETE,
                 )
 
                 is CompletionCheck.Mismatch -> return failed(
-                    AppError.Parse("下载大小与响应不一致，请重试"),
+                    AppError.Parse(appText(TextR.string.text_download_size_does_not_match_the_response_please_retry)),
                     DownloadCodes.INVALID,
                 )
             }
@@ -257,7 +260,7 @@ class DownloadEngine @Inject constructor(
             val total = expectedTotal ?: (progressBase + sessionWritten)
             val actualSize = readStatSize(part)?.takeIf { it >= 0 }
             if (actualSize != null && actualSize != total) {
-                return failed(AppError.Parse("文件实际大小与下载结果不一致，请重试"), DownloadCodes.INVALID)
+                return failed(AppError.Parse(appText(TextR.string.text_actual_file_size_does_not_match_the_download_please_retry)), DownloadCodes.INVALID)
             }
             return finalize(tree, part, item, suggestedName, total)
         }
@@ -296,16 +299,16 @@ class DownloadEngine @Inject constructor(
             if (t is CancellationException) throw t
             return failed(AppError.Storage(t), storageCode(t))
         } ?: return failed(
-            AppError.Storage(IOException("无法创建目标文件，请检查目录授权")),
+            AppError.Storage(IOException(appText(TextR.string.text_cannot_create_the_destination_file_check_folder_permissions))),
             DownloadCodes.STORAGE_PERMISSION,
         )
 
         try {
             val input = context.contentResolver.openInputStream(part.uri)
-                ?: throw IOException("无法读取下载临时文件，请检查目录授权")
+                ?: throw IOException(appText(TextR.string.text_cannot_read_the_temporary_file_check_folder_permissions))
             input.use { source ->
                 val output = context.contentResolver.openOutputStream(target.uri, "wt")
-                    ?: throw IOException("无法写入目标文件，请检查目录授权")
+                    ?: throw IOException(appText(TextR.string.text_cannot_write_the_destination_file_check_folder_permissions))
                 output.use { sink ->
                     val copied = StreamCopy.copy(source, sink, total)
                     if (copied != total) throw DownloadIncompleteException(total, copied)
@@ -319,7 +322,7 @@ class DownloadEngine @Inject constructor(
             runCatching { target.delete() }
             return failed(
                 if (t is DownloadIncompleteException) {
-                    AppError.Parse("文件复制不完整，临时文件已保留，请重试")
+                    AppError.Parse(appText(TextR.string.text_copy_incomplete_the_temporary_file_is_retained_please_retry))
                 } else {
                     AppError.Storage(t)
                 },
@@ -359,7 +362,7 @@ class DownloadEngine @Inject constructor(
             "https://${session.domain}${if (link.startsWith("/")) link else "/$link"}"
         }
         if (!url.startsWith("https://")) {
-            return AppResult.Failure(AppError.Parse("下载地址不是 HTTPS"))
+            return AppResult.Failure(AppError.Parse(appText(TextR.string.text_the_download_url_does_not_use_https)))
         }
         return try {
             AppResult.Success(execute(fileRequest(item, session, offset, url)))
@@ -382,16 +385,16 @@ class DownloadEngine @Inject constructor(
         val lower = body.lowercase()
         return when {
             lower.contains("daily limit") || lower.contains("daily download") ->
-                AppError.Quota(null, "今日下载额度已用完")
+                AppError.Quota(null, appText(TextR.string.text_daily_download_quota_exhausted))
 
             code == 401 || code == 403 -> AppError.SessionExpired
             lower.contains("please login") || lower.contains("invalid credentials") ->
                 AppError.SessionExpired
             code == 513 || code == 517 -> AppError.DomainBlocked(DomainStatus.DIAMWALL)
             code == 502 || code == 503 || code == 504 ->
-                AppError.Server(code, "服务暂时不可用（HTTP $code）")
+                AppError.Server(code, appText(TextR.string.text_service_temporarily_unavailable_http, code))
 
-            else -> AppError.Server(code, "下载失败（HTTP $code）")
+            else -> AppError.Server(code, appText(TextR.string.text_download_failed_http, code))
         }
     }
 
@@ -427,12 +430,12 @@ class DownloadEngine @Inject constructor(
         val lower = body.lowercase()
         return when {
             lower.contains("daily limit") || lower.contains("daily download") ->
-                AppError.Quota(null, "今日下载额度已用完")
+                AppError.Quota(null, appText(TextR.string.text_daily_download_quota_exhausted))
 
             lower.contains("please login") || lower.contains("invalid credentials") ->
                 AppError.SessionExpired
 
-            else -> AppError.Server(200, "下载接口没有返回文件地址，请切换域名后重试")
+            else -> AppError.Server(200, appText(TextR.string.text_no_download_url_was_returned_switch_domains_and_retry))
         }
     }
 

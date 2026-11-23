@@ -1,5 +1,8 @@
 package com.qgming.zlib.core.data.download
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -59,15 +62,15 @@ class DownloadRepository @Inject constructor(
     suspend fun enqueue(book: Book, forceRedownload: Boolean): AppResult<Unit> = withContext(dispatchers.io) {
         directoryStore.ensureLoaded()
         if (directoryStore.currentUri() == null) {
-            return@withContext AppResult.Failure(AppError.Parse("请先在设置中选择下载目录"))
+            return@withContext AppResult.Failure(AppError.Parse(appText(TextR.string.text_choose_a_download_folder_in_settings_first)))
         }
         val existingRecord = downloads.byId(book.ref)
         if (existingRecord != null && existingRecord.state in DownloadStates.active) {
-            return@withContext AppResult.Failure(AppError.Parse("这本书已在下载队列中"))
+            return@withContext AppResult.Failure(AppError.Parse(appText(TextR.string.text_this_book_is_already_in_the_download_queue)))
         }
         if (!forceRedownload && findExistingDownloadLocked(book) != null) {
             return@withContext AppResult.Failure(
-                AppError.Parse("文件已在下载目录中，请打开已有文件或确认重新下载"),
+                AppError.Parse(appText(TextR.string.text_this_file_already_exists_open_it_or_confirm_another_download)),
             )
         }
         if (forceRedownload) {
@@ -159,7 +162,7 @@ class DownloadRepository @Inject constructor(
     suspend fun resume(id: String): AppResult<Unit> = withContext(dispatchers.io) {
         directoryStore.ensureLoaded()
         if (directoryStore.currentUri() == null) {
-            return@withContext AppResult.Failure(AppError.Parse("请先在设置中选择下载目录"))
+            return@withContext AppResult.Failure(AppError.Parse(appText(TextR.string.text_choose_a_download_folder_in_settings_first)))
         }
         downloads.updateState(id, DownloadStates.QUEUED, null, System.currentTimeMillis())
         startService(DownloadServiceActions.START)
@@ -173,10 +176,10 @@ class DownloadRepository @Inject constructor(
     suspend fun retry(id: String): AppResult<Unit> = withContext(dispatchers.io) {
         directoryStore.ensureLoaded()
         if (directoryStore.currentUri() == null) {
-            return@withContext AppResult.Failure(AppError.Parse("请先在设置中选择下载目录"))
+            return@withContext AppResult.Failure(AppError.Parse(appText(TextR.string.text_choose_a_download_folder_in_settings_first)))
         }
         val item = downloads.byId(id)
-            ?: return@withContext AppResult.Failure(AppError.Parse("下载记录不存在"))
+            ?: return@withContext AppResult.Failure(AppError.Parse(appText(TextR.string.text_download_record_not_found)))
         if (item.error == DownloadCodes.RANGE || item.error == DownloadCodes.INVALID) {
             // A stale/invalid part cannot be resumed; a user-initiated retry starts from zero.
             runCatching { directoryStore.deletePart(item.id) }
@@ -232,7 +235,7 @@ class DownloadRepository @Inject constructor(
 
     suspend fun downloadDirectoryName(): String? = withContext(dispatchers.io) {
         if (directoryStore.ensureLoaded() == null) return@withContext null
-        directoryStore.currentName()?.takeIf(String::isNotBlank) ?: "已选择文件夹"
+        directoryStore.currentName()?.takeIf(String::isNotBlank) ?: appText(TextR.string.text_folder_selected)
     }
 
     suspend fun resumePendingIfAny() = withContext(dispatchers.io) {

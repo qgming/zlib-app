@@ -1,5 +1,8 @@
 package com.qgming.zlib.core.network
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import com.qgming.zlib.core.model.Book
 import kotlinx.serialization.json.JsonObject
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -45,7 +48,7 @@ internal object BookMapper {
         return Book(
             id = id,
             hash = hash,
-            title = obj.stringOrNull("title").orEmpty().ifBlank { "未命名" },
+            title = obj.stringOrNull("title").orEmpty().ifBlank { appText(TextR.string.text_untitled) },
             subtitle = obj.stringOrNull("subtitle").orEmpty(),
             authors = obj.stringOrNull("author").orEmpty().ifBlank { obj.stringOrNull("authors").orEmpty() },
             publisher = obj.stringOrNull("publisher").orEmpty(),

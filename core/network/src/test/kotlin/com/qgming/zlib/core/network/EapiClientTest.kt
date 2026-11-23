@@ -212,6 +212,31 @@ class EapiClientTest {
     }
 
     @Test
+    fun `search access denial is classified without retry for both envelope statuses and languages`() {
+        for (code in listOf(200, 400, 403)) {
+            for (message in listOf("Access denied", "  ACCESS DENIED  ", "拒绝访问")) {
+                val previous = server.requestCount
+                server.enqueue(enqueueJson("""{"success":0,"error":"$message"}""", code))
+                val result = kotlinx.coroutines.runBlocking { client(session()).search(SearchQuery("book")) }
+                assertEquals(AppResult.Failure(AppError.SearchRefused), result)
+                assertEquals(previous + 1, server.requestCount)
+            }
+        }
+    }
+
+    @Test
+    fun `non-search access denial and unrelated search failures retain their server errors`() {
+        server.enqueue(enqueueJson("""{"success":0,"error":"Access denied"}""", 400))
+        val profile = kotlinx.coroutines.runBlocking { client(session()).profile() }
+        assertEquals(AppResult.Failure(AppError.Server(400, "Access denied")), profile)
+
+        server.enqueue(enqueueJson("""{"success":0,"error":"Search unavailable"}""", 400))
+        val search = kotlinx.coroutines.runBlocking { client(session()).search(SearchQuery("book")) }
+        assertEquals(AppResult.Failure(AppError.Server(400, "Search unavailable")), search)
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
     fun `saved books use an authenticated paged GET`() {
         server.enqueue(
             enqueueJson(

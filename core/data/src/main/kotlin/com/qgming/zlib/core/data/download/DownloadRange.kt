@@ -1,5 +1,8 @@
 package com.qgming.zlib.core.data.download
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import java.util.Locale
 
 /** A single validated Content-Range segment with an optional declared total. */
@@ -63,24 +66,24 @@ internal object DownloadRange {
     ): DownloadCheck {
         val offset = resumeOffset(requestedOffset)
         if (contentType?.lowercase(Locale.US)?.contains("multipart/byteranges") == true) {
-            return DownloadCheck.Invalid("服务器返回了多段 Range，无法安全续传")
+            return DownloadCheck.Invalid(appText(TextR.string.text_the_server_returned_multiple_ranges_cannot_resume_safely))
         }
         return when (status) {
             200 -> DownloadCheck.Restart(contentLength.takeIf { it > 0 })
 
             206 -> {
                 val range = parseContentRange(contentRangeHeader)
-                    ?: return DownloadCheck.Invalid("续传响应缺少有效的 Content-Range")
+                    ?: return DownloadCheck.Invalid(appText(TextR.string.text_the_resume_response_has_no_valid_content_range))
                 if (range.start != offset) {
-                    return DownloadCheck.Invalid("续传起点与请求不一致")
+                    return DownloadCheck.Invalid(appText(TextR.string.text_resume_offset_does_not_match_the_request))
                 }
                 if (contentLength >= 0 && contentLength != range.length) {
-                    return DownloadCheck.Invalid("续传响应长度与 Content-Range 不一致")
+                    return DownloadCheck.Invalid(appText(TextR.string.text_resume_response_length_does_not_match_content_range))
                 }
                 DownloadCheck.Append(range)
             }
 
-            else -> DownloadCheck.Invalid("不支持的下载响应（HTTP $status）")
+            else -> DownloadCheck.Invalid(appText(TextR.string.text_unsupported_download_response_http, status))
         }
     }
 

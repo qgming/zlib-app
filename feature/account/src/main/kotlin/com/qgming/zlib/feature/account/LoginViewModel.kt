@@ -1,5 +1,8 @@
 package com.qgming.zlib.feature.account
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qgming.zlib.core.data.auth.AuthRepository
@@ -74,7 +77,7 @@ class LoginViewModel internal constructor(
     fun importCookieText() {
         val raw = _state.value.cookieText
         if (raw.isBlank()) {
-            _state.update { it.copy(error = "请粘贴 Cookie、Netscape 文件内容或 JSON。") }
+            _state.update { it.copy(error = appText(TextR.string.text_paste_cookie_content_a_netscape_cookie_file_or_json)) }
             return
         }
         authenticate { importCookies(raw) }
@@ -93,7 +96,7 @@ class LoginViewModel internal constructor(
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Exception) {
-                _state.update { it.copy(error = "无法保存登录状态，请重试") }
+                _state.update { it.copy(error = appText(TextR.string.text_cannot_save_your_session_please_retry)) }
             } finally {
                 _state.update { it.copy(loading = false, password = "", cookieText = "") }
             }
@@ -120,7 +123,7 @@ class LoginViewModel internal constructor(
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Exception) {
-                _state.update { it.copy(domainError = "无法切换域名，请重试") }
+                _state.update { it.copy(domainError = appText(TextR.string.text_cannot_switch_domains_please_retry)) }
             } finally {
                 _state.update { it.copy(switchingDomain = false) }
             }

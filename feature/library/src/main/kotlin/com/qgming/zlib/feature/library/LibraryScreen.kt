@@ -1,5 +1,9 @@
 package com.qgming.zlib.feature.library
 
+import androidx.compose.ui.res.stringResource
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.grid.items
@@ -26,12 +30,10 @@ import com.qgming.zlib.core.designsystem.fullWidthItem
 import com.qgming.zlib.core.designsystem.ZlibAutoPagination
 import top.yukonga.miuix.kmp.basic.TextButton
 
-private val SectionTitles = LibrarySection.entries.map { it.title }
-
 @Composable
 fun LibraryTabs(selected: LibrarySection, onSelect: (LibrarySection) -> Unit) {
     ZlibTopBarTabs(
-        tabs = SectionTitles,
+        tabs = LibrarySection.entries.map { it.title },
         selectedIndex = selected.ordinal,
         onSelect = { onSelect(LibrarySection.entries[it]) },
     )
@@ -62,7 +64,7 @@ fun DownloadHistoryScreen(
     val sessionGeneration by viewModel.sessionGeneration.collectAsStateWithLifecycle()
     ZlibToastHost(viewModel.events, key = sessionGeneration)
     ZlibPage(
-        title = "云端下载记录", onBack = onBack,
+        title = stringResource(TextR.string.text_cloud_download_history), onBack = onBack,
     ) { padding ->
         RemoteBooks(padding, CloudLibrarySource.DownloadHistory, onOpenBook, viewModel)
     }
@@ -92,11 +94,11 @@ private fun RemoteBooks(
                 if (state.request != LibraryRequest.Refresh) fullWidthItem("remote-loading") { ZlibLoading() }
             }
             page == null -> fullWidthItem("remote-error") {
-                ZlibStateCard("无法加载${source.title}", state.error.orEmpty(), onAction = onRefresh)
+                ZlibStateCard(stringResource(TextR.string.text_cannot_load, source.title), state.error.orEmpty(), onAction = onRefresh)
             }
 
             page.books.isEmpty() -> fullWidthItem("remote-empty") {
-                ZlibStateCard(title = "暂无${source.title}", message = source.emptyMessage)
+                ZlibStateCard(title = stringResource(TextR.string.text_no, source.title), message = source.emptyMessage)
             }
 
             else -> items(page.books, key = { it.ref }) { book ->
@@ -106,13 +108,13 @@ private fun RemoteBooks(
                     onLongClick = if (source == CloudLibrarySource.DownloadHistory) {
                         { viewModel.showHistoryActions(book) }
                     } else null,
-                    onLongClickLabel = "更多操作",
+                    onLongClickLabel = stringResource(TextR.string.text_more_actions),
                 )
             }
         }
         if (page != null && state.error != null) {
             fullWidthItem("remote-update-error") {
-                ZlibStateCard("未能更新${source.title}", state.error, onAction = {
+                ZlibStateCard(stringResource(TextR.string.text_cannot_refresh, source.title), state.error, onAction = {
                     viewModel.retry(source)
                 })
             }
@@ -126,16 +128,16 @@ private fun RemoteBooks(
             show = action.book != null && !action.confirming,
             title = action.book?.title.orEmpty(), onDismiss = viewModel::dismissHistoryActions,
         ) {
-            ZlibMenuAction(text = "删除记录", onClick = viewModel::requestHistoryDeletion)
+            ZlibMenuAction(text = stringResource(TextR.string.text_delete_record), onClick = viewModel::requestHistoryDeletion)
         }
         ZlibConfirmDialog(
             show = action.book != null && action.confirming,
-            title = "删除云端下载记录？",
+            title = stringResource(TextR.string.text_delete_cloud_download_record),
             summary = buildString {
-                append("删除《${action.book?.title.orEmpty()}》的云端下载记录，不影响本机文件、下载任务或收藏。")
-                action.error?.let { append("\n\n删除失败：$it") }
+                append(stringResource(TextR.string.text_delete_the_cloud_download_record_for_local_files_tasks_and_favorites_are, action.book?.title.orEmpty()))
+                action.error?.let { append(stringResource(TextR.string.text_n_ndelete_failed, it)) }
             },
-            confirmLabel = if (action.error == null) "删除" else "重试删除",
+            confirmLabel = if (action.error == null) stringResource(TextR.string.text_delete) else stringResource(TextR.string.text_retry_deletion),
             onDismiss = viewModel::dismissHistoryActions, onConfirm = viewModel::confirmHistoryDeletion,
             destructive = true, busy = action.busy,
         )

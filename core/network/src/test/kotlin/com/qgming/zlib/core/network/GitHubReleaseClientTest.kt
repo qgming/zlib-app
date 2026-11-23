@@ -3,6 +3,7 @@ package com.qgming.zlib.core.network
 import com.qgming.zlib.core.common.AppError
 import com.qgming.zlib.core.common.AppResult
 import com.qgming.zlib.core.model.AppRelease
+import com.qgming.zlib.core.model.apkFor
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -91,5 +92,20 @@ class GitHubReleaseClientTest {
         assertEquals(12345, apk.size)
         assertEquals("a".repeat(64), apk.sha256)
         assertEquals("https://github.com/qgming/zlib-app/releases/download/v0.2.0/zhishi.apk", apk.url)
+    }
+
+    @Test fun `universal-only release with checksum and notes is selectable by existing arm64 updater`() = runBlocking {
+        val body = """{"tag_name":"v1.3.0","body":"Release notes","draft":false,"prerelease":false,"assets":[
+            {"name":"zhishi-1.3.0-universal.apk","size":5000000,"state":"uploaded","digest":"sha256:${"b".repeat(64)}"},
+            {"name":"SHA256SUMS.txt","size":100,"state":"uploaded"},
+            {"name":"v1.3.0.txt","size":200,"state":"uploaded"}
+        ]}"""
+        server.enqueue(MockResponse().setBody(body))
+        val result = assertIs<AppResult.Success<AppRelease?>>(client().latestRelease()).value!!
+        val apk = result.apkFor(listOf("arm64-v8a", "armeabi-v7a"))!!
+        assertEquals(1, result.apks.size)
+        assertEquals("zhishi-1.3.0-universal.apk", apk.name)
+        assertEquals("b".repeat(64), apk.sha256)
+        assertEquals("https://github.com/qgming/zlib-app/releases/download/v1.3.0/zhishi-1.3.0-universal.apk", apk.url)
     }
 }

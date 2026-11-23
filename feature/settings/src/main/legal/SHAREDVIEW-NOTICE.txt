@@ -1,0 +1,14 @@
+ITGSA SharedView Kit 1.0.0.5
+Publisher: ITGSA
+SDK package: com.itgsa.animation.sharedview
+Source: https://gitee.com/itgsa_sharedviewkit/SharedViewDemo
+Source commit: b449a426a340f1827d942592bddf0a416eae3ac4
+SDK SHA-256: 7c0937ecde545a262619e5fa19d56a21b0ad3fd8013cbc4fe058c497808702bd
+
+SharedView Kit is an independent SDK binary. Its authorization follows its
+publisher's release terms. The example repository is MIT-licensed; that
+license does not establish an MIT license for the SDK binary. The upstream
+NOTICE explicitly separates the SDK from the example project's license.
+
+This entry records the SDK's provenance and license boundary. It does not
+grant rights under MIT or Apache-2.0 to the SDK binary.

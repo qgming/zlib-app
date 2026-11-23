@@ -1,5 +1,9 @@
 package com.qgming.zlib.core.designsystem
 
+import androidx.compose.ui.res.stringResource
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -25,7 +29,7 @@ fun ZlibClearSearchHistoryButton(onClick: () -> Unit) {
     IconButton(onClick = onClick, modifier = Modifier.size(48.dp), backgroundColor = Color.Transparent) {
         Icon(
             MiuixIcons.Glass.Normal.Close,
-            contentDescription = "清空最近搜索",
+            contentDescription = stringResource(TextR.string.text_clear_recent_searches),
             modifier = Modifier.size(24.dp),
         )
     }
@@ -46,12 +50,12 @@ fun ZlibSearchBar(value: String, onValueChange: (String) -> Unit, onSubmit: () -
                 onSearch = { onSubmit() },
                 expanded = false,
                 onExpandedChange = {},
-                label = "书名、作者或 ISBN",
+                label = stringResource(TextR.string.text_title_author_or_isbn),
                 leadingIcon = {
                     IconButton(onClick = onSubmit, enabled = value.isNotBlank()) {
                         Icon(
                             MiuixIcons.Basic.Search,
-                            contentDescription = if (value.isNotBlank()) "提交搜索" else null,
+                            contentDescription = if (value.isNotBlank()) stringResource(TextR.string.text_submit_search) else null,
                             tint = if (value.isNotBlank()) colors.onSurface else colors.onSurfaceVariantSummary,
                             modifier = Modifier.size(20.dp),
                         )
@@ -62,7 +66,7 @@ fun ZlibSearchBar(value: String, onValueChange: (String) -> Unit, onSubmit: () -
                         IconButton(onClick = { onValueChange("") }) {
                             Icon(
                                 MiuixIcons.Basic.SearchCleanup,
-                                contentDescription = "清空搜索词",
+                                contentDescription = stringResource(TextR.string.text_clear_search),
                                 tint = colors.onSurfaceVariantSummary,
                                 modifier = Modifier.size(20.dp),
                             )
@@ -77,8 +81,8 @@ fun ZlibSearchBar(value: String, onValueChange: (String) -> Unit, onSubmit: () -
 @Composable
 fun ZlibExactMatchPreference(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     SwitchPreference(
-        title = "精确匹配",
-        summary = "优先显示与关键词精确匹配的结果",
+        title = stringResource(TextR.string.text_exact_match),
+        summary = stringResource(TextR.string.text_prioritize_results_that_match_your_keywords_exactly),
         checked = checked,
         onCheckedChange = onCheckedChange,
         insideMargin = PaddingValues(vertical = 8.dp),

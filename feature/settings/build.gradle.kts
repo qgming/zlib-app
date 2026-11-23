@@ -9,7 +9,11 @@ plugins {
 }
 
 val generateAboutAssets by tasks.registering(Sync::class) {
-    from(listOf(rootProject.file("LICENSE"), rootProject.file("NOTICE"), file("src/main/legal/APACHE-2.0.txt"))) {
+    from(rootProject.file("LICENSE")) {
+        into("licenses")
+    }
+    from("src/main/legal") {
+        include("*.txt")
         into("licenses")
     }
     into(layout.buildDirectory.dir("generated/aboutAssets"))

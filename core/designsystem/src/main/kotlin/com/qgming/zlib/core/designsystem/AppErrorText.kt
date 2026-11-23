@@ -1,72 +1,77 @@
 package com.qgming.zlib.core.designsystem
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import com.qgming.zlib.core.common.AppError
 import com.qgming.zlib.core.common.DomainStatus
 
 fun DomainStatus.label(): String = when (this) {
-    DomainStatus.UNKNOWN -> "未检测"
-    DomainStatus.PROBING -> "检测中"
-    DomainStatus.HEALTHY -> "可用"
-    DomainStatus.CHALLENGED -> "需要人机验证"
-    DomainStatus.DIAMWALL -> "被 DiamWall 拦截"
-    DomainStatus.REDIRECT_LOOP -> "重定向异常"
-    DomainStatus.HTTP_ERROR -> "HTTP 异常"
-    DomainStatus.NETWORK_ERROR -> "网络不可达"
-    DomainStatus.INVALID -> "域名无效"
+    DomainStatus.UNKNOWN -> appText(TextR.string.text_not_checked)
+    DomainStatus.PROBING -> appText(TextR.string.text_checking)
+    DomainStatus.HEALTHY -> appText(TextR.string.text_available)
+    DomainStatus.CHALLENGED -> appText(TextR.string.text_human_verification_required)
+    DomainStatus.DIAMWALL -> appText(TextR.string.text_blocked_by_diamwall)
+    DomainStatus.REDIRECT_LOOP -> appText(TextR.string.text_redirect_error)
+    DomainStatus.HTTP_ERROR -> appText(TextR.string.text_http_error)
+    DomainStatus.NETWORK_ERROR -> appText(TextR.string.text_network_unreachable)
+    DomainStatus.INVALID -> appText(TextR.string.text_invalid_domain)
 }
 
 /**
- * Single place that turns [AppError] into actionable, user-facing zh-CN copy.
+ * Single place that turns [AppError] into localized, actionable user-facing copy.
  * Feature modules must not invent their own raw error strings.
  */
 fun AppError.userMessage(): String = when (this) {
     AppError.NoDomain ->
-        "还没有可用的域名。请检查网络后重试，或在设置中手动添加镜像。"
+        appText(TextR.string.text_no_available_domain_check_your_connection_and_retry_or_add_a_mirror_in_s)
 
-    AppError.NotLoggedIn -> "请先登录。"
+    AppError.NotLoggedIn -> appText(TextR.string.text_please_sign_in_first)
 
-    AppError.SessionExpired -> "登录状态已过期，请重新登录。"
+    AppError.SessionExpired -> appText(TextR.string.text_your_session_has_expired_please_sign_in_again)
+
+    AppError.SearchRefused -> appText(TextR.string.text_z_library_refused_the_search)
 
     is AppError.AuthFailed ->
-        message?.takeIf { it.isNotBlank() }?.let { "登录失败：$it；也可以尝试 Cookie 导入。" }
-            ?: "邮箱或密码不正确，也可以尝试 Cookie 导入。"
+        message?.takeIf { it.isNotBlank() }?.let { appText(TextR.string.text_sign_in_failed_you_can_also_try_importing_a_cookie, it) }
+            ?: appText(TextR.string.text_incorrect_email_or_password_you_can_also_try_importing_a_cookie)
 
     is AppError.Quota -> buildString {
-        append("今日下载额度已用完")
-        if (remaining != null) append("（剩余 $remaining 本）")
-        append("。")
-        if (!resetHint.isNullOrBlank()) append("服务端提示：$resetHint")
+        append(appText(TextR.string.text_daily_download_quota_exhausted))
+        if (remaining != null) append(appText(TextR.string.text_remaining, remaining))
+        append(". ")
+        if (!resetHint.isNullOrBlank()) append(appText(TextR.string.text_server_message, resetHint))
     }
 
     is AppError.DomainBlocked -> when (status) {
-        DomainStatus.DIAMWALL -> "当前域名被 DiamWall 拦截，请切换域名或使用 VPN/代理。"
-        DomainStatus.CHALLENGED -> "当前域名要求人机验证，请切换域名。"
-        DomainStatus.REDIRECT_LOOP -> "域名重定向异常，请切换域名。"
-        DomainStatus.INVALID -> "域名无效或不在允许列表。"
-        DomainStatus.HTTP_ERROR -> "域名返回异常响应，请切换域名。"
-        DomainStatus.NETWORK_ERROR -> "无法连接该域名，请检查网络。"
-        else -> "当前域名不可用，请切换域名。"
+        DomainStatus.DIAMWALL -> appText(TextR.string.text_this_domain_is_blocked_by_diamwall_switch_domains_or_use_a_vpn_proxy)
+        DomainStatus.CHALLENGED -> appText(TextR.string.text_this_domain_requires_human_verification_switch_domains)
+        DomainStatus.REDIRECT_LOOP -> appText(TextR.string.text_domain_redirect_failed_switch_domains)
+        DomainStatus.INVALID -> appText(TextR.string.text_the_domain_is_invalid_or_not_allowed)
+        DomainStatus.HTTP_ERROR -> appText(TextR.string.text_the_domain_returned_an_unexpected_response_switch_domains)
+        DomainStatus.NETWORK_ERROR -> appText(TextR.string.text_cannot_connect_to_this_domain_check_your_connection)
+        else -> appText(TextR.string.text_this_domain_is_unavailable_switch_domains)
     }
 
-    is AppError.Network -> "网络连接失败，请检查网络或 VPN 后重试。"
+    is AppError.Network -> appText(TextR.string.text_connection_failed_check_your_network_or_vpn_and_retry)
 
     is AppError.Server -> when (code) {
-        502, 503, 504 -> "服务暂时不可用，请稍后重试。"
-        401, 403 -> "没有访问权限，登录可能已失效。"
-        404 -> "接口不存在，域名可能已失效，请切换域名。"
-        else -> if (message.isNotBlank()) "服务端错误：$message" else "服务端错误（HTTP $code）。"
+        502, 503, 504 -> appText(TextR.string.text_service_temporarily_unavailable_please_retry_later)
+        401, 403 -> appText(TextR.string.text_access_denied_your_session_may_have_expired)
+        404 -> appText(TextR.string.text_endpoint_not_found_the_domain_may_be_unavailable_switch_domains)
+        else -> if (message.isNotBlank()) appText(TextR.string.text_server_error, message) else appText(TextR.string.text_server_error_http, code)
     }
 
     is AppError.Storage -> when {
-        cause is SecurityException -> "无法访问下载目录，请在设置中重新选择并授权。"
+        cause is SecurityException -> appText(TextR.string.text_cannot_access_the_download_folder_select_and_authorize_it_again_in_setti)
         cause is java.io.IOException -> cause.message?.let(com.qgming.zlib.core.common.SafeLog::redactText)
-            ?.takeIf { it.isNotBlank() } ?: "无法访问本机文件，请检查下载目录和权限。"
-        else -> "写入本地存储失败。"
+            ?.takeIf { it.isNotBlank() } ?: appText(TextR.string.text_cannot_access_local_files_check_the_download_folder_and_permissions)
+        else -> appText(TextR.string.text_failed_to_write_to_local_storage)
     }
 
-    is AppError.Parse -> message.ifBlank { "服务器响应格式异常，请稍后重试。" }
+    is AppError.Parse -> message.ifBlank { appText(TextR.string.text_unexpected_server_response_please_retry_later) }
 
     is AppError.Unsupported -> message
 
-    is AppError.Unknown -> "发生未知错误，请重试。"
+    is AppError.Unknown -> appText(TextR.string.text_an_unexpected_error_occurred_please_retry)
 }

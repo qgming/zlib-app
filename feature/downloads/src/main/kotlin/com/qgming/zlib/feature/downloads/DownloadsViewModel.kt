@@ -1,5 +1,8 @@
 package com.qgming.zlib.feature.downloads
 
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qgming.zlib.core.common.AppResult
@@ -60,8 +63,8 @@ class DownloadsViewModel @Inject constructor(
         viewModelScope.launch {
             when (val result = repository.setDownloadDirectory(uri)) {
                 is AppResult.Success -> _events.send(if (result.value.pausedTasks > 0) {
-                    "下载目录已保存，${result.value.pausedTasks} 个任务已暂停，可手动继续"
-                } else "下载目录已保存")
+                    appText(TextR.string.text_download_folder_saved_tasks_are_paused_and_can_be_resumed, result.value.pausedTasks)
+                } else appText(TextR.string.text_download_folder_saved))
                 is AppResult.Failure -> _events.send(result.error.userMessage())
             }
         }

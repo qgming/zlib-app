@@ -1,5 +1,9 @@
 package com.qgming.zlib.core.designsystem
 
+import androidx.compose.ui.res.stringResource
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,7 +41,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun ZlibChangeDomainButton(enabled: Boolean, onClick: () -> Unit) {
-    DomainIconButton(MiuixIcons.Glass.Normal.Replace, "更换域名", enabled, onClick)
+    DomainIconButton(MiuixIcons.Glass.Normal.Replace, stringResource(TextR.string.text_switch_domain), enabled, onClick)
 }
 
 @Composable
@@ -45,8 +49,8 @@ fun ZlibCurrentDomainCard(host: String?, enabled: Boolean, onChange: () -> Unit)
     ZlibCard(cornerRadius = 24.dp) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("当前域名", style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
-                Text(host ?: "选择域名", style = MiuixTheme.textStyles.body2)
+                Text(stringResource(TextR.string.text_current_domain), style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                Text(host ?: stringResource(TextR.string.text_choose_domain), style = MiuixTheme.textStyles.body2)
             }
             ZlibChangeDomainButton(enabled, onChange)
         }
@@ -58,9 +62,9 @@ fun ZlibDomainAutoSwitch(checked: Boolean, enabled: Boolean, onChange: (Boolean)
     ZlibCard(cornerRadius = 24.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                Text("自动切换域名", style = MiuixTheme.textStyles.body2)
+                Text(stringResource(TextR.string.text_switch_domains_automatically), style = MiuixTheme.textStyles.body2)
                 Text(
-                    "当前域名不可用时切换至可用域名",
+                    stringResource(TextR.string.text_switch_to_an_available_domain_when_the_current_one_fails),
                     style = MiuixTheme.textStyles.footnote1,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 )
@@ -82,7 +86,7 @@ fun ZlibDomainCard(
     val colors = MiuixTheme.colorScheme
     val interaction = if (onLongClick != null) Modifier.combinedClickable(
         enabled = enabled, role = Role.Button,
-        onClickLabel = "切换到 ${check.host}", onLongClickLabel = "域名操作",
+        onClickLabel = stringResource(TextR.string.text_switch_to, check.host), onLongClickLabel = stringResource(TextR.string.text_domain_actions),
         onClick = onSelect, onLongClick = onLongClick,
     ) else Modifier
     ZlibCard(
@@ -94,7 +98,7 @@ fun ZlibDomainCard(
             Column(Modifier.weight(1f).padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(check.host, style = MiuixTheme.textStyles.body2, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    (if (current) "当前使用 · " else "") + check.status.label(),
+                    (if (current) stringResource(TextR.string.text_active_2) else "") + check.status.label(),
                     style = MiuixTheme.textStyles.footnote1,
                     color = if (current || check.healthy) colors.primary else colors.onSurfaceVariantSummary,
                 )
@@ -105,14 +109,14 @@ fun ZlibDomainCard(
             }
             DomainIconButton(
                 icon = if (current) MiuixIcons.Glass.Normal.Ok else MiuixIcons.Glass.Normal.Replace,
-                description = if (current) "当前域名 ${check.host}" else "切换到 ${check.host}",
+                description = if (current) stringResource(TextR.string.text_current_domain_2, check.host) else stringResource(TextR.string.text_switch_to, check.host),
                 enabled = enabled && !current, onClick = onSelect,
             )
             if (onProbe != null) {
                 if (check.status == DomainStatus.PROBING) {
                     Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { ZlibLoadingIndicator() }
                 } else {
-                    DomainIconButton(MiuixIcons.Glass.Normal.Refresh, "体检 ${check.host}", enabled, onProbe)
+                    DomainIconButton(MiuixIcons.Glass.Normal.Refresh, stringResource(TextR.string.text_check, check.host), enabled, onProbe)
                 }
             }
         }
@@ -129,13 +133,13 @@ fun ZlibDomainPicker(
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    ZlibGlassBottomSheet(show = show, title = "更换域名", onDismiss = onDismiss) {
+    ZlibGlassBottomSheet(show = show, title = stringResource(TextR.string.text_switch_domain), onDismiss = onDismiss) {
         Column(
             Modifier.fillMaxWidth().heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             error?.let { Text(it, style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.error) }
-            if (busy) ZlibLoadingStatus("正在切换域名…")
+            if (busy) ZlibLoadingStatus(stringResource(TextR.string.text_switching_domain))
             checks.forEach { check ->
                 ZlibDomainCard(check, check.host == currentHost, enabled = !busy, onSelect = { onSelect(check.host) })
             }
@@ -147,17 +151,17 @@ fun ZlibDomainPicker(
 fun ZlibAddDomainForm(host: String, busy: Boolean, error: String?, onHostChange: (String) -> Unit, onSubmit: () -> Unit) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         TextField(
-            value = host, onValueChange = onHostChange, label = "域名，如 mirror.example.org",
+            value = host, onValueChange = onHostChange, label = stringResource(TextR.string.text_domain_e_g_mirror_example_org),
             singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(),
         )
         Text(
-            "请填写你信任的 HTTPS 域名，不含路径、端口或 IP。",
+            stringResource(TextR.string.text_enter_a_trusted_https_hostname_without_a_path_port_or_ip_address),
             style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
         )
         error?.let { Text(it, style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.error) }
-        if (busy) ZlibLoadingStatus("正在添加并体检…")
+        if (busy) ZlibLoadingStatus(stringResource(TextR.string.text_adding_and_checking))
         Button(onClick = onSubmit, enabled = !busy && host.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-            Text("添加域名")
+            Text(stringResource(TextR.string.text_add_domain))
         }
     }
 }

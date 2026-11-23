@@ -1,5 +1,9 @@
 package com.qgming.zlib.core.designsystem
 
+import androidx.compose.ui.res.stringResource
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.animateFloatAsState
@@ -75,8 +79,8 @@ fun ZlibMultiSelectPreference(
     val actionColor = MiuixTheme.colorScheme.onSurfaceVariantActions
     val value = when (selected.size) {
         0 -> allLabel
-        1 -> options.firstOrNull { it.key in selected }?.label ?: "已选 1 项"
-        else -> "已选 ${selected.size} 项"
+        1 -> options.firstOrNull { it.key in selected }?.label ?: stringResource(TextR.string.text_1_selected)
+        else -> stringResource(TextR.string.text_selected, selected.size)
     }
     BasicComponent(
         title = title,
@@ -110,7 +114,7 @@ fun ZlibMultiSelectPreference(
                     containerColor = MiuixTheme.colorScheme.surfaceContainer),
             ) {
                 if (searchable) TextField(
-                    value = query, onValueChange = { query = it }, label = "查找语言", singleLine = true,
+                    value = query, onValueChange = { query = it }, label = stringResource(TextR.string.text_find_language), singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                 )
                 GlassPopupItem(text = allLabel, selected = selected.isEmpty(), onClick = { onChange(emptySet()) }, modifier = Modifier.heightIn(min = 48.dp))
@@ -119,8 +123,8 @@ fun ZlibMultiSelectPreference(
                     GlassPopupItem(text = option.label, selected = option.key in selected, modifier = Modifier.heightIn(min = 48.dp),
                         onClick = { onChange(if (option.key in selected) selected - option.key else selected + option.key) })
                 }
-                if (matching.isEmpty()) Text("没有匹配的语言", modifier = Modifier.padding(20.dp), style = MiuixTheme.textStyles.body2)
-                GlassPopupItem(text = "完成", onClick = { expanded = false }, modifier = Modifier.heightIn(min = 48.dp))
+                if (matching.isEmpty()) Text(stringResource(TextR.string.text_no_matching_languages), modifier = Modifier.padding(20.dp), style = MiuixTheme.textStyles.body2)
+                GlassPopupItem(text = stringResource(TextR.string.text_done), onClick = { expanded = false }, modifier = Modifier.heightIn(min = 48.dp))
             }
         }
     }

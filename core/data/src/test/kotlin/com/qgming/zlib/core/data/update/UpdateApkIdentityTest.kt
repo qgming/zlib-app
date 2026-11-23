@@ -15,4 +15,12 @@ class UpdateApkIdentityTest {
             candidate.copy(signers = emptySet())).forEach { assertFalse(validUpdateIdentity(it, installed, "v0.2.0")) }
         assertFalse(validUpdateIdentity(candidate, installed.copy(signers = emptySet()), "v0.2.0"))
     }
+
+    @Test fun `one point three update accepts the original signature and a code above one point two`() {
+        val previous = installed.copy(version = "1.2.0", versionCode = 4)
+        val next = previous.copy(version = "1.3.0", versionCode = 5)
+        assertTrue(validUpdateIdentity(next, previous, "v1.3.0"))
+        assertFalse(validUpdateIdentity(next.copy(versionCode = 4), previous, "v1.3.0"))
+        assertFalse(validUpdateIdentity(next.copy(signers = setOf("different-certificate")), previous, "v1.3.0"))
+    }
 }

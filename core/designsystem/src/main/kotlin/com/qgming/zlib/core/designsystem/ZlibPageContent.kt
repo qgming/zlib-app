@@ -1,5 +1,9 @@
 package com.qgming.zlib.core.designsystem
 
+import androidx.compose.ui.res.stringResource
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
@@ -107,7 +111,7 @@ fun ZlibBookGrid(
             modifier = Modifier.fillMaxSize(),
             contentPadding = padding,
             topAppBarScrollBehavior = scrollBehavior,
-            refreshTexts = listOf("下拉刷新", "松开刷新", "正在刷新…", "刷新结束"),
+            refreshTexts = listOf(stringResource(TextR.string.text_pull_to_refresh), stringResource(TextR.string.text_release_to_refresh), stringResource(TextR.string.text_refreshing), stringResource(TextR.string.text_refresh_complete)),
         ) {
             grid(Modifier)
         }
