@@ -7,6 +7,8 @@
 `app/build.gradle.kts` 的 `appVersionName` 使用 SemVer，`appVersionCode` 每次公开发布递增。
 Git 标签为 `v<appVersionName>`，例如 `v1.0.0`。同一版本的所有架构与通用包使用相同 versionCode，便于互相覆盖安装和后续更新。
 
+当前开发版本为 `1.1.0`（`versionCode=3`），已发布基线仍为 `v1.0.0`。版本修改不代表已创建新标签或正式发布。
+
 ## 构建
 
 使用 AGENTS.md 规定的工具链，并在本机通过未提交的 `key.properties` 配置原签名。
@@ -40,7 +42,7 @@ Git 标签为 `v<appVersionName>`，例如 `v1.0.0`。同一版本的所有架�
 
 提交前检查 `git diff --cached`，禁止提交本机配置、密钥、凭据、下载文件、构建目录及 APK。
 将代码推送到 main，创建对应标签，再通过 GitHub Releases 上传五个 APK 和校验文件。
-先上传为 draft 并核对完整性，确认后发布为正式版本；更新正文保存在 `docs/releases/<tag>.md`，与线上保持一致。
+先上传为 draft 并核对完整性，确认后发布为正式版本；更新正文保存在 `docs/releases/<tag>.txt`，使用纯文本，可用“1、”等序号，不使用Markdown标题、项目符号或强调语法，并与线上保持一致。v1.0.0历史正文仍保留原.md文件。
 
 ## 应用内更新
 
@@ -56,3 +58,11 @@ APK 的包名、签名须匹配已安装应用，versionCode 必须更大，vers
 - 五种 APK 的原签名、包名／版本、最低系统、非调试属性、ABI、16KB ZIP 对齐及 SHA-256 均已核对。
 - APK 大小：arm64-v8a 4,532,150 字节；armeabi-v7a 4,527,638 字节；x86_64 4,529,184 字节；x86 4,528,182 字节；universal 4,628,014 字节。
 - x86_64 Android 17 / 16KB 模拟器：覆盖安装、真实账号登录、阅读列表、设置及关于页通过。发布时物理设备已断开，arm64 优化正式包和其它架构设备不据此标记通过。
+
+## v1.1.0 构建记录
+
+- 242项单测通过，失败、错误、跳过均为0；当前模块lint无issue，调试构建及正式R8/资源裁剪构建均通过。
+- 五个APK已校验原签名、包名com.qgming.zlib、versionName1.1.0/versionCode3、最低Android13、targetSdk37、非debuggable、原生ABI、16KB ZIP对齐与SHA-256。
+- 大小：arm64-v8a 4,597,686字节；armeabi-v7a 4,593,174字节；x86_64 4,594,720字节；x86 4,593,718字节；universal 4,693,550字节。
+- x86_64 Android17 / 16KB模拟器已覆盖安装正式包，相似图书导航与返回位置、关于版本、已是最新版Toast通过；其它ABI及复杂SAF故障不标为真机通过，详见TESTING.md。
+- 纯文本更新正文为 `docs/releases/v1.1.0.txt`，附数字序号。正式资产位于 `app/build/release/`，包含五个APK与SHA256SUMS.txt；构建不等于已上传或发布。

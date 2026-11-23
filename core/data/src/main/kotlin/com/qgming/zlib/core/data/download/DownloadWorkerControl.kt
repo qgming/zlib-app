@@ -25,6 +25,15 @@ internal class DownloadQueueControl {
     }
 
     suspend fun <T> accountChange(block: suspend (String?) -> T): T = selection.withLock { block(activeId) }
+
+    /**
+     * Runs a directory change while no new writer can be selected. The caller stops the current
+     * writer before saving the new tree; holding the same mutex makes "switch directory" and
+     * "start next item" mutually exclusive.
+     */
+    suspend fun <T> exclusive(block: suspend (activeId: String?) -> T): T = selection.withLock {
+        block(activeId)
+    }
 }
 
 /** A record may be removed only after the old writer has completely stopped. */

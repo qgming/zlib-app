@@ -2,7 +2,10 @@ package com.qgming.zlib.core.data.download
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
+import androidx.room.withTransaction
 import com.qgming.zlib.core.common.AppDispatchers
 import com.qgming.zlib.core.common.AppError
 import com.qgming.zlib.core.common.AppResult
@@ -29,11 +32,15 @@ object DownloadServiceActions {
     const val EXTRA_ID = "download_id"
 }
 
+/** A downloaded file for the exact `id:hash` that is still readable under the current tree. */
+data class ExistingDownload(val book: Book, val uri: String)
+
 @Singleton
 class DownloadRepository @Inject constructor(
     @ApplicationContext private val context: Context,
-    database: ZlibDatabase,
+    private val database: ZlibDatabase,
     private val directoryStore: DownloadDirectoryStore,
+    private val runner: DownloadRunner,
     private val dispatchers: AppDispatchers,
 ) {
     private val downloads = database.downloadDao()
@@ -42,14 +49,30 @@ class DownloadRepository @Inject constructor(
     val queue: Flow<List<DownloadItem>> = downloads.observeAll()
         .map { items -> items.map { it.toItem() } }
 
-    suspend fun enqueue(book: Book): AppResult<Unit> = withContext(dispatchers.io) {
+    /** Default enqueue never silently duplicates a readable file already in the download tree. */
+    suspend fun enqueue(book: Book): AppResult<Unit> = enqueue(book, forceRedownload = false)
+
+    /**
+     * @param forceRedownload explicit user choice to download again. The task's own `.part` is
+     * discarded, but an existing readable file is never overwritten or deleted.
+     */
+    suspend fun enqueue(book: Book, forceRedownload: Boolean): AppResult<Unit> = withContext(dispatchers.io) {
         directoryStore.ensureLoaded()
         if (directoryStore.currentUri() == null) {
             return@withContext AppResult.Failure(AppError.Parse("请先在设置中选择下载目录"))
         }
-        val existing = downloads.byId(book.ref)
-        if (existing != null && existing.state in DownloadStates.active) {
+        val existingRecord = downloads.byId(book.ref)
+        if (existingRecord != null && existingRecord.state in DownloadStates.active) {
             return@withContext AppResult.Failure(AppError.Parse("这本书已在下载队列中"))
+        }
+        if (!forceRedownload && findExistingDownloadLocked(book) != null) {
+            return@withContext AppResult.Failure(
+                AppError.Parse("文件已在下载目录中，请打开已有文件或确认重新下载"),
+            )
+        }
+        if (forceRedownload) {
+            runCatching { directoryStore.deletePart(book.ref) }
+                .onFailure { SafeLog.w("Download", "cannot reset temporary file") }
         }
 
         val now = System.currentTimeMillis()
@@ -57,28 +80,76 @@ class DownloadRepository @Inject constructor(
             FileNames.sanitize(book.title, fallback = "book-${book.id}"),
             book.extension,
         )
-        downloads.upsert(
-            DownloadEntity(
-                id = book.ref,
-                bookId = book.id,
-                hash = book.hash,
-                title = book.title,
-                authors = book.authors,
-                extension = book.extension,
-                coverUrl = book.coverUrl,
-                fileName = fileName,
-                state = DownloadStates.QUEUED,
-                bytesWritten = 0,
-                totalBytes = book.sizeBytes,
-                error = null,
-                createdAt = now,
-                updatedAt = now,
-            ),
-        )
-        val stored = books.byId(book.id)
-        books.upsert(book.toEntity(now = stored?.createdAt ?: now, localUri = stored?.localUri))
+        database.withTransaction {
+            downloads.upsert(
+                DownloadEntity(
+                    id = book.ref,
+                    bookId = book.id,
+                    hash = book.hash,
+                    title = book.title,
+                    authors = book.authors,
+                    extension = book.extension,
+                    coverUrl = book.coverUrl,
+                    fileName = fileName,
+                    state = DownloadStates.QUEUED,
+                    bytesWritten = 0,
+                    totalBytes = book.sizeBytes,
+                    error = null,
+                    createdAt = now,
+                    updatedAt = now,
+                ),
+            )
+            val stored = books.byId(book.id)
+            // A different `id:hash` is a different file. Keeping the old format's URI on the new
+            // hash would make the local-file association (and existence check) lie.
+            val sameReference = stored != null && stored.hash == book.hash
+            val entity = book.toEntity(
+                now = now,
+                localUri = if (sameReference) stored?.localUri else null,
+            )
+            books.upsert(
+                if (stored == null) {
+                    entity
+                } else {
+                    entity.copy(
+                        favorite = if (sameReference) stored.favorite else false,
+                        downloadedAt = if (sameReference) stored.downloadedAt else null,
+                        createdAt = stored.createdAt,
+                        updatedAt = now,
+                    )
+                },
+            )
+        }
         startService(DownloadServiceActions.START)
         AppResult.Success(Unit)
+    }
+
+    /**
+     * Returns the already-downloaded file only for the exact reference (`id:hash`), and only while
+     * its URI is inside the current tree and readable. Titles or numeric ids alone are never enough.
+     */
+    suspend fun findExistingDownload(book: Book): ExistingDownload? = withContext(dispatchers.io) {
+        directoryStore.ensureLoaded()
+        findExistingDownloadLocked(book)
+    }
+
+    private suspend fun findExistingDownloadLocked(book: Book): ExistingDownload? {
+        val treeUri = directoryStore.currentUri() ?: return null
+        val stored = books.byId(book.id) ?: return null
+        if (stored.hash != book.hash) return null
+        val raw = stored.localUri?.takeIf { it.isNotBlank() } ?: return null
+        val uri = runCatching { raw.toUri() }.getOrNull() ?: return null
+        if (!isInsideTree(uri, treeUri)) return null
+        val readable = runCatching {
+            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { true } == true
+        }.getOrDefault(false)
+        return if (readable && directoryStore.currentUri() == treeUri) ExistingDownload(stored.toBook(), raw) else null
+    }
+
+    private fun isInsideTree(uri: Uri, tree: Uri): Boolean {
+        if (uri.scheme != "content" || uri.authority != tree.authority) return false
+        val prefix = tree.toString().trimEnd('/')
+        return uri.toString().startsWith("$prefix/")
     }
 
     suspend fun pause(id: String) = withContext(dispatchers.io) {
@@ -104,6 +175,13 @@ class DownloadRepository @Inject constructor(
         if (directoryStore.currentUri() == null) {
             return@withContext AppResult.Failure(AppError.Parse("请先在设置中选择下载目录"))
         }
+        val item = downloads.byId(id)
+            ?: return@withContext AppResult.Failure(AppError.Parse("下载记录不存在"))
+        if (item.error == DownloadCodes.RANGE || item.error == DownloadCodes.INVALID) {
+            // A stale/invalid part cannot be resumed; a user-initiated retry starts from zero.
+            runCatching { directoryStore.deletePart(item.id) }
+                .onFailure { SafeLog.w("Download", "cannot reset temporary file") }
+        }
         downloads.resetProgress(id)
         downloads.updateState(id, DownloadStates.QUEUED, null, System.currentTimeMillis())
         startService(DownloadServiceActions.START)
@@ -128,7 +206,7 @@ class DownloadRepository @Inject constructor(
                 // An unavailable provider must not prevent clearing an already stopped record.
                 if (item.state != DownloadStates.COMPLETED) {
                     directoryStore.ensureLoaded()
-                    runCatching { directoryStore.deletePart(item.fileName) }
+                    runCatching { directoryStore.deletePart(item.id) }
                         .onFailure { SafeLog.w("Download", "temporary file cleanup unavailable") }
                 }
                 downloads.delete(id)
@@ -136,12 +214,25 @@ class DownloadRepository @Inject constructor(
         }
     }
 
-    suspend fun setDownloadDirectory(uri: android.net.Uri): AppResult<Unit> =
-        directoryStore.setTree(uri)
+    /**
+     * Pausing and stopping the old writer is coordinated by [DownloadRunner]; validation lives in
+     * [DownloadDirectoryStore]. On failure the previous directory and tasks stay paused.
+     */
+    suspend fun setDownloadDirectory(uri: Uri): AppResult<DownloadDirectoryChange> =
+        withContext(dispatchers.io) { runner.withDirectoryChange(uri) }
+
+    suspend fun hasDownloadDirectory(): Boolean = withContext(dispatchers.io) {
+        directoryStore.ensureLoaded() != null
+    }
+
+    /** True only while the saved tree still has a persisted read/write grant and usable flags. */
+    suspend fun downloadDirectoryAccessible(): Boolean = withContext(dispatchers.io) {
+        directoryStore.currentAccessible()
+    }
 
     suspend fun downloadDirectoryName(): String? = withContext(dispatchers.io) {
         if (directoryStore.ensureLoaded() == null) return@withContext null
-        runCatching { directoryStore.tree()?.name }.getOrNull()?.takeIf(String::isNotBlank) ?: "已选择文件夹"
+        directoryStore.currentName()?.takeIf(String::isNotBlank) ?: "已选择文件夹"
     }
 
     suspend fun resumePendingIfAny() = withContext(dispatchers.io) {

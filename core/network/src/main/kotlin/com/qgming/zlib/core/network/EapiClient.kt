@@ -14,6 +14,9 @@ import com.qgming.zlib.core.model.BookFormat
 import com.qgming.zlib.core.model.BookPage
 import com.qgming.zlib.core.model.Quota
 import com.qgming.zlib.core.model.SearchQuery
+import com.qgming.zlib.core.model.SearchFilterOptions
+import com.qgming.zlib.core.model.SearchLanguage
+import com.qgming.zlib.core.model.SearchSort
 import com.qgming.zlib.core.model.Session
 import java.io.IOException
 import java.net.URI
@@ -108,6 +111,37 @@ class EapiClient(
 
     suspend fun mostPopular(): AppResult<List<Book>> =
         bookList(EapiEndpoints.MOST_POPULAR, sessionProvider())
+
+    suspend fun similarBooks(id: String, hash: String): AppResult<List<Book>> {
+        if (!BookMapper.isSafeRef(id, hash)) return AppResult.Failure(AppError.Parse("图书引用无效"))
+        return execute("/eapi/book/$id/$hash/similar", null, sessionProvider(), isGet = true).mapCatching {
+            if (it.root.array("books") == null) throw AppErrorException(AppError.Parse("相似图书响应缺少 books 列表"))
+            BookMapper.listFrom(it.root).filterNot { book -> book.ref == "$id:$hash" }.distinctBy(Book::ref)
+        }
+    }
+
+    suspend fun searchFilterOptions(): AppResult<SearchFilterOptions> {
+        val languages = execute("/eapi/info/languages", null, session = null, isGet = true)
+        if (languages is AppResult.Failure) return languages
+        val extensions = execute("/eapi/info/extensions", null, session = null, isGet = true)
+        if (extensions is AppResult.Failure) return extensions
+        return (languages as AppResult.Success).mapCatching { response ->
+            val languageObject = response.root.obj("languages") ?: throw AppErrorException(AppError.Parse("语言列表格式异常"))
+            val extensionArray = (extensions as AppResult.Success).value.root.array("extensions")
+                ?: throw AppErrorException(AppError.Parse("格式列表格式异常"))
+            val options = languageObject.map { (code, value) ->
+                val label = value.stringOrNull() ?: throw AppErrorException(AppError.Parse("语言名称无效"))
+                if (code.isBlank() || code.length > 80 || code.any { it.isISOControl() }) throw AppErrorException(AppError.Parse("语言代码无效"))
+                SearchLanguage(code, label)
+            }
+            val formats = extensionArray.map {
+                it.stringOrNull()?.lowercase()?.takeIf { code -> code.matches(Regex("[a-z0-9]{1,20}")) }
+                    ?: throw AppErrorException(AppError.Parse("格式代码无效"))
+            }.distinct()
+            if (options.isEmpty() || formats.isEmpty()) throw AppErrorException(AppError.Parse("筛选列表为空"))
+            SearchFilterOptions(options, formats)
+        }
+    }
 
     suspend fun savedBooks(page: Int): AppResult<BookPage> =
         accountBooks(EapiEndpoints.SAVED, page, includeHistoryDate = false)
@@ -205,7 +239,7 @@ class EapiClient(
         if (query.exact) builder.add("e", "1")
         query.yearFrom?.let { builder.add("yearFrom", it.toString()) }
         query.yearTo?.let { builder.add("yearTo", it.toString()) }
-        query.order?.takeIf { it.isNotBlank() }?.let { builder.add("order", it) }
+        query.order?.takeIf { value -> SearchSort.entries.any { it.wireValue == value } }?.let { builder.add("order", it) }
         query.languages.forEach { builder.add("languages[]", it.lowercase()) }
         query.extensions.forEach { builder.add("extensions[]", it.lowercase()) }
 
@@ -215,10 +249,13 @@ class EapiClient(
 
     private fun JsonObject.toBookPage(requestedPage: Int, includeHistoryDate: Boolean = false): BookPage {
         val pagination = obj("pagination")
+        val books = BookMapper.listFrom(this, includeHistoryDate)
+        val current = pagination?.intOrNull("current")?.takeIf { it > 0 } ?: requestedPage
+        val hasExplicitEnd = pagination?.get("next")?.let { it is kotlinx.serialization.json.JsonPrimitive && it.content == "false" } == true
         return BookPage(
-            books = BookMapper.listFrom(this, includeHistoryDate),
-            page = pagination?.intOrNull("current")?.takeIf { it > 0 } ?: requestedPage,
-            totalPages = pagination?.intOrNull("total_pages") ?: 1,
+            books = books,
+            page = current,
+            totalPages = if (books.isEmpty() || hasExplicitEnd) current else pagination?.intOrNull("total_pages")?.coerceAtLeast(current) ?: current,
         )
     }
 

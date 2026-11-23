@@ -1,16 +1,15 @@
 package com.qgming.zlib.feature.search
 
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -19,10 +18,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -39,9 +40,17 @@ import com.qgming.zlib.core.designsystem.ZlibPage
 import com.qgming.zlib.core.designsystem.ZlibSearchBar
 import com.qgming.zlib.core.designsystem.ZlibStateCard
 import com.qgming.zlib.core.designsystem.fullWidthItem
+import com.qgming.zlib.core.designsystem.ZlibAutoPagination
+import com.qgming.zlib.core.designsystem.ZlibMultiSelectPreference
+import com.qgming.zlib.core.designsystem.ZlibSelectionOption
+import com.qgming.zlib.core.designsystem.ZlibPreferenceMenu
+import com.qgming.zlib.core.designsystem.ZlibPreferenceGroup
+import com.qgming.zlib.core.designsystem.ZlibClearSearchHistoryButton
+import com.qgming.zlib.core.designsystem.ZlibConfirmDialog
+import com.qgming.zlib.core.model.SearchFilterOptions
+import com.qgming.zlib.core.model.SearchSort
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.Surface
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
@@ -55,10 +64,17 @@ fun SearchScreen(
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val history by viewModel.history.collectAsStateWithLifecycle()
     val listState = rememberLazyGridState()
     val focusManager = LocalFocusManager.current
     var showFilters by remember { mutableStateOf(false) }
+    var confirmClearHistory by rememberSaveable { mutableStateOf(false) }
     var draft by remember { mutableStateOf(SearchFilters()) }
+    ZlibAutoPagination(
+        state = listState,
+        enabled = state.hasMore && !state.loading && !state.loadingMore && state.error == null && state.appendError == null,
+        pageKey = state.page, onLoadMore = viewModel::loadMore,
+    )
     val submitSearch: () -> Unit = {
         focusManager.clearFocus()
         viewModel.search()
@@ -79,6 +95,7 @@ fun SearchScreen(
             ZlibFilterButton(active = state.filters.isActive) {
                 focusManager.clearFocus()
                 draft = state.filters
+                viewModel.loadFilterOptions()
                 showFilters = true
             }
         },
@@ -88,6 +105,27 @@ fun SearchScreen(
     ) { padding ->
         ZlibBookGrid(padding = padding, state = listState) {
             when {
+                !state.searched && !state.loading -> fullWidthItem("search-recents") {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (history.queries.isNotEmpty()) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Text("最近搜索", style = MiuixTheme.textStyles.title4)
+                                ZlibClearSearchHistoryButton(onClick = { confirmClearHistory = true })
+                            }
+                            history.queries.forEach { query ->
+                                Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).combinedClickable(
+                                    role = Role.Button,
+                                    onClick = { focusManager.clearFocus(); viewModel.searchRecent(query) },
+                                    onLongClickLabel = "删除搜索记录",
+                                    onLongClick = { viewModel.removeRecent(query) },
+                                ).padding(vertical = 12.dp)) {
+                                    Text(query, style = MiuixTheme.textStyles.body2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
+                    }
+                }
                 state.loading -> fullWidthItem("search-loading") { ZlibLoading() }
                 state.error != null -> fullWidthItem("search-error") {
                     ZlibStateCard(
@@ -116,8 +154,8 @@ fun SearchScreen(
                     )
                 }
 
-                state.hasMore && state.error == null -> fullWidthItem("search-more") {
-                    TextButton(text = "加载更多", onClick = viewModel::loadMore, modifier = Modifier.fillMaxWidth())
+                state.searched && !state.hasMore && state.books.isNotEmpty() && !state.loading -> fullWidthItem("search-end") {
+                    Text("已显示全部结果", style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
                 }
             }
         }
@@ -125,6 +163,10 @@ fun SearchScreen(
         ZlibGlassBottomSheet(show = showFilters, title = "搜索筛选", onDismiss = dismissFilters) {
             FilterPanel(
                 filters = draft,
+                options = state.filterOptions,
+                loadingOptions = state.loadingOptions,
+                optionsError = state.optionsError,
+                onRetryOptions = viewModel::loadFilterOptions,
                 onChange = { draft = it },
                 onApply = {
                     dismissFilters()
@@ -132,13 +174,27 @@ fun SearchScreen(
                 },
             )
         }
+        ZlibConfirmDialog(
+            show = confirmClearHistory,
+            title = "清空最近搜索？",
+            summary = "清空后无法恢复。",
+            confirmLabel = "清空",
+            destructive = true,
+            onDismiss = { confirmClearHistory = false },
+            onConfirm = {
+                confirmClearHistory = false
+                viewModel.clearRecent()
+            },
+        )
     }
 }
-
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FilterPanel(
     filters: SearchFilters,
+    options: SearchFilterOptions,
+    loadingOptions: Boolean,
+    optionsError: String?,
+    onRetryOptions: () -> Unit,
     onChange: (SearchFilters) -> Unit,
     onApply: () -> Unit,
 ) {
@@ -149,25 +205,29 @@ private fun FilterPanel(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         ZlibExactMatchPreference(checked = filters.exact, onCheckedChange = { onChange(filters.copy(exact = it)) })
-        Text("语言", style = MiuixTheme.textStyles.body2)
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            FilterChip("English", "english" in filters.languages) { onChange(filters.toggleLanguage("english")) }
-            FilterChip("中文", "chinese" in filters.languages) { onChange(filters.toggleLanguage("chinese")) }
-            FilterChip("Deutsch", "german" in filters.languages) { onChange(filters.toggleLanguage("german")) }
+        if (loadingOptions) Text("正在更新筛选选项…", style = MiuixTheme.textStyles.footnote1)
+        optionsError?.let { TextButton(text = "更新筛选选项失败，点击重试", onClick = onRetryOptions) }
+        val languages = remember(options.languages) {
+            options.languages.sortedWith(compareBy<com.qgming.zlib.core.model.SearchLanguage> {
+                when (it.code) { "chinese" -> 0; "english" -> 1; else -> 2 }
+            }.thenBy { it.name }).map { ZlibSelectionOption(it.code, it.name, "${it.name} ${it.code}") }
         }
-        Text("格式", style = MiuixTheme.textStyles.body2)
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            listOf("epub", "pdf", "mobi", "azw3", "fb2").forEach { extension ->
-                FilterChip(extension.uppercase(), extension in filters.extensions) {
-                    onChange(filters.toggleExtension(extension))
-                }
-            }
+        ZlibPreferenceGroup {
+            ZlibMultiSelectPreference(
+                title = "语言", allLabel = "全部语言", options = languages,
+                selected = filters.languages, searchable = true,
+                onChange = { onChange(filters.copy(languages = it)) },
+            )
+            ZlibMultiSelectPreference(
+                title = "格式", allLabel = "全部格式",
+                options = options.extensions.map { ZlibSelectionOption(it, it.uppercase()) },
+                selected = filters.extensions, onChange = { onChange(filters.copy(extensions = it)) },
+            )
+            ZlibPreferenceMenu(
+                title = "排序", options = SearchSort.entries.map { it.title },
+                selectedIndex = SearchSort.entries.indexOfFirst { it.wireValue == filters.order }.coerceAtLeast(0),
+                onSelect = { onChange(filters.copy(order = SearchSort.entries[it].wireValue)) },
+            )
         }
         Text("出版年份", style = MiuixTheme.textStyles.body2)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -191,11 +251,6 @@ private fun FilterPanel(
         if (!filters.yearRangeValid) {
             Text("起始年份不能大于结束年份", style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.error)
         }
-        Text("排序", style = MiuixTheme.textStyles.body2)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip("默认", filters.order == null) { onChange(filters.copy(order = null)) }
-            FilterChip("热门", filters.order == "popular") { onChange(filters.copy(order = "popular")) }
-        }
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -208,25 +263,5 @@ private fun FilterPanel(
                 colors = ButtonDefaults.buttonColorsPrimary(),
             ) { Text("应用筛选") }
         }
-    }
-}
-
-@Composable
-private fun FilterChip(text: String, isSelected: Boolean, onClick: () -> Unit) {
-    val background = if (isSelected) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.surfaceContainerHigh
-    val foreground = if (isSelected) MiuixTheme.colorScheme.onPrimary else MiuixTheme.colorScheme.onSurface
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.semantics { selected = isSelected },
-        shape = RoundedCornerShape(50),
-        color = background,
-        contentColor = foreground,
-    ) {
-        Text(
-            text = text,
-            style = MiuixTheme.textStyles.footnote1,
-            color = foreground,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-        )
     }
 }

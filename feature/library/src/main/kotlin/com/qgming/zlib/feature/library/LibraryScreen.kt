@@ -3,6 +3,7 @@ package com.qgming.zlib.feature.library
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -18,11 +19,11 @@ import com.qgming.zlib.core.designsystem.ZlibConfirmDialog
 import com.qgming.zlib.core.designsystem.ZlibGlassBottomSheet
 import com.qgming.zlib.core.designsystem.ZlibMenuAction
 import com.qgming.zlib.core.designsystem.ZlibPage
-import com.qgming.zlib.core.designsystem.ZlibSnackbarHost
+import com.qgming.zlib.core.designsystem.ZlibToastHost
 import com.qgming.zlib.core.designsystem.ZlibStateCard
 import com.qgming.zlib.core.designsystem.ZlibTopBarTabs
 import com.qgming.zlib.core.designsystem.fullWidthItem
-import com.qgming.zlib.core.designsystem.rememberZlibSnackbarHostState
+import com.qgming.zlib.core.designsystem.ZlibAutoPagination
 import top.yukonga.miuix.kmp.basic.TextButton
 
 private val SectionTitles = LibrarySection.entries.map { it.title }
@@ -59,11 +60,9 @@ fun DownloadHistoryScreen(
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val sessionGeneration by viewModel.sessionGeneration.collectAsStateWithLifecycle()
-    val snackbar = rememberZlibSnackbarHostState(sessionGeneration)
-    LaunchedEffect(viewModel, snackbar) { viewModel.events.collect { snackbar.showMessage(it) } }
+    ZlibToastHost(viewModel.events, key = sessionGeneration)
     ZlibPage(
         title = "云端下载记录", onBack = onBack,
-        snackbarHost = { ZlibSnackbarHost(snackbar) },
     ) { padding ->
         RemoteBooks(padding, CloudLibrarySource.DownloadHistory, onOpenBook, viewModel)
     }
@@ -81,8 +80,13 @@ private fun RemoteBooks(
     val action by viewModel.historyAction.collectAsStateWithLifecycle()
     val state = states[source] ?: RemoteLibraryState()
     val page = state.page
+    val gridState = rememberLazyGridState()
+    ZlibAutoPagination(
+        state = gridState, enabled = page?.hasNext == true && state.request == null && state.error == null,
+        pageKey = page?.page ?: 0, onLoadMore = { viewModel.loadMore(source) },
+    )
     val onRefresh = { viewModel.refresh(source) }
-    ZlibBookGrid(padding = padding, refreshing = state.request == LibraryRequest.Refresh, onRefresh = onRefresh) {
+    ZlibBookGrid(padding = padding, state = gridState, refreshing = state.request == LibraryRequest.Refresh, onRefresh = onRefresh) {
         when {
             page == null && state.error == null -> {
                 if (state.request != LibraryRequest.Refresh) fullWidthItem("remote-loading") { ZlibLoading() }
@@ -108,20 +112,13 @@ private fun RemoteBooks(
         }
         if (page != null && state.error != null) {
             fullWidthItem("remote-update-error") {
-                ZlibStateCard("未能更新${source.title}", state.error, onAction = onRefresh)
+                ZlibStateCard("未能更新${source.title}", state.error, onAction = {
+                    viewModel.retry(source)
+                })
             }
         }
         if (state.request == LibraryRequest.Append) {
             fullWidthItem("remote-more-loading") { ZlibLoading() }
-        } else if (page?.hasNext == true) {
-            fullWidthItem("remote-more") {
-                TextButton(
-                    text = "加载更多",
-                    onClick = { viewModel.loadMore(source) },
-                    enabled = state.request == null,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
         }
     }
     if (source == CloudLibrarySource.DownloadHistory) {

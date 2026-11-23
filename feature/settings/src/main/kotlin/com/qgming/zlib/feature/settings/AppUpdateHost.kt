@@ -10,14 +10,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qgming.zlib.core.designsystem.ZlibSnackbarHost
+import com.qgming.zlib.core.designsystem.ZlibToastHost
 import com.qgming.zlib.core.designsystem.rememberZlibSnackbarHostState
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.map
 
 @Composable
 fun AppUpdateHost(info: AboutAppInfo, viewModel: AboutViewModel) {
@@ -27,6 +30,13 @@ fun AppUpdateHost(info: AboutAppInfo, viewModel: AboutViewModel) {
     val scope = rememberCoroutineScope()
     val snackbar = rememberZlibSnackbarHostState()
     val installFailed = stringResource(R.string.about_update_install_failed)
+    val alreadyCurrent = stringResource(R.string.about_update_current)
+    val toastMessages = remember(viewModel, alreadyCurrent) {
+        viewModel.events.map { event ->
+            when (event) { AboutUpdateEvent.AlreadyCurrent -> alreadyCurrent }
+        }
+    }
+    ZlibToastHost(toastMessages)
     fun openInstaller() {
         val file = viewModel.installerFile() ?: return
         try {

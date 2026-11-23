@@ -1,21 +1,23 @@
 package com.qgming.zlib.core.data.download
 
+import android.net.Uri
+import androidx.room.withTransaction
 import com.qgming.zlib.core.common.AppDispatchers
 import com.qgming.zlib.core.common.AppError
 import com.qgming.zlib.core.common.AppResult
 import com.qgming.zlib.core.common.SafeLog
+import com.qgming.zlib.core.data.account.AccountQuotaSwitcher
+import com.qgming.zlib.core.data.session.SessionManager
 import com.qgming.zlib.core.database.DownloadEntity
 import com.qgming.zlib.core.database.DownloadStates
 import com.qgming.zlib.core.database.ZlibDatabase
-import com.qgming.zlib.core.data.account.AccountQuotaSwitcher
-import com.qgming.zlib.core.data.session.SessionManager
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
 
 @Singleton
@@ -23,6 +25,7 @@ class DownloadRunner @Inject constructor(
     private val database: ZlibDatabase,
     private val engine: DownloadEngine,
     private val notifications: DownloadNotifications,
+    private val directoryStore: DownloadDirectoryStore,
     private val dispatchers: AppDispatchers,
     private val sessions: SessionManager,
     private val quotaSwitcher: AccountQuotaSwitcher,
@@ -47,12 +50,63 @@ class DownloadRunner @Inject constructor(
         change()
     }
 
+    /**
+     * Directory changes are mutually exclusive with selecting the next writer. All unfinished
+     * active records are paused first, the old writer is cancelled and joined, and only then is
+     * the new tree validated and saved. A failed validation keeps the previous directory.
+     */
+    suspend fun withDirectoryChange(uri: Uri): AppResult<DownloadDirectoryChange> {
+        directoryStore.ensureLoaded()
+        // Re-selecting the same tree (including a first-time selection that is already saved)
+        // must not pause an otherwise healthy queue just to re-save an identical URI.
+        if (directoryStore.currentUri() == uri) {
+            return when (val saved = directoryStore.setTree(uri)) {
+                is AppResult.Failure -> saved
+                is AppResult.Success -> AppResult.Success(
+                    DownloadDirectoryChange(
+                        withContext(dispatchers.io) { directoryStore.currentName() },
+                        pausedTasks = 0,
+                    ),
+                )
+            }
+        }
+        return controls.exclusive { active ->
+            try {
+                val dao = database.downloadDao()
+                val paused = withContext(dispatchers.io) { dao.countActive() }
+                SafeLog.d("Download", "directory change active=$active paused=$paused")
+                withContext(dispatchers.io) {
+                    dao.pauseAllActive(DownloadStates.PAUSED, null, now())
+                }
+                // Cancel the network call and wait until the old writer has fully stopped.
+                stopDownloadWorker(worker, ::cancelActiveTransfer) { }
+                // Progress writes may land while cancellation unwinds; pause again after the join.
+                withContext(dispatchers.io) {
+                    dao.pauseAllActive(DownloadStates.PAUSED, null, now())
+                }
+                when (val saved = directoryStore.setTree(uri)) {
+                    is AppResult.Failure -> saved
+                    is AppResult.Success -> AppResult.Success(
+                        DownloadDirectoryChange(
+                            withContext(dispatchers.io) { directoryStore.currentName() },
+                            paused,
+                        ),
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (t: Throwable) {
+                // The queue is already paused, so the safe state is preserved.
+                AppResult.Failure(AppError.Storage(t))
+            }
+        }
+    }
+
     suspend fun runQueue() = withContext(dispatchers.io) {
         worker = currentCoroutineContext().job
         try {
             val dao = database.downloadDao()
             dao.resetInterrupted()
-            dao.invalidateTinyCompleted()
             while (true) {
                 val item = controls.selectNext(DownloadEntity::id) { dao.nextActive() } ?: break
                 try {
@@ -61,12 +115,13 @@ class DownloadRunner @Inject constructor(
                     controls.finished()
                 }
             }
-        } finally { worker = null }
+        } finally {
+            worker = null
+        }
     }
 
     private suspend fun runItem(item: DownloadEntity): Boolean {
         val dao = database.downloadDao()
-        val books = database.bookDao()
         dao.update(item.id, DownloadStates.RESOLVING, item.bytesWritten, item.totalBytes, null, now())
         notifications.update(dao.byId(item.id) ?: item)
 
@@ -77,7 +132,7 @@ class DownloadRunner @Inject constructor(
         while (true) {
             val current = dao.byId(item.id) ?: break
             val requestSession = sessions.current()
-            val result = try {
+            val outcome = try {
                 engine.download(current, requestSession) { written, total ->
                     lastBytes = written
                     lastTotal = total
@@ -93,20 +148,24 @@ class DownloadRunner @Inject constructor(
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (t: Throwable) {
-                AppResult.Failure(AppError.Storage(t))
+                DownloadOutcome.Failed(
+                    AppError.Storage(t),
+                    if (t is SecurityException) DownloadCodes.STORAGE_PERMISSION else DownloadCodes.STORAGE,
+                )
             }
 
-            when (result) {
-                is AppResult.Success -> {
-                    dao.update(item.id, DownloadStates.COMPLETED, lastBytes, lastTotal, null, now())
-                    books.setLocalFile(item.bookId, result.value, now(), now())
-                    SafeLog.d("Download", "completed ${item.id} bytes=$lastBytes uri=${result.value}")
-                    notifications.completed(current, lastBytes, lastTotal)
+            when (outcome) {
+                is DownloadOutcome.Completed -> {
+                    recordCompletion(item, outcome)
+                    lastBytes = outcome.totalBytes
+                    lastTotal = outcome.totalBytes
+                    SafeLog.d("Download", "completed bytes=${outcome.totalBytes}")
+                    notifications.completed(current, outcome.totalBytes, outcome.totalBytes)
                     break
                 }
 
-                is AppResult.Failure -> {
-                    val error = result.error
+                is DownloadOutcome.Failed -> {
+                    val error = outcome.error
                     if (error is AppError.Quota && requestSession != null && quotaSwitcher.switchAfterQuota(requestSession, attemptedAccounts)) {
                         attempt = 1
                         continue
@@ -117,15 +176,13 @@ class DownloadRunner @Inject constructor(
                         attempt++
                         continue
                     }
-                    dao.update(item.id, DownloadStates.FAILED, lastBytes, lastTotal, errorCode(error), now())
-                    SafeLog.w("Download", "failed ${item.id} code=${errorCode(error)}")
-                    notifications.failed(current, errorCode(error))
+                    dao.update(item.id, DownloadStates.FAILED, lastBytes, lastTotal, outcome.code, now())
+                    SafeLog.w("Download", "failed ${item.id} code=${outcome.code}")
+                    notifications.failed(current, outcome.code)
                     if (error is AppError.Quota) {
-                        // Park the remaining queue; another START must not repeatedly hit the same limit.
-                        while (true) {
-                            val pending = dao.nextActive() ?: break
-                            dao.updateState(pending.id, DownloadStates.PAUSED, "quota", now())
-                        }
+                        // Park the remaining queue in one statement; another START must not
+                        // repeatedly hit the same limit.
+                        dao.pauseAllActive(DownloadStates.PAUSED, DownloadCodes.QUOTA, now())
                         return false
                     }
                     break
@@ -135,21 +192,31 @@ class DownloadRunner @Inject constructor(
         return true
     }
 
+    /** Recording the queue row and the book's file reference as close to atomic as Room allows. */
+    private suspend fun recordCompletion(item: DownloadEntity, outcome: DownloadOutcome.Completed) {
+        val now = now()
+        database.withTransaction {
+            database.downloadDao().update(
+                item.id,
+                DownloadStates.COMPLETED,
+                outcome.totalBytes,
+                outcome.totalBytes,
+                null,
+                now,
+            )
+            // Another format of the same book may have been enqueued meanwhile. Only associate
+            // the file when the book row still describes this exact id:hash.
+            val book = database.bookDao().byId(item.bookId)
+            if (book != null && book.hash == item.hash) {
+                database.bookDao().setLocalFile(item.bookId, outcome.uri, now, now)
+            }
+        }
+    }
+
     private fun isRetryable(error: AppError): Boolean = when (error) {
         is AppError.Network -> true
         is AppError.Server -> error.code == 502 || error.code == 503 || error.code == 504
         else -> false
-    }
-
-    private fun errorCode(error: AppError): String = when (error) {
-        is AppError.Quota -> "quota"
-        AppError.SessionExpired, AppError.NotLoggedIn -> "session"
-        is AppError.DomainBlocked -> "domain"
-        is AppError.Network -> "network"
-        is AppError.Server -> "http_${error.code}"
-        is AppError.Storage -> "storage"
-        is AppError.Parse -> "storage"
-        else -> "unknown"
     }
 
     private fun now() = System.currentTimeMillis()

@@ -3,6 +3,7 @@ package com.qgming.zlib.feature.detail
 import com.qgming.zlib.core.common.AppDispatchers
 import com.qgming.zlib.core.common.AppResult
 import com.qgming.zlib.core.data.library.BookRepository
+import com.qgming.zlib.core.data.download.ExistingDownload
 import com.qgming.zlib.core.data.session.SessionManager
 import com.qgming.zlib.core.data.session.SessionStore
 import com.qgming.zlib.core.model.Book
@@ -31,6 +32,44 @@ import okhttp3.mockwebserver.MockWebServer
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DetailViewModelTest {
+    @Test
+    fun `exact existing file prompts without enqueue and redownload requires explicit choice`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            MockWebServer().use { server ->
+                val dispatchers = object : AppDispatchers {
+                    override val io = dispatcher; override val default = dispatcher; override val main = dispatcher
+                }
+                val sessions = SessionManager(MemorySessionStore(), dispatchers)
+                sessions.save(Session("7", "key", "z-lib.sk"))
+                val api = EapiClient(OkHttpClient(), { server.url("/").toString() }, sessions::current,
+                    baseUrlForHost = { server.url("/").toString() }, dispatchers = dispatchers, maxAttempts = 1)
+                val queued = mutableListOf<Book>()
+                val forced = mutableListOf<Book>()
+                val checked = mutableListOf<String>()
+                val viewModel = DetailViewModel(BookRepository(api), sessions,
+                    enqueue = { queued.add(it); AppResult.Success(Unit) },
+                    findExisting = { checked.add(it.ref); ExistingDownload(it, "content://test/tree/books/document/file") },
+                    forceEnqueue = { forced.add(it); AppResult.Success(Unit) },
+                )
+                loadDetail(server, viewModel)
+                server.enqueue(json("""{"success":1,"books":[{"id":8,"hash":"pdf","extension":"pdf"}]}"""))
+                viewModel.showFormats(); advanceUntilIdle()
+                viewModel.selectFormat("8:pdf"); advanceUntilIdle()
+                assertEquals(listOf("8:pdf"), checked)
+                assertEquals("8:pdf", viewModel.state.value.existingSelection?.ref)
+                assertTrue(queued.isEmpty()); assertTrue(forced.isEmpty())
+                viewModel.redownload(); viewModel.redownload(); advanceUntilIdle()
+                assertEquals(listOf("8:pdf"), forced.map { it.ref })
+                assertTrue(queued.isEmpty())
+                assertNull(viewModel.state.value.existing)
+                assertEquals(2, server.requestCount)
+                sessions.clear(); advanceUntilIdle()
+            }
+        } finally { Dispatchers.resetMain() }
+    }
+
     @Test
     fun `opening formats never enqueues and selecting a file uses its own reference and size once`() = runTest {
         withDetail { server, _, queued, viewModel ->
@@ -173,10 +212,10 @@ class DetailViewModelTest {
                     dispatchers = dispatchers, maxAttempts = 1,
                 )
                 val queued = mutableListOf<Book>()
-                val viewModel = DetailViewModel(BookRepository(api), sessions) { book ->
+                val viewModel = DetailViewModel(BookRepository(api), sessions, enqueue = { book ->
                     queued.add(book)
                     AppResult.Success(Unit)
-                }
+                })
                 block(server, sessions, queued, viewModel)
                 sessions.clear()
                 advanceUntilIdle()

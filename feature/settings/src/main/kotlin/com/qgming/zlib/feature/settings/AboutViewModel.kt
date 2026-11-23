@@ -13,11 +13,14 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
 enum class UpdateFailure { Network, RateLimit, Response }
+enum class AboutUpdateEvent { AlreadyCurrent }
 
 data class AboutUpdateState(
     val visible: Boolean = false,
@@ -35,7 +38,10 @@ class AboutViewModel internal constructor(
 
     private val _update = MutableStateFlow(AboutUpdateState())
     val update = _update.asStateFlow()
+    private val _events = Channel<AboutUpdateEvent>(Channel.BUFFERED)
+    val events = _events.receiveAsFlow()
     private var request: Job? = null
+    private var manualCheckRequested = false
     val download = downloads?.state ?: MutableStateFlow(UpdateDownloadState()).asStateFlow()
     private var startupChecked = false
 
@@ -65,24 +71,32 @@ class AboutViewModel internal constructor(
             return
         }
         if (_update.value.checking) {
-            if (!automatic) _update.value = _update.value.copy(visible = true)
+            if (!automatic) manualCheckRequested = true
             return
         }
-        _update.value = AboutUpdateState(visible = !automatic, checking = true)
+        manualCheckRequested = !automatic
+        _update.value = AboutUpdateState(checking = true)
         request = viewModelScope.launch {
             try {
                 _update.value = when (val result = check(version)) {
-                    is AppResult.Success -> AboutUpdateState(visible = _update.value.visible || !automatic || result.value is UpdateCheckResult.Available, result = result.value)
-                    is AppResult.Failure -> AboutUpdateState(visible = _update.value.visible || !automatic, failure = when (val error = result.error) {
+                    is AppResult.Success -> AboutUpdateState(
+                        visible = result.value !is UpdateCheckResult.Current &&
+                            (manualCheckRequested || result.value is UpdateCheckResult.Available),
+                        result = result.value,
+                    )
+                    is AppResult.Failure -> AboutUpdateState(visible = manualCheckRequested, failure = when (val error = result.error) {
                         is AppError.Network -> UpdateFailure.Network
                         is AppError.Server -> if (error.code == 403 || error.code == 429) UpdateFailure.RateLimit else UpdateFailure.Response
                         else -> UpdateFailure.Response
                     })
                 }
+                if (manualCheckRequested && _update.value.result is UpdateCheckResult.Current) {
+                    _events.send(AboutUpdateEvent.AlreadyCurrent)
+                }
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Exception) {
-                _update.value = AboutUpdateState(visible = !automatic, failure = UpdateFailure.Response)
+                _update.value = AboutUpdateState(visible = manualCheckRequested, failure = UpdateFailure.Response)
             }
         }
     }
@@ -90,6 +104,7 @@ class AboutViewModel internal constructor(
     fun dismissUpdate() {
         request?.cancel()
         request = null
+        manualCheckRequested = false
         _update.value = AboutUpdateState()
     }
 

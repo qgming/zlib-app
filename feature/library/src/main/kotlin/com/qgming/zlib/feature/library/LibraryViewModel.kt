@@ -37,6 +37,7 @@ internal data class RemoteLibraryState(
     val page: BookPage? = null,
     val request: LibraryRequest? = null,
     val error: String? = null,
+    val failedRequest: LibraryRequest? = null,
 )
 
 internal data class HistoryActionState(
@@ -100,9 +101,14 @@ class LibraryViewModel @Inject constructor(
         if (source !in _remote.value) load(source, LibraryRequest.Initial)
     }
 
-    internal fun refresh(source: CloudLibrarySource) = load(source, LibraryRequest.Refresh)
+    internal fun refresh(source: CloudLibrarySource) {
+        if (source == CloudLibrarySource.Saved) favorites.invalidate()
+        load(source, LibraryRequest.Refresh)
+    }
 
     internal fun loadMore(source: CloudLibrarySource) = load(source, LibraryRequest.Append)
+
+    internal fun retry(source: CloudLibrarySource) = load(source, _remote.value[source]?.failedRequest ?: LibraryRequest.Refresh)
 
     private fun resetSession(): Boolean {
         val session = sessions.current()
@@ -140,7 +146,7 @@ class LibraryViewModel @Inject constructor(
 
         val requestGeneration = generation
         val requestSession = activeSession
-        updateRemote(source, current.copy(request = request, error = null))
+        updateRemote(source, current.copy(request = request, error = null, failedRequest = null))
         requests[source] = viewModelScope.launch {
             val result = when (source) {
                 CloudLibrarySource.Saved -> repository.saved(requestedPage)
@@ -153,12 +159,15 @@ class LibraryViewModel @Inject constructor(
                     // Keep any covers that arrived while the next page was loading.
                     val previousBooks = if (request == LibraryRequest.Append) _remote.value[source]?.page?.books.orEmpty() else emptyList()
                     val page = result.value
+                    if (source == CloudLibrarySource.Saved) favorites.rememberSaved(page.books)
+                    val merged = (previousBooks + page.books).distinctBy(Book::ref).map(::withCachedCover)
+                    val progressed = request != LibraryRequest.Append || (page.page == requestedPage && merged.size > previousBooks.size)
                     RemoteLibraryState(
-                        page = page.copy(books = (previousBooks + page.books).distinctBy(Book::ref).map(::withCachedCover)),
+                        page = page.copy(books = merged, totalPages = if (progressed) page.totalPages else page.page),
                     )
                 }
 
-                is AppResult.Failure -> (_remote.value[source] ?: current).copy(request = null, error = result.error.userMessage())
+                is AppResult.Failure -> (_remote.value[source] ?: current).copy(request = null, error = result.error.userMessage(), failedRequest = request)
             }
             updateRemote(source, updated)
         }

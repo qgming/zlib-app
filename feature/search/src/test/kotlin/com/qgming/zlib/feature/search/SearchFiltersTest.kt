@@ -7,6 +7,14 @@ import kotlin.test.assertTrue
 
 class SearchFiltersTest {
 
+    @Test fun `unknown restored filters cannot silently become unfiltered searches`() {
+        val filters = SearchFilters(languages = setOf("ENGLISH", "unsupported"), extensions = setOf("EPUB", "exe"), order = "date_updated")
+            .validated(com.qgming.zlib.core.model.SearchFilterOptions.Fallback)
+        assertEquals(setOf("english"), filters.languages)
+        assertEquals(setOf("epub"), filters.extensions)
+        assertEquals(null, filters.order)
+    }
+
     @Test
     fun `query maps chips and year range`() {
         val filters = SearchFilters(

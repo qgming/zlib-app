@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.qgming.zlib.core.common.AppResult
 import com.qgming.zlib.core.data.library.BookRepository
 import com.qgming.zlib.core.data.download.DownloadRepository
+import com.qgming.zlib.core.data.download.ExistingDownload
 import com.qgming.zlib.core.data.session.SessionManager
 import com.qgming.zlib.core.designsystem.userMessage
 import com.qgming.zlib.core.model.Book
@@ -26,6 +27,8 @@ data class DetailUiState(
     val error: String? = null,
     val formats: FormatMenuState? = null,
     val enqueuing: Boolean = false,
+    val existing: ExistingDownload? = null,
+    val existingSelection: Book? = null,
 )
 
 data class FormatMenuState(
@@ -39,17 +42,22 @@ class DetailViewModel internal constructor(
     private val bookRepository: BookRepository,
     private val sessions: SessionManager,
     private val enqueue: suspend (Book) -> AppResult<Unit>,
+    private val findExisting: suspend (Book) -> ExistingDownload? = { null },
+    private val forceEnqueue: suspend (Book) -> AppResult<Unit> = enqueue,
 ) : ViewModel() {
     @Inject constructor(
         bookRepository: BookRepository,
         downloadRepository: DownloadRepository,
         sessions: SessionManager,
-    ) : this(bookRepository, sessions, downloadRepository::enqueue)
+    ) : this(bookRepository, sessions, { downloadRepository.enqueue(it) }, downloadRepository::findExistingDownload,
+        { downloadRepository.enqueue(it, forceRedownload = true) })
 
     private val _state = MutableStateFlow(DetailUiState())
     val state: StateFlow<DetailUiState> = _state.asStateFlow()
     private val _events = Channel<String>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
+    private val _openFiles = Channel<ExistingDownload>(Channel.BUFFERED)
+    val openFiles = _openFiles.receiveAsFlow()
 
     private var lastId: String? = null
     private var lastHash: String? = null
@@ -81,6 +89,7 @@ class DetailViewModel internal constructor(
         formatRequest?.cancel()
         downloadRequest?.cancel()
         while (_events.tryReceive().isSuccess) { /* Discard previous-account feedback. */ }
+        while (_openFiles.tryReceive().isSuccess) { }
         _state.value = DetailUiState()
         return true
     }
@@ -165,11 +174,49 @@ class DetailViewModel internal constructor(
                 id = format.id, hash = format.hash, extension = format.extension, sizeBytes = format.sizeBytes,
                 localUri = null, downloadedAt = null, historyDate = null,
             )
+            val existing = findExisting(selected)
+            if (generation != requestGeneration || sessions.current() != requestSession) return@launch
+            if (existing != null) {
+                _state.update { it.copy(enqueuing = false, existing = existing, existingSelection = selected) }
+                return@launch
+            }
             val result = enqueue(selected)
             if (generation != requestGeneration || sessions.current() != requestSession) return@launch
             _state.update { it.copy(enqueuing = false) }
             _events.send(when (result) {
                 is AppResult.Success -> "${format.extension.uppercase()} 已加入下载队列"
+                is AppResult.Failure -> result.error.userMessage()
+            })
+        }
+    }
+
+    fun dismissExisting() { if (!_state.value.enqueuing) _state.update { it.copy(existing = null, existingSelection = null) } }
+
+    fun openExisting() {
+        if (resetSession()) return
+        val selected = _state.value.existingSelection ?: return
+        val expectedSession = sessions.current()
+        val requestedGeneration = generation
+        dismissExisting()
+        viewModelScope.launch {
+            val file = findExisting(selected)
+            if (requestedGeneration != generation || sessions.current() != expectedSession) return@launch
+            if (file == null) _events.send("文件已不存在或无法读取，请重试下载") else _openFiles.send(file)
+        }
+    }
+
+    fun redownload() {
+        if (resetSession() || _state.value.enqueuing) return
+        val selected = _state.value.existingSelection ?: return
+        val requested = generation
+        val expected = sessions.current()
+        _state.update { it.copy(existing = null, existingSelection = null, enqueuing = true) }
+        downloadRequest = viewModelScope.launch {
+            val result = forceEnqueue(selected)
+            if (requested != generation || sessions.current() != expected) return@launch
+            _state.update { it.copy(enqueuing = false) }
+            _events.send(when (result) {
+                is AppResult.Success -> "已重新加入下载队列"
                 is AppResult.Failure -> result.error.userMessage()
             })
         }

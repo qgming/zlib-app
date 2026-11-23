@@ -13,6 +13,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -29,21 +31,30 @@ import com.qgming.zlib.core.designsystem.ZlibLoadingStatus
 import com.qgming.zlib.core.designsystem.ZlibPage
 import com.qgming.zlib.core.designsystem.ZlibSectionTitle
 import com.qgming.zlib.core.designsystem.ZlibStateCard
+import com.qgming.zlib.core.designsystem.ZlibGlassBottomSheet
+import com.qgming.zlib.core.designsystem.ZlibMenuAction
 import com.qgming.zlib.core.model.DownloadItem
 import com.qgming.zlib.core.model.DownloadState
 import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun DownloadsScreen(
     onBack: () -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenAccount: () -> Unit = {},
+    onOpenDomains: () -> Unit = {},
     viewModel: DownloadsViewModel = hiltViewModel(),
 ) {
     val queue by viewModel.queue.collectAsStateWithLifecycle()
     val loadedQueue = queue
     var notice by remember { mutableStateOf<String?>(null) }
+    var failure by remember { mutableStateOf<DownloadItem?>(null) }
+    val directoryPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri?.let(viewModel::setDirectory)
+    }
     LaunchedEffect(viewModel) {
         viewModel.events.collect { notice = it }
     }
@@ -65,11 +76,24 @@ fun DownloadsScreen(
             }
             if (tasks.isNotEmpty()) {
                 item(key = "download-tasks") { ZlibSectionTitle("下载任务") }
-                items(tasks, key = { it.id }) { item -> DownloadRow(item, viewModel) }
+                items(tasks, key = { it.id }) { item -> DownloadRow(item, viewModel, onShowFailure = { failure = item }) }
             }
             if (records.isNotEmpty()) {
                 item(key = "download-records") { ZlibSectionTitle("已完成") }
-                items(records, key = { it.id }) { item -> DownloadRow(item, viewModel) }
+                items(records, key = { it.id }) { item -> DownloadRow(item, viewModel, onShowFailure = { failure = item }) }
+            }
+        }
+        ZlibGlassBottomSheet(show = failure != null, title = "下载未完成", onDismiss = { failure = null }) {
+            failure?.let { item ->
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(item.error.orEmpty().errorLabel(), style = MiuixTheme.textStyles.body2)
+                    when (item.error) {
+                        "session", "quota" -> ZlibMenuAction("管理账号与额度") { failure = null; onOpenAccount() }
+                        "domain" -> ZlibMenuAction("更换域名") { failure = null; onOpenDomains() }
+                        "storage", "storage_permission" -> ZlibMenuAction("重新选择下载目录") { failure = null; directoryPicker.launch(null) }
+                    }
+                    if (item.error != "quota") ZlibMenuAction("重试下载") { failure = null; viewModel.retry(item.id) }
+                }
             }
         }
     }
@@ -79,6 +103,7 @@ fun DownloadsScreen(
 private fun DownloadRow(
     item: DownloadItem,
     viewModel: DownloadsViewModel,
+    onShowFailure: () -> Unit,
 ) {
     val progress = item.progress
     val waiting = item.state == DownloadState.RESOLVING || (item.state == DownloadState.DOWNLOADING && progress == null)
@@ -104,6 +129,7 @@ private fun DownloadRow(
                         },
                     )
                 }
+                if (item.state == DownloadState.FAILED) TextButton(text = "查看原因", onClick = onShowFailure)
                 item.totalBytes?.let { total ->
                     if (progress != null && (item.state == DownloadState.DOWNLOADING || item.state == DownloadState.PAUSED)) {
                         Spacer(Modifier.height(8.dp))
@@ -153,6 +179,11 @@ private fun String.errorLabel(): String = when (this) {
     "domain" -> "域名被拦截"
     "network" -> "网络错误"
     "storage" -> "写入失败"
+    "storage_permission" -> "下载目录权限失效，请重新授权"
+    "range" -> "续传区间异常，已保留任务，请重试"
+    "invalid" -> "文件校验失败，请重试"
+    "incomplete" -> "下载尚未完整，已保留进度，请重试续传"
+    "http_416" -> "续传位置已失效，请重试下载"
     "http_404" -> "文件不存在"
     else -> "请重试"
 }

@@ -6,6 +6,7 @@ import android.provider.DocumentsContract
 import androidx.core.net.toUri
 import com.qgming.zlib.core.model.EbookFiles
 import com.qgming.zlib.core.model.LocalFile
+import com.qgming.zlib.core.common.SafeLog
 import java.io.IOException
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.currentCoroutineContext
@@ -25,6 +26,8 @@ internal class SafLocalFileStore(context: Context) : LocalFileStore {
     private val resolver = context.contentResolver
 
     override suspend fun scan(treeUri: String): List<LocalFile> {
+        val started = System.nanoTime()
+        var inspected = 0
         val tree = treeUri.toUri()
         val rootId = DocumentsContract.getTreeDocumentId(tree)
         val root = DocumentsContract.buildDocumentUriUsingTree(tree, rootId)
@@ -44,6 +47,7 @@ internal class SafLocalFileStore(context: Context) : LocalFileStore {
             val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parent)
             resolver.query(children, Projection, null, null, null)?.use { cursor ->
                 while (cursor.moveToNext()) {
+                    inspected++
                     currentCoroutineContext().ensureActive()
                     val id = cursor.getString(0) ?: continue
                     val name = cursor.getString(1) ?: continue
@@ -62,6 +66,7 @@ internal class SafLocalFileStore(context: Context) : LocalFileStore {
                 }
             } ?: throw IOException("无法读取下载目录，请检查文件权限")
         }
+        SafeLog.d("LocalScan", "directories=${visited.size} entries=$inspected books=${result.size} elapsedMs=${(System.nanoTime() - started) / 1_000_000}")
         return result.distinctBy(LocalFile::uri)
             .sortedWith(compareByDescending<LocalFile> { it.modifiedAt }.thenBy { it.name.lowercase() })
     }

@@ -55,7 +55,10 @@ class SettingsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            directory.value = downloadRepository.downloadDirectoryName()
+            val name = downloadRepository.downloadDirectoryName()
+            directory.value = if (name != null && !downloadRepository.downloadDirectoryAccessible()) {
+                "目录无法访问，请重新选择授权"
+            } else name
         }
     }
 
@@ -177,7 +180,9 @@ class SettingsViewModel @Inject constructor(
             when (val result = downloadRepository.setDownloadDirectory(uri)) {
                 is AppResult.Success -> {
                     directory.value = downloadRepository.downloadDirectoryName()
-                    _events.send("下载目录已保存")
+                    _events.send(if (result.value.pausedTasks > 0) {
+                        "下载目录已保存，${result.value.pausedTasks} 个任务可在下载管理中继续"
+                    } else "下载目录已保存")
                 }
 
                 is AppResult.Failure -> _events.send(result.error.userMessage())

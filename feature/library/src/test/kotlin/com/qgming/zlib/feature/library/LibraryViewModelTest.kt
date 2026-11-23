@@ -32,6 +32,26 @@ import okhttp3.mockwebserver.MockWebServer
 @OptIn(ExperimentalCoroutinesApi::class)
 class LibraryViewModelTest {
     @Test
+    fun `failed append retries the same page and repeated results stop pagination`() = runTest {
+        withLibrary { server, _, _, viewModel ->
+            val source = CloudLibrarySource.Saved
+            server.enqueue(page("""{"id":1,"hash":"abc"}""", 1, 3))
+            viewModel.onSourceShown(source); advanceUntilIdle(); server.nextPath()
+            server.enqueue(json("""{"success":0,"error":"unavailable"}""", 503))
+            viewModel.loadMore(source); advanceUntilIdle()
+            assertEquals("/eapi/user/book/saved?page=2&limit=50", server.nextPath())
+            assertEquals(listOf("1"), viewModel.remote.value[source]?.page?.books?.map { it.id })
+            assertEquals(LibraryRequest.Append, viewModel.remote.value[source]?.failedRequest)
+            server.enqueue(page("""{"id":1,"hash":"abc"}""", 2, 3))
+            viewModel.retry(source); advanceUntilIdle()
+            assertEquals("/eapi/user/book/saved?page=2&limit=50", server.nextPath())
+            assertEquals(false, viewModel.remote.value[source]?.page?.hasNext)
+            viewModel.loadMore(source); advanceUntilIdle()
+            assertEquals(3, server.requestCount)
+        }
+    }
+
+    @Test
     fun `saved refresh recovers after failure and pagination retains cloud results`() = runTest {
         withLibrary { server, _, _, viewModel ->
             server.enqueue(page("""{"id":1,"hash":"abc"}""", 1, 2))

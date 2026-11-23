@@ -102,6 +102,8 @@ class DownloadNotifications @Inject constructor(
 
     private fun launchIntent(): PendingIntent? {
         val intent = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: return null
+        intent.putExtra(DownloadNavigation.EXTRA_DESTINATION, DownloadNavigation.DOWNLOADS)
+        intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         return PendingIntent.getActivity(
             context,
             0,
@@ -126,6 +128,10 @@ class DownloadNotifications @Inject constructor(
         "domain" -> "域名被拦截"
         "network" -> "网络错误"
         "storage" -> "写入失败"
+        "storage_permission" -> "下载目录无法访问，请重新授权"
+        "range" -> "续传位置失效，请重试下载"
+        "invalid" -> "文件校验失败，请重试"
+        "incomplete" -> "下载尚未完整，已保留进度"
         "http_404" -> "文件不存在"
         else -> "请重试"
     }

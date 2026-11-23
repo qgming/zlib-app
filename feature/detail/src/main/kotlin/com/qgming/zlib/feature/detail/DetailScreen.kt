@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -21,6 +22,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import android.content.Intent
+import android.content.ClipData
+import android.content.ActivityNotFoundException
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -39,16 +44,22 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.core.net.toUri
 import com.qgming.zlib.core.designsystem.ZlibBookInfoButton
 import com.qgming.zlib.core.designsystem.ZlibCard
-import com.qgming.zlib.core.designsystem.ZlibCardList
 import com.qgming.zlib.core.designsystem.ZlibCover
 import com.qgming.zlib.core.designsystem.ZlibGlassBottomSheet
 import com.qgming.zlib.core.designsystem.ZlibLoading
 import com.qgming.zlib.core.designsystem.ZlibMenuAction
 import com.qgming.zlib.core.designsystem.ZlibPage
 import com.qgming.zlib.core.designsystem.ZlibStateCard
+import com.qgming.zlib.core.designsystem.ZlibBookGrid
+import com.qgming.zlib.core.designsystem.ZlibBookTile
+import com.qgming.zlib.core.designsystem.ZlibBookOpenRequest
+import com.qgming.zlib.core.designsystem.ZlibSectionTitle
+import com.qgming.zlib.core.designsystem.fullWidthItem
 import com.qgming.zlib.core.model.Book
+import com.qgming.zlib.core.model.EbookFiles
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Text
@@ -60,17 +71,35 @@ fun DetailScreen(
     hash: String,
     onBack: () -> Unit,
     onSearchContributor: (String) -> Unit,
+    onOpenBook: (ZlibBookOpenRequest) -> Unit,
     previewBook: Book? = null,
     viewModel: DetailViewModel = hiltViewModel(key = "$id:$hash"),
     favoriteViewModel: BookFavoriteViewModel = hiltViewModel(key = "$id:$hash:favorite"),
+    similarViewModel: SimilarBooksViewModel = hiltViewModel(key = "$id:$hash:similar"),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val favorite by favoriteViewModel.state.collectAsStateWithLifecycle()
+    val similar by similarViewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     var showInfo by rememberSaveable(id, hash) { mutableStateOf(false) }
     var notice by remember(id, hash) { mutableStateOf<String?>(null) }
     LaunchedEffect(id, hash) { viewModel.load(id, hash) }
     LaunchedEffect(id, hash) { favoriteViewModel.load(id) }
+    LaunchedEffect(state.book?.ref) { if (state.book != null) similarViewModel.load(id, hash) }
     LaunchedEffect(viewModel) { viewModel.events.collect { notice = it } }
+    LaunchedEffect(viewModel, context) {
+        viewModel.openFiles.collect { file ->
+            try {
+                val uri = file.uri.toUri()
+                context.startActivity(Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, EbookFiles.mimeType(file.book.extension))
+                    clipData = ClipData.newRawUri(file.book.title, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                })
+            } catch (_: ActivityNotFoundException) { notice = "没有可打开此格式的应用，请安装阅读器" }
+            catch (_: SecurityException) { notice = "无法访问文件，请重新授权下载目录" }
+        }
+    }
     LaunchedEffect(state.book) { if (state.book == null) notice = null }
 
     ZlibPage(
@@ -82,9 +111,9 @@ fun DetailScreen(
     ) { padding ->
         val book = state.book ?: previewBook?.takeIf { it.ref == "$id:$hash" }
         val error = state.error
-        ZlibCardList(padding) {
+        ZlibBookGrid(padding) {
             if (book == null) {
-                item {
+                fullWidthItem("detail-loading") {
                     if (error != null) {
                         ZlibStateCard(title = "无法加载图书详情", message = error, onAction = viewModel::retry)
                     } else {
@@ -93,13 +122,13 @@ fun DetailScreen(
                 }
             } else {
                 favorite.error?.let { message ->
-                    item(key = "favorite-error") {
+                    fullWidthItem("favorite-error") {
                         ZlibStateCard("无法同步收藏", message, onAction = favoriteViewModel::retry)
                     }
                 }
-                item { BookHeader(book, onSearchContributor) }
+                fullWidthItem("detail-header") { BookHeader(book, onSearchContributor) }
                 if (state.book == null) {
-                    item {
+                    fullWidthItem("detail-error") {
                         if (error != null) {
                             ZlibStateCard("无法加载图书详情", error, onAction = viewModel::retry)
                         } else {
@@ -107,7 +136,7 @@ fun DetailScreen(
                         }
                     }
                 } else {
-                    item {
+                    fullWidthItem("detail-actions") {
                         BookActions(
                             favorite = favorite,
                             message = notice,
@@ -118,7 +147,21 @@ fun DetailScreen(
                     }
                 }
                 if (state.book != null && book.description.isNotBlank()) {
-                    item { DescriptionCard(book.description) }
+                    fullWidthItem("detail-description") { DescriptionCard(book.description) }
+                }
+                if (state.book != null) {
+                    if (similar.loading || similar.error != null || similar.books.isNotEmpty()) {
+                        fullWidthItem("similar-heading") { ZlibSectionTitle("相似图书") }
+                    }
+                    when {
+                        similar.loading -> fullWidthItem("similar-loading") { ZlibLoading() }
+                        similar.error != null -> fullWidthItem("similar-error") {
+                            ZlibStateCard("无法加载相似图书", similar.error.orEmpty(), onAction = similarViewModel::retry)
+                        }
+                        else -> items(similar.books, key = { "similar-${it.ref}" }) { similarBook ->
+                            ZlibBookTile(book = similarBook, onClick = onOpenBook)
+                        }
+                    }
                 }
             }
         }
@@ -154,6 +197,12 @@ fun DetailScreen(
                         Text("暂无可下载的格式", style = MiuixTheme.textStyles.body2)
                     }
                 }
+            }
+        }
+        ZlibGlassBottomSheet(show = state.existing != null, title = "本机已有此文件", onDismiss = viewModel::dismissExisting) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                ZlibMenuAction("打开已有文件", onClick = viewModel::openExisting)
+                ZlibMenuAction("重新下载并保留已有文件", onClick = viewModel::redownload)
             }
         }
     }

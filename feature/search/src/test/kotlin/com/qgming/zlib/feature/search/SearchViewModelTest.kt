@@ -15,6 +15,7 @@ import okhttp3.OkHttpClient
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import androidx.lifecycle.SavedStateHandle
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -22,6 +23,109 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SearchViewModelTest {
+    @Test
+    fun `restored language outside fallback is verified against current options before search`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            MockWebServer().use { server ->
+                val client = EapiClient(OkHttpClient(), { server.url("/").toString() }, { null },
+                    dispatchers = object : AppDispatchers {
+                        override val io = dispatcher; override val default = dispatcher; override val main = dispatcher
+                    }, maxAttempts = 1)
+                server.enqueue(MockResponse().setBody("""{"success":1,"languages":{"french":"法语","english":"英语"}}"""))
+                server.enqueue(MockResponse().setBody("""{"success":1,"extensions":["epub","pdf"]}"""))
+                server.enqueue(bookPage(1, 1))
+                val viewModel = SearchViewModel(BookRepository(client), SavedStateHandle(mapOf(
+                    "submitted" to true, "submittedQuery" to "dune", "query" to "edited draft", "languages" to arrayListOf("french"),
+                )))
+                advanceUntilIdle()
+                assertEquals("/eapi/info/languages", assertNotNull(server.takeRequest(2, TimeUnit.SECONDS)).path)
+                assertEquals("/eapi/info/extensions", assertNotNull(server.takeRequest(2, TimeUnit.SECONDS)).path)
+                val form = ("https://example.test/?" + server.nextForm()).toHttpUrl()
+                assertEquals("dune", form.queryParameter("message"))
+                assertEquals("french", form.queryParameter("languages[]"))
+                assertEquals("edited draft", viewModel.state.value.query)
+                assertEquals(setOf("french"), viewModel.state.value.filters.languages)
+            }
+        } finally { Dispatchers.resetMain() }
+    }
+
+    @Test
+    fun `failed append retains loaded books and retries the same submitted page`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            MockWebServer().use { server ->
+                val client = EapiClient(OkHttpClient(), { server.url("/").toString() }, { null },
+                    dispatchers = object : AppDispatchers {
+                        override val io = dispatcher; override val default = dispatcher; override val main = dispatcher
+                    }, maxAttempts = 1)
+                val viewModel = SearchViewModel(BookRepository(client), SavedStateHandle())
+                server.enqueue(bookPage(1, 1))
+                viewModel.onQueryChange("dune"); viewModel.search(); advanceUntilIdle(); server.nextForm()
+                server.enqueue(MockResponse().setResponseCode(503).setBody("""{"success":0,"error":"Unavailable"}"""))
+                viewModel.loadMore(); advanceUntilIdle(); server.nextForm()
+                assertNotNull(viewModel.state.value.appendError)
+                assertEquals(listOf("1"), viewModel.state.value.books.map { it.id })
+                viewModel.onQueryChange("edited")
+                server.enqueue(bookPage(2, 2))
+                viewModel.loadMore(); advanceUntilIdle()
+                val form = ("https://example.test/?" + server.nextForm()).toHttpUrl()
+                assertEquals("dune", form.queryParameter("message"))
+                assertEquals("2", form.queryParameter("page"))
+                assertEquals(false, viewModel.state.value.hasMore)
+            }
+        } finally { Dispatchers.resetMain() }
+    }
+
+    @Test
+    fun `process restoration searches submitted text once while preserving edited draft`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            MockWebServer().use { server ->
+                val client = EapiClient(OkHttpClient(), { server.url("/").toString() }, { null },
+                    dispatchers = object : AppDispatchers {
+                        override val io = dispatcher; override val default = dispatcher; override val main = dispatcher
+                    }, maxAttempts = 1)
+                server.enqueue(bookPage(1, 1))
+                val saved = SavedStateHandle(mapOf("query" to "unfinished draft", "submittedQuery" to "dune", "submitted" to true,
+                    "languages" to arrayListOf("english"), "exact" to true))
+                val viewModel = SearchViewModel(BookRepository(client), saved)
+                viewModel.initializeQuery("original author")
+                advanceUntilIdle()
+                val form = ("https://example.test/?" + server.nextForm()).toHttpUrl()
+                assertEquals("dune", form.queryParameter("message"))
+                assertEquals("english", form.queryParameter("languages[]"))
+                assertEquals("1", form.queryParameter("e"))
+                assertEquals("unfinished draft", viewModel.state.value.query)
+                assertEquals(1, server.requestCount)
+            }
+        } finally { Dispatchers.resetMain() }
+    }
+
+    @Test
+    fun `duplicate next page ends pagination and does not repeatedly request`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            MockWebServer().use { server ->
+                val client = EapiClient(OkHttpClient(), { server.url("/").toString() }, { null },
+                    dispatchers = object : AppDispatchers {
+                        override val io = dispatcher; override val default = dispatcher; override val main = dispatcher
+                    }, maxAttempts = 1)
+                val viewModel = SearchViewModel(BookRepository(client), SavedStateHandle())
+                server.enqueue(bookPage(1, 1)); viewModel.onQueryChange("book"); viewModel.search(); advanceUntilIdle()
+                server.enqueue(bookPage(1, 2)); viewModel.loadMore(); advanceUntilIdle()
+                assertEquals(false, viewModel.state.value.hasMore)
+                assertEquals(1, viewModel.state.value.books.size)
+                viewModel.loadMore(); advanceUntilIdle()
+                assertEquals(2, server.requestCount)
+            }
+        } finally { Dispatchers.resetMain() }
+    }
+
     @Test
     fun `contributor query auto searches once without old filters and survives reentry`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -39,7 +143,7 @@ class SearchViewModelTest {
                     },
                     maxAttempts = 1,
                 )
-                val viewModel = SearchViewModel(BookRepository(client))
+                val viewModel = SearchViewModel(BookRepository(client), SavedStateHandle())
                 viewModel.applyFilters(SearchFilters(languages = setOf("english"), exact = true))
                 viewModel.initializeQuery(" ")
                 assertEquals(0, server.requestCount)
@@ -89,7 +193,7 @@ class SearchViewModelTest {
                     },
                     maxAttempts = 1,
                 )
-                val viewModel = SearchViewModel(BookRepository(client))
+                val viewModel = SearchViewModel(BookRepository(client), SavedStateHandle())
                 server.enqueue(bookPage(id = 1, page = 1))
                 viewModel.onQueryChange("dune")
                 viewModel.search()

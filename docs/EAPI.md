@@ -274,14 +274,14 @@ GET /eapi/info/domains
 
 历史调查中的用户书单 URL、标识和失败候选路径已清理；它们不是可调用契约。若未来重新纳入，先立 ADR，重新核对鉴权、端点及分页，并添加脱敏 fixture 后实现。
 
-### 2.11 搜索语言与格式候选（已实测，筛选 UI 未动态接入）
+### 2.11 搜索语言与格式候选（已实测，筛选 UI 动态接入）
 
 ```
 GET /eapi/info/languages
 GET /eapi/info/extensions
 ```
 
-2026-11-22 `zh.z-lib.by` 免登录请求均为 HTTP 200、`application/json`、`success:1`。需要固定 UA 和 `Accept: application/json`；本次没有额外参数，也未将它们加入应用的动态筛选请求。
+2026-11-22 `zh.z-lib.by` 免登录请求均为 HTTP 200、`application/json`、`success:1`。需要固定 UA 和 `Accept: application/json`，没有额外参数；客户端已按 ADR-062 接入动态筛选候选。
 
 语言响应中的 `languages` 是 **代码到显示名称的对象**，本次有 175 项，节选：
 
@@ -297,14 +297,27 @@ GET /eapi/info/extensions
 
 这两项用于搜索筛选候选：提交搜索时使用 `languages[]=chinese`、`extensions[]=epub` 等代码。`extensions` 表示全站候选，不能用作某一本书的可下载格式；后者必须使用 §2.3 的 `/formats`。
 
-### 2.12 第三方说明中的其它补充端点（未实测，未接入）
+2026-11-23 免登录核对 `/eapi/book/search` 与 `heartleo/zlib` 的 `internal/zlib/constants.go` / `internal/cli/search_filter_form.go`：`order` 支持且区分大小写的取值为 `popular`（热门）、`bestmatch`（最佳匹配）、`date`（最近添加）、`titleA`（书名升序）、`title`（书名降序）、`year`（出版年份由新到旧）、`filesize`（文件由大到小）、`filesizeA`（文件由小到大）。不传时本次结果与 popular 一致；不存在独立方向参数。`date_created` / `date_updated` 已废弃，未知取值会静默退回默认，不以 HTTP 200 判定支持。
+
+语言、格式从候选集选择并以 `languages[]` / `extensions[]` 重复参数提交。`e=1` 本次观察为提高精确命中的优先级，不保证过滤掉所有非精确结果。翻页每次重发所有条件，固定 limit=50；本次宽泛查询最多返回500项/10页，客户端以实际 pagination 和空/重复结果停止，不把该观测上限硬编码成永久平台保证。
+
+### 2.12 相似图书（2026-11-23 免登录只读验证）
+
+```
+GET /eapi/book/{id}/{hash}/similar
+```
+
+`zh.z-lib.by`、`z-lib.by`、`z-lib.gd` 的公开样本响应为 `{"success":1,"books":[...]}`，条目包括 `id/hash/title/author/cover/isbn`，没有格式和文件大小。六个常规样本返回24项，一个新上架样本为空；条数不是固定契约。`books` 必须是数组，空数组有效，缺失或错误类型为解析失败。使用已有 BookMapper 映射安全引用，按 `id:hash` 去重并去掉自身；忽略 `coverData` HTML 属性片段与 `url` 网页短链接，不能从中替换 EAPI hash。
+
+对公开样本 `24126585/217fd6` 比较无参数、`?page=2`、`?page=99`、`?page=2&limit=5&order=title` 的 books 完全相同，顶层无 pagination/hasMore，因此客户端只请求一次，不发送分页/排序参数。详情共用纵向网格展示完整结果；到末尾不重复请求或拼接，失败独立重试。非法 hash 的400响应仍先解析 success/error，不当作空列表。样本请求：`https://zh.z-lib.by/eapi/book/24126585/217fd6/similar`。
+
+### 2.13 第三方说明中的其它补充端点（未实测，未接入）
 
 以下来自用户补充的 `baroxyton/zlibrary-eapi-documentation`，只作为后续调查清单。来源提供方法与少量参数，没有完整响应契约；本表不新增产品计划，不代表当前域名仍支持这些接口。接入前必须验证响应、鉴权、错误、分页及权限，并添加脱敏 fixture。当前范围仍以 ADR 和 `ROADMAP.md` 为准。
 
 | 用途 | 方法与路径 | 来源参数 / 当前范围 |
 |---|---|---|
 | 最近图书 | `GET /eapi/book/recently` | 仅记录，未安排 UI |
-| 相似图书 | `GET /eapi/book/{id}/{hash}/similar` | 响应结构待核实 |
 | 服务信息 | `GET /eapi/info` | 查询 `switchLanguage` |
 | 套餐信息 | `GET /eapi/info/plans` | 查询 `switchLanguage`；当前范围外 |
 | 捐赠信息 | `GET /eapi/user/donations` | 当前范围外 |

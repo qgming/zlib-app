@@ -14,9 +14,11 @@ import javax.inject.Singleton
 @Singleton
 class BookRepository @Inject constructor(
     private val api: EapiClient,
-    sessions: SessionManager? = null,
+    private val sessions: SessionManager? = null,
 ) {
     val sessionChanges = sessions?.session ?: emptyFlow()
+    fun currentAccountId(): String? = sessions?.current()?.remixUserId
+    fun currentSession() = sessions?.current()
     suspend fun search(query: SearchQuery, page: Int): AppResult<BookPage> =
         api.search(query, page)
 
@@ -28,4 +30,8 @@ class BookRepository @Inject constructor(
     suspend fun recommended(): AppResult<List<Book>> = api.recommended()
 
     suspend fun popular(): AppResult<List<Book>> = api.mostPopular()
+
+    suspend fun searchFilterOptions() = api.searchFilterOptions()
+
+    suspend fun similar(id: String, hash: String): AppResult<List<Book>> = api.similarBooks(id, hash)
 }

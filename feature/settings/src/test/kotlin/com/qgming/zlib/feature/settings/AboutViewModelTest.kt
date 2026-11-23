@@ -12,6 +12,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -93,18 +95,58 @@ class AboutViewModelTest {
         }
     }
 
-    @Test fun `manual check reveals the ongoing startup check without duplicating the request`() = runTest {
+    @Test fun `manual check shares ongoing startup request without opening a loading sheet`() = runTest {
         val result = CompletableDeferred<AppResult<UpdateCheckResult>>()
         var calls = 0
         withModel({ calls++; result.await() }) { model ->
             model.checkOnStart("0.1.0")
             advanceUntilIdle()
             model.checkUpdate("0.1.0")
-            assertTrue(model.update.value.visible)
+            assertFalse(model.update.value.visible)
             result.complete(AppResult.Success(UpdateCheckResult.NoRelease))
             advanceUntilIdle()
             assertTrue(model.update.value.visible)
             assertEquals(1, calls)
+        }
+    }
+
+    @Test fun `manual current version emits one toast event with no sheet`() = runTest {
+        withModel({ AppResult.Success(UpdateCheckResult.Current(AppRelease("v1.1.0", "", ""))) }) { model ->
+            model.checkUpdate("1.1.0")
+            assertFalse(model.update.value.visible)
+            advanceUntilIdle()
+            assertFalse(model.update.value.visible)
+            assertFalse(model.update.value.checking)
+            assertEquals(AboutUpdateEvent.AlreadyCurrent, model.events.first())
+            assertNull(withTimeoutOrNull(1) { model.events.first() })
+        }
+    }
+
+    @Test fun `automatic current check stays silent even on repeat`() = runTest {
+        withModel({ AppResult.Success(UpdateCheckResult.Current(AppRelease("v1.0.0", "", ""))) }) { model ->
+            model.checkOnStart("1.1.0")
+            model.checkOnStart("1.1.0")
+            advanceUntilIdle()
+            assertFalse(model.update.value.visible)
+            assertNull(withTimeoutOrNull(1) { model.events.first() })
+        }
+    }
+
+    @Test fun `manual tap during startup current check shares request and receives one toast`() = runTest {
+        val result = CompletableDeferred<AppResult<UpdateCheckResult>>()
+        var calls = 0
+        withModel({ calls++; result.await() }) { model ->
+            model.checkOnStart("1.1.0")
+            advanceUntilIdle()
+            model.checkUpdate("1.1.0")
+            model.checkUpdate("1.1.0")
+            assertFalse(model.update.value.visible)
+            result.complete(AppResult.Success(UpdateCheckResult.Current(AppRelease("v1.0.0", "", ""))))
+            advanceUntilIdle()
+            assertEquals(1, calls)
+            assertFalse(model.update.value.visible)
+            assertEquals(AboutUpdateEvent.AlreadyCurrent, model.events.first())
+            assertNull(withTimeoutOrNull(1) { model.events.first() })
         }
     }
 

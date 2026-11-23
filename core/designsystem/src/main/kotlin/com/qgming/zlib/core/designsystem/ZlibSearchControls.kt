@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import top.yukonga.miuix.kmp.basic.Icon
@@ -15,8 +16,20 @@ import top.yukonga.miuix.kmp.basic.SearchBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Search
 import top.yukonga.miuix.kmp.icon.basic.SearchCleanup
+import top.yukonga.miuix.kmp.icon.glass.Close
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+
+@Composable
+fun ZlibClearSearchHistoryButton(onClick: () -> Unit) {
+    IconButton(onClick = onClick, modifier = Modifier.size(48.dp), backgroundColor = Color.Transparent) {
+        Icon(
+            MiuixIcons.Glass.Normal.Close,
+            contentDescription = "清空最近搜索",
+            modifier = Modifier.size(24.dp),
+        )
+    }
+}
 
 @Composable
 fun ZlibSearchBar(value: String, onValueChange: (String) -> Unit, onSubmit: () -> Unit) {
@@ -65,7 +78,7 @@ fun ZlibSearchBar(value: String, onValueChange: (String) -> Unit, onSubmit: () -
 fun ZlibExactMatchPreference(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     SwitchPreference(
         title = "精确匹配",
-        summary = "按输入的关键词精确查找",
+        summary = "优先显示与关键词精确匹配的结果",
         checked = checked,
         onCheckedChange = onCheckedChange,
         insideMargin = PaddingValues(vertical = 8.dp),

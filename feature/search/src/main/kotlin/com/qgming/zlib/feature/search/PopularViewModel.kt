@@ -44,6 +44,15 @@ class PopularViewModel @Inject constructor(
                     recommendedJob?.cancel()
                     _state.value = PopularUiState()
                     if (session != null) { loadPopular(); loadRecommended() }
+                } else if (initialized && session?.domain != previous?.domain && session != null) {
+                    if (_state.value.error != null || _state.value.popular.isEmpty()) {
+                        loadJob?.cancel(); loadJob = null
+                        loadPopular()
+                    }
+                    if (_state.value.recommended.isEmpty()) {
+                        recommendedJob?.cancel()
+                        loadRecommended()
+                    }
                 }
                 previous = session
                 initialized = true

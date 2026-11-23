@@ -55,4 +55,15 @@ class DownloadsViewModel @Inject constructor(
     fun remove(id: String) {
         viewModelScope.launch { repository.remove(id) }
     }
+
+    fun setDirectory(uri: android.net.Uri) {
+        viewModelScope.launch {
+            when (val result = repository.setDownloadDirectory(uri)) {
+                is AppResult.Success -> _events.send(if (result.value.pausedTasks > 0) {
+                    "下载目录已保存，${result.value.pausedTasks} 个任务已暂停，可手动继续"
+                } else "下载目录已保存")
+                is AppResult.Failure -> _events.send(result.error.userMessage())
+            }
+        }
+    }
 }

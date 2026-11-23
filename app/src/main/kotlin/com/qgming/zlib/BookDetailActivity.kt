@@ -88,6 +88,7 @@ class BookDetailActivity : ComponentActivity() {
                         id = preview.id,
                         hash = preview.hash,
                         previewBook = preview,
+                        onOpenBook = openBook,
                         onBack = { finish() },
                         onSearchContributor = { name ->
                             if (nav.backStack.lastOrNull() == DetailRoute.Book) nav.push(DetailRoute.ContributorSearch(name))

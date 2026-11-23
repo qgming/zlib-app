@@ -1,6 +1,8 @@
 package com.qgming.zlib.feature.search
 
 import com.qgming.zlib.core.model.SearchQuery
+import com.qgming.zlib.core.model.SearchSort
+import com.qgming.zlib.core.model.SearchFilterOptions
 
 data class SearchFilters(
     val languages: Set<String> = emptySet(),
@@ -28,7 +30,13 @@ data class SearchFilters(
         yearFrom = yearFrom.toIntOrNull(),
         yearTo = yearTo.toIntOrNull(),
         exact = exact,
-        order = order,
+        order = order?.takeIf { value -> SearchSort.entries.any { it.wireValue == value } },
+    )
+
+    fun validated(options: SearchFilterOptions): SearchFilters = copy(
+        languages = languages.map(String::lowercase).intersect(options.languages.map { it.code }.toSet()),
+        extensions = extensions.map(String::lowercase).intersect(options.extensions.toSet()),
+        order = order?.takeIf { value -> SearchSort.entries.any { it.wireValue == value } },
     )
 
     fun toggleLanguage(language: String): SearchFilters = copy(languages = languages.toggled(language))

@@ -12,7 +12,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -20,10 +22,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalContext
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.activity.compose.LocalActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qgming.zlib.AppViewModel
 import com.qgming.zlib.BuildConfig
@@ -35,6 +42,8 @@ import com.qgming.zlib.core.designsystem.LocalZlibBookSnapshotsEnabled
 import com.qgming.zlib.core.designsystem.ZlibBookOpenRequest
 import com.qgming.zlib.core.designsystem.ZlibCard
 import com.qgming.zlib.core.designsystem.ZlibLoadingIndicator
+import com.qgming.zlib.core.designsystem.ZlibPage
+import com.qgming.zlib.core.designsystem.ZlibCardList
 import com.qgming.zlib.core.designsystem.ZlibTab
 import com.qgming.zlib.core.designsystem.ZlibTheme
 import com.qgming.zlib.core.designsystem.userMessage
@@ -101,12 +110,23 @@ private sealed interface Route : NavKey {
 }
 
 @Composable
-fun ZlibRoot(viewModel: AppViewModel = hiltViewModel()) {
+fun ZlibRoot(viewModel: AppViewModel = hiltViewModel(), downloadRequest: Int = 0) {
     val startup by viewModel.startupState.collectAsStateWithLifecycle()
     val session by viewModel.session.collectAsStateWithLifecycle()
     val accounts by viewModel.accounts.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val choosingDirectory by viewModel.choosingDirectory.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    LaunchedEffect(startup) {
+        if (startup is StartupState.Ready && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+    val directoryPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri?.let(viewModel::chooseInitialDirectory)
+    }
     val updates: AboutViewModel = hiltViewModel()
     val appInfo = AboutAppInfo(stringResource(R.string.app_name), BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE.toLong())
 
@@ -114,6 +134,11 @@ fun ZlibRoot(viewModel: AppViewModel = hiltViewModel()) {
         ZlibAppOverlay {
             when (val state = startup) {
                 StartupState.Loading -> SplashScreen()
+
+                StartupState.DirectoryRequired -> DirectoryWelcome(
+                    busy = choosingDirectory, error = message,
+                    onChoose = { directoryPicker.launch(null) },
+                )
 
                 is StartupState.Failed -> StartupFailedScreen(
                     message = state.error.userMessage(),
@@ -125,10 +150,33 @@ fun ZlibRoot(viewModel: AppViewModel = hiltViewModel()) {
                 StartupState.Ready -> if (session == null) {
                     if (accounts.entries.isEmpty()) LoginScreen() else AccountScreen(onBack = null)
                 } else {
-                    MainShell(appInfo, updates)
+                    MainShell(appInfo, updates, downloadRequest)
                 }
             }
-            AppUpdateHost(appInfo, updates)
+            if (startup is StartupState.Ready) AppUpdateHost(appInfo, updates)
+        }
+    }
+}
+
+@Composable
+private fun DirectoryWelcome(busy: Boolean, error: String?, onChoose: () -> Unit) {
+    ZlibPage(title = "选择下载目录") { padding ->
+        ZlibCardList(padding) {
+            item {
+                ZlibCard(cornerRadius = 24.dp) {
+                    Text("欢迎使用芝士读书", style = MiuixTheme.textStyles.title3)
+                    Spacer(Modifier.height(12.dp))
+                    Text("先选择一个文件夹，用来保存下载的图书和应用更新。选择完成后即可登录。", style = MiuixTheme.textStyles.body2)
+                    Spacer(Modifier.height(20.dp))
+                    Button(onClick = onChoose, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (busy) "正在保存…" else "选择文件夹")
+                    }
+                    error?.let {
+                        Spacer(Modifier.height(12.dp))
+                        Text(it, color = MiuixTheme.colorScheme.error, style = MiuixTheme.textStyles.footnote1)
+                    }
+                }
+            }
         }
     }
 }
@@ -217,8 +265,15 @@ private fun StartupFailedScreen(
 }
 
 @Composable
-private fun MainShell(appInfo: AboutAppInfo, updates: AboutViewModel) {
+private fun MainShell(appInfo: AboutAppInfo, updates: AboutViewModel, downloadRequest: Int) {
     val nav = rememberNavController<Route>(Route.Home)
+    var handledDownload by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(downloadRequest) {
+        if (downloadRequest > handledDownload) {
+            handledDownload = downloadRequest
+            if (nav.backStack.lastOrNull() != Route.Downloads) nav.push(Route.Downloads)
+        }
+    }
     val activity = LocalActivity.current
     val scope = rememberCoroutineScope()
     val supportsSharedView = remember { BookDetailLauncher.isSupported() }
@@ -250,6 +305,8 @@ private fun MainShell(appInfo: AboutAppInfo, updates: AboutViewModel) {
                 DownloadsScreen(
                     onBack = { nav.pop() },
                     onOpenHistory = { if (nav.backStack.lastOrNull() == Route.Downloads) nav.push(Route.DownloadHistory) },
+                    onOpenAccount = { nav.push(Route.Account) },
+                    onOpenDomains = { nav.push(Route.DomainSettings) },
                 )
             }
             entry<Route.DownloadHistory> {
