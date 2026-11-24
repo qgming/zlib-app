@@ -1,0 +1,1 @@
+{"success":1,"books":[{"readlist_books_id":987,"book":{"id":123,"hash":"abcd12","title":"Sample book","author":"Sample author","href":"/book/123/not-the-api-hash","cover":"https://covers.example/sample.jpg"}}],"pagination":{"current":1,"next":"2","total_pages":4}}

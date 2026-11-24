@@ -7,14 +7,11 @@ import com.qgming.zlib.core.common.R as TextR
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.runtime.Composable
@@ -26,17 +23,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import android.content.Intent
 import android.content.ClipData
 import android.content.ActivityNotFoundException
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -46,22 +41,27 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.fromHtml
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.net.toUri
-import com.qgming.zlib.core.designsystem.ZlibBookInfoButton
-import com.qgming.zlib.core.designsystem.ZlibCard
+import com.qgming.zlib.core.designsystem.ZlibBookDescriptionCard
+import com.qgming.zlib.core.designsystem.ZlibBookFavoriteButton
+import com.qgming.zlib.core.designsystem.ZlibBookMetadataChips
 import com.qgming.zlib.core.designsystem.ZlibCover
 import com.qgming.zlib.core.designsystem.ZlibGlassBottomSheet
 import com.qgming.zlib.core.designsystem.ZlibLoading
 import com.qgming.zlib.core.designsystem.ZlibMenuAction
 import com.qgming.zlib.core.designsystem.ZlibPage
+import com.qgming.zlib.core.designsystem.ZlibPublicationCard
 import com.qgming.zlib.core.designsystem.ZlibStateCard
 import com.qgming.zlib.core.designsystem.ZlibBookGrid
 import com.qgming.zlib.core.designsystem.ZlibBookTile
 import com.qgming.zlib.core.designsystem.ZlibBookOpenRequest
 import com.qgming.zlib.core.designsystem.ZlibSectionTitle
+import com.qgming.zlib.core.designsystem.formatBookFileSize
 import com.qgming.zlib.core.designsystem.fullWidthItem
+import com.qgming.zlib.core.designsystem.hasPublicationInfo
 import com.qgming.zlib.core.model.Book
 import com.qgming.zlib.core.model.EbookFiles
 import top.yukonga.miuix.kmp.basic.Button
@@ -74,8 +74,9 @@ fun DetailScreen(
     id: String,
     hash: String,
     onBack: () -> Unit,
-    onSearchContributor: (String) -> Unit,
+    onSearch: (String) -> Unit,
     onOpenBook: (ZlibBookOpenRequest) -> Unit,
+    onPreview: () -> Unit,
     previewBook: Book? = null,
     viewModel: DetailViewModel = hiltViewModel(key = "$id:$hash"),
     favoriteViewModel: BookFavoriteViewModel = hiltViewModel(key = "$id:$hash:favorite"),
@@ -85,7 +86,8 @@ fun DetailScreen(
     val favorite by favoriteViewModel.state.collectAsStateWithLifecycle()
     val similar by similarViewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    var showInfo by rememberSaveable(id, hash) { mutableStateOf(false) }
+    val locale = LocalConfiguration.current.locales[0]
+    var descriptionExpanded by rememberSaveable(id, hash) { mutableStateOf(false) }
     var notice by remember(id, hash) { mutableStateOf<String?>(null) }
     LaunchedEffect(id, hash) { viewModel.load(id, hash) }
     LaunchedEffect(id, hash) { favoriteViewModel.load(id) }
@@ -109,9 +111,7 @@ fun DetailScreen(
     ZlibPage(
         title = stringResource(TextR.string.text_book_details),
         onBack = onBack,
-        actions = {
-            ZlibBookInfoButton(enabled = state.book != null, onClick = { showInfo = true })
-        },
+        actions = { ZlibBookFavoriteButton(favorite.saved, favorite.busy, favoriteViewModel::toggle) },
     ) { padding ->
         val book = state.book ?: previewBook?.takeIf { it.ref == "$id:$hash" }
         val error = state.error
@@ -130,7 +130,7 @@ fun DetailScreen(
                         ZlibStateCard(stringResource(TextR.string.text_cannot_sync_favorites), message, onAction = favoriteViewModel::retry)
                     }
                 }
-                fullWidthItem("detail-header") { BookHeader(book, onSearchContributor) }
+                fullWidthItem("detail-header") { BookHeader(book, onSearch) }
                 if (state.book == null) {
                     fullWidthItem("detail-error") {
                         if (error != null) {
@@ -142,18 +142,23 @@ fun DetailScreen(
                 } else {
                     fullWidthItem("detail-actions") {
                         BookActions(
-                            favorite = favorite,
                             message = notice,
                             downloading = state.enqueuing,
                             onDownload = viewModel::showFormats,
-                            onFavorite = favoriteViewModel::toggle,
+                            onPreview = onPreview.takeIf { state.canPreview },
                         )
                     }
                 }
-                if (state.book != null && book.description.isNotBlank()) {
-                    fullWidthItem("detail-description") { DescriptionCard(book.description) }
-                }
                 if (state.book != null) {
+                    if (book.description.isNotBlank()) {
+                        fullWidthItem("detail-description") {
+                            val description = remember(book.description) { AnnotatedString.fromHtml(BookDescription.html(book.description)) }
+                            ZlibBookDescriptionCard(description, descriptionExpanded) { descriptionExpanded = !descriptionExpanded }
+                        }
+                    }
+                    if (book.hasPublicationInfo) {
+                        fullWidthItem("detail-publication") { ZlibPublicationCard(book, onSearchPublisher = onSearch) }
+                    }
                     if (similar.loading || similar.error != null || similar.books.isNotEmpty()) {
                         fullWidthItem("similar-heading") { ZlibSectionTitle(stringResource(TextR.string.text_similar_books)) }
                     }
@@ -170,9 +175,6 @@ fun DetailScreen(
             }
         }
 
-        ZlibGlassBottomSheet(show = showInfo && state.book != null, title = stringResource(TextR.string.text_book_information), onDismiss = { showInfo = false }) {
-            state.book?.let { BookInfoPanel(it) }
-        }
         ZlibGlassBottomSheet(show = state.formats != null, title = stringResource(TextR.string.text_choose_download_format), onDismiss = viewModel::dismissFormats) {
             state.formats?.let { menu ->
                 Column(
@@ -184,7 +186,7 @@ fun DetailScreen(
                         menu.error != null -> ZlibStateCard(stringResource(TextR.string.text_cannot_load_other_formats), menu.error, onAction = viewModel::showFormats)
                     }
                     menu.options.forEach { format ->
-                        val size = format.sizeText.ifBlank { format.sizeBytes?.sizeText().orEmpty() }
+                        val size = format.sizeText.ifBlank { format.sizeBytes?.let { formatBookFileSize(it, locale) }.orEmpty() }
                         val duplicateExtension = menu.options.count { it.extension == format.extension } > 1
                         val label = listOfNotNull(
                             format.extension.uppercase(),
@@ -213,7 +215,7 @@ fun DetailScreen(
 }
 
 @Composable
-private fun BookHeader(book: Book, onSearchContributor: (String) -> Unit) {
+private fun BookHeader(book: Book, onSearch: (String) -> Unit) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -242,16 +244,9 @@ private fun BookHeader(book: Book, onSearchContributor: (String) -> Unit) {
             )
         }
         if (book.authors.isNotBlank()) {
-            ContributorText(book.authors, onSearchContributor)
+            ContributorText(book.authors, onSearch)
         }
-        book.rating?.let { rating ->
-            Text(
-                text = "★ ${"%.1f".format(rating)}",
-                style = MiuixTheme.textStyles.footnote1,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                textAlign = TextAlign.Center,
-            )
-        }
+        ZlibBookMetadataChips(book)
     }
 }
 
@@ -259,13 +254,15 @@ private fun BookHeader(book: Book, onSearchContributor: (String) -> Unit) {
 private fun ContributorText(authors: String, onSearch: (String) -> Unit) {
     val names = remember(authors) { ContributorNames.parse(authors) }
     val blue = MiuixTheme.colorScheme.primary
+    val bodyStyle = MiuixTheme.textStyles.body2
+    val nameStyle = SpanStyle(color = blue, fontWeight = FontWeight.Medium)
     val links = buildAnnotatedString {
         append(authors)
         names.forEach { name ->
             addLink(
                 LinkAnnotation.Clickable(
                     tag = appText(TextR.string.text_search_author, name.query),
-                    styles = TextLinkStyles(style = SpanStyle(color = blue, fontWeight = FontWeight.Medium)),
+                    styles = TextLinkStyles(style = nameStyle),
                     linkInteractionListener = { onSearch(name.query) },
                 ),
                 name.start,
@@ -273,16 +270,15 @@ private fun ContributorText(authors: String, onSearch: (String) -> Unit) {
             )
         }
     }
-    Text(links, style = MiuixTheme.textStyles.body2, textAlign = TextAlign.Center)
+    Text(links, style = bodyStyle.copy(fontSize = (bodyStyle.fontSize.value + 1f).sp), textAlign = TextAlign.Center)
 }
 
 @Composable
 private fun BookActions(
-    favorite: BookFavoriteState,
     message: String?,
     downloading: Boolean,
     onDownload: () -> Unit,
-    onFavorite: () -> Unit,
+    onPreview: (() -> Unit)?,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -299,23 +295,11 @@ private fun BookActions(
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColorsPrimary(),
             ) { Text(stringResource(TextR.string.text_download_book)) }
-            Button(
-                onClick = onFavorite,
-                enabled = favorite.saved != null && !favorite.busy,
-                modifier = Modifier.weight(1f).semantics {
-                    selected = favorite.saved == true
-                    stateDescription = when {
-                        favorite.busy -> appText(TextR.string.text_syncing_favorites)
-                        favorite.saved == true -> appText(TextR.string.text_saved_tap_to_remove_from_favorites)
-                        favorite.saved == false -> appText(TextR.string.text_not_saved)
-                        else -> appText(TextR.string.text_favorite_status_unknown)
-                    }
-                },
-                colors = if (favorite.saved == true) ButtonDefaults.buttonColors(
-                    color = Color(0xFFE53935).copy(alpha = 0.1f),
-                    contentColor = Color(0xFFE53935),
-                ) else ButtonDefaults.buttonColors(),
-            ) { Text(if (favorite.saved == true) stringResource(TextR.string.text_saved) else stringResource(TextR.string.text_add_to_favorites)) }
+            if (onPreview != null) {
+                Button(onClick = onPreview, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(TextR.string.text_book_preview))
+                }
+            }
         }
         if (message != null) {
             Text(
@@ -326,63 +310,4 @@ private fun BookActions(
             )
         }
     }
-}
-
-@Composable
-private fun BookInfoPanel(book: Book) {
-    SelectionContainer {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState()),
-        ) {
-            MetaRow(stringResource(TextR.string.text_publisher), book.publisher)
-            MetaRow(stringResource(TextR.string.text_publication_year), book.year)
-            MetaRow(stringResource(TextR.string.text_language), book.language)
-            MetaRow(stringResource(TextR.string.text_edition), book.edition)
-            MetaRow(stringResource(TextR.string.text_pages), book.pages?.toString().orEmpty())
-            MetaRow("ISBN-10", book.isbn10)
-            MetaRow("ISBN-13", book.isbn13)
-            MetaRow(stringResource(TextR.string.text_categories), book.categories.joinToString(" / "))
-        }
-    }
-}
-
-@Composable
-private fun DescriptionCard(description: String) {
-    val formatted = remember(description) { AnnotatedString.fromHtml(BookDescription.html(description)) }
-    if (formatted.isBlank()) return
-    ZlibCard {
-        Text(stringResource(TextR.string.text_description), style = MiuixTheme.textStyles.title4)
-        Spacer(Modifier.height(12.dp))
-        SelectionContainer {
-            Text(
-                text = formatted,
-                style = MiuixTheme.textStyles.body2.copy(lineHeight = MiuixTheme.textStyles.body2.fontSize * 1.65f),
-            )
-        }
-    }
-}
-
-@Composable
-private fun MetaRow(label: String, value: String) {
-    if (value.isBlank()) return
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier.weight(1f),
-            style = MiuixTheme.textStyles.footnote1,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-        )
-        Text(value, modifier = Modifier.weight(2f), style = MiuixTheme.textStyles.footnote1, textAlign = TextAlign.End)
-    }
-}
-
-private fun Long.sizeText(): String = when {
-    this >= 1024L * 1024L -> "%.1f MB".format(this / 1024.0 / 1024.0)
-    this >= 1024L -> "%.0f KB".format(this / 1024.0)
-    else -> "$this B"
 }

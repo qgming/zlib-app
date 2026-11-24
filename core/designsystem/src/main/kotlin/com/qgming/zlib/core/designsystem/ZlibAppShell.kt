@@ -50,6 +50,7 @@ import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.LayoutDirection
@@ -78,7 +79,8 @@ import top.yukonga.miuix.kmp.icon.glass.BookOutline
 import top.yukonga.miuix.kmp.icon.glass.ChevronBackward
 import top.yukonga.miuix.kmp.icon.glass.Cloud
 import top.yukonga.miuix.kmp.icon.glass.Download
-import top.yukonga.miuix.kmp.icon.glass.Info
+import top.yukonga.miuix.kmp.icon.glass.FavoriteFill
+import top.yukonga.miuix.kmp.icon.glass.FavoriteOutline
 import top.yukonga.miuix.kmp.icon.glass.NotesOutline
 import top.yukonga.miuix.kmp.icon.glass.Refresh
 import top.yukonga.miuix.kmp.icon.glass.Search
@@ -198,6 +200,7 @@ fun ZlibPage(
     expandable: Boolean = false,
     actions: @Composable RowScope.() -> Unit = {},
     topBarContent: @Composable () -> Unit = {},
+    contentGutters: Boolean = true,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     ZlibOverlayHost {
@@ -208,6 +211,7 @@ fun ZlibPage(
             onBack = onBack,
             actions = actions,
             topBarContent = topBarContent,
+            contentGutters = contentGutters,
             content = content,
         )
     }
@@ -225,6 +229,7 @@ private fun PageFrame(
     actions: @Composable RowScope.() -> Unit = {},
     topBarContent: @Composable () -> Unit = {},
     bottomBar: @Composable (Backdrop?) -> Unit = {},
+    contentGutters: Boolean = true,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val backdrop = if (LocalZlibGlass.current) rememberLayerBackdrop() else null
@@ -295,7 +300,7 @@ private fun PageFrame(
                 .background(background),
         ) {
             CompositionLocalProvider(LocalZlibPageScroll provides pageScroll) {
-                content(remember(padding) { ZlibContentPadding(padding) })
+                content(if (contentGutters) remember(padding) { ZlibContentPadding(padding) } else padding)
             }
         }
     }
@@ -336,18 +341,6 @@ fun ZlibFilterButton(active: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-fun ZlibBookInfoButton(enabled: Boolean, onClick: () -> Unit) {
-    TopBarButton(
-        icon = MiuixIcons.Glass.Normal.Info,
-        description = stringResource(TextR.string.text_book_information),
-        onClick = onClick,
-        glass = LocalZlibGlass.current,
-        enabled = enabled,
-        tint = if (enabled) MiuixTheme.colorScheme.onSurface else MiuixTheme.colorScheme.onSurfaceVariantSummary,
-    )
-}
-
-@Composable
 fun ZlibDownloadHistoryButton(onClick: () -> Unit) {
     TopBarButton(
         icon = MiuixIcons.Glass.Normal.Cloud,
@@ -375,7 +368,40 @@ fun ZlibProbeDomainsButton(enabled: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun TopBarButton(
+fun ZlibBookFavoriteButton(saved: Boolean?, busy: Boolean, onClick: () -> Unit) {
+    val colors = MiuixTheme.colorScheme
+    val icons = MiuixIcons.Glass.Normal
+    val enabled = saved != null && !busy
+    val state = stringResource(when {
+        busy -> TextR.string.text_syncing_favorites
+        saved == true -> TextR.string.text_saved
+        saved == false -> TextR.string.text_not_saved
+        else -> TextR.string.text_favorite_status_unknown
+    })
+    TopBarButton(
+        icon = if (saved == true) icons.FavoriteFill else icons.FavoriteOutline,
+        description = stringResource(when (saved) {
+            true -> TextR.string.text_remove_from_favorites
+            false -> TextR.string.text_add_to_favorites
+            null -> TextR.string.text_favorites
+        }),
+        onClick = onClick,
+        glass = LocalZlibGlass.current,
+        enabled = enabled,
+        tint = when {
+            saved == true -> colors.error
+            enabled -> colors.onSurface
+            else -> colors.onSurfaceVariantSummary
+        },
+        modifier = Modifier.semantics {
+            selected = saved == true
+            stateDescription = state
+        },
+    )
+}
+
+@Composable
+internal fun TopBarButton(
     icon: ImageVector,
     description: String,
     onClick: () -> Unit,
@@ -383,13 +409,14 @@ private fun TopBarButton(
     modifier: Modifier = Modifier,
     tint: Color = MiuixTheme.colorScheme.onSurface,
     enabled: Boolean = true,
+    iconModifier: Modifier = Modifier,
 ) {
     val iconContent: @Composable () -> Unit = {
         Icon(
             imageVector = icon,
             contentDescription = description,
             tint = tint,
-            modifier = Modifier.size(28.dp),
+            modifier = iconModifier.size(28.dp),
         )
     }
     if (glass) {

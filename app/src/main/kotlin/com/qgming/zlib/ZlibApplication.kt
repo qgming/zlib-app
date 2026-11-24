@@ -2,6 +2,8 @@ package com.qgming.zlib
 
 import android.app.Application
 import android.content.pm.ApplicationInfo
+import android.webkit.WebView
+import com.qgming.zlib.BuildConfig
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
@@ -23,6 +25,9 @@ class ZlibApplication : Application(), SingletonImageLoader.Factory {
         super.onCreate()
         AppText.initialize(this)
         SafeLog.enabled = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (BuildConfig.DEBUG) {
+            WebView.setWebContentsDebuggingEnabled(true)
+        }
     }
 
     /**

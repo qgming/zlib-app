@@ -1,6 +1,8 @@
 package com.qgming.zlib.core.data.settings
 
 import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -28,8 +30,9 @@ internal object RecentSearches {
 }
 
 @Singleton
-class SearchHistoryRepository @Inject constructor(@ApplicationContext context: Context) {
-    private val store = context.searchHistoryDataStore
+class SearchHistoryRepository internal constructor(private val store: DataStore<Preferences>) {
+    @Inject constructor(@ApplicationContext context: Context) : this(context.searchHistoryDataStore)
+
     val history = store.data.catch { if (it is IOException) emit(emptyPreferences()) else throw it }.map { prefs ->
         SearchHistory(decode(prefs[QUERIES]))
     }

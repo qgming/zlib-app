@@ -26,6 +26,7 @@ import kotlinx.coroutines.launch
 
 data class DetailUiState(
     val book: Book? = null,
+    val canPreview: Boolean = false,
     val loading: Boolean = false,
     val error: String? = null,
     val formats: FormatMenuState? = null,
@@ -113,7 +114,7 @@ class DetailViewModel internal constructor(
         detailRequest = viewModelScope.launch {
             when (val result = bookRepository.detail(id, hash)) {
                 is AppResult.Success -> if (generation == requestGeneration && sessions.current() == requestSession) _state.update {
-                    it.copy(book = result.value, loading = false, error = null)
+                    it.copy(book = result.value.book, canPreview = result.value.onlinePreview != null, loading = false, error = null)
                 }
 
                 is AppResult.Failure -> if (generation == requestGeneration && sessions.current() == requestSession) _state.update {
@@ -145,7 +146,7 @@ class DetailViewModel internal constructor(
             if (formatGeneration != requestGeneration || sessions.current() != requestSession) return@launch
             val menu = when (result) {
                 is AppResult.Success -> FormatMenuState(
-                    options = (result.value + listOfNotNull(current)).distinctBy(BookFormat::ref),
+                    options = (listOfNotNull(current) + result.value).distinctBy(BookFormat::ref),
                 )
                 is AppResult.Failure -> FormatMenuState(options = listOfNotNull(current), error = result.error.userMessage())
             }

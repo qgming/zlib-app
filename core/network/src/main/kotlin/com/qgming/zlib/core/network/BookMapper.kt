@@ -5,6 +5,7 @@ import com.qgming.zlib.core.common.R as TextR
 
 import com.qgming.zlib.core.model.Book
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /** Maps one `books[]` entry. Entries without a hash are dropped by the caller. */
@@ -40,9 +41,12 @@ internal object BookMapper {
             ?: extracted.firstOrNull { it.length == 10 }
             ?: isbn13?.let { com.qgming.zlib.core.common.Isbn.toIsbn10(it) }
 
-        val categories = obj.array("categories")?.asStringList().orEmpty().ifEmpty {
-            obj.stringOrNull("categories")?.split(',', ';')?.map(String::trim)?.filter(String::isNotEmpty)
-                ?: obj.stringOrNull("category")?.let(::listOf).orEmpty()
+        val categories = when (val field = obj["categories"]) {
+            is JsonObject -> field.values.mapNotNull { (it as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.stringOrNull() }
+            is JsonPrimitive -> field.stringOrNull()?.split(',', ';').orEmpty()
+            else -> field?.asStringList().orEmpty()
+        }.map(String::trim).filter(String::isNotEmpty).ifEmpty {
+            obj.stringOrNull("category")?.trim()?.takeIf(String::isNotEmpty)?.let(::listOf).orEmpty()
         }
 
         return Book(
@@ -84,7 +88,7 @@ internal object BookMapper {
         }
     }
 
-    private fun usableCover(raw: String?): String {
+    internal fun usableCover(raw: String?): String {
         val url = raw?.trim()?.toHttpUrlOrNull() ?: return ""
         if (!url.isHttps || url.username.isNotEmpty() || url.password.isNotEmpty()) return ""
         // Downloaded lists can omit the collection folder. Only details know its value.

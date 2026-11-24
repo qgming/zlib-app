@@ -47,6 +47,7 @@ private fun gridOptions() = listOf(
 fun SettingsScreen(
     padding: PaddingValues,
     onOpenAccount: () -> Unit,
+    onOpenMyBooklists: () -> Unit,
     onOpenDomains: () -> Unit,
     onOpenAbout: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
@@ -81,6 +82,14 @@ fun SettingsScreen(
                     summary = state.account?.email?.takeIf(String::isNotBlank)
                         ?: if (state.account == null) stringResource(TextR.string.text_view_accounts_and_download_quota) else stringResource(TextR.string.text_no_email_provided),
                     onClick = onOpenAccount,
+                )
+            }
+        }
+        item(key = "my-booklists") {
+            ZlibPreferenceGroup {
+                ZlibPreferenceLink(
+                    title = stringResource(TextR.string.text_my_booklists),
+                    onClick = onOpenMyBooklists,
                 )
             }
         }

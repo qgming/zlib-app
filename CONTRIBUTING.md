@@ -5,6 +5,7 @@
 - `AGENTS.md`：硬约束（工具链、安全红线、架构规则）
 - `docs/ARCHITECTURE.md`：模块与状态机
 - `docs/EAPI.md`：端点与错误
+- `docs/PAPI.md`：书单端点、鉴权和会话隔离
 - `docs/DECISIONS.md`：已定决策
 
 ## 2. 环境
@@ -29,7 +30,7 @@
 
 - 小步提交，commit message 用 `type(scope): summary`，例如 `feat(network): add domain probe`。
 - 一个 PR 只做一件事；重构与功能分开。
-- 改决策时同 PR 更新 `docs/DECISIONS.md`；改端点时更新 `docs/EAPI.md`。
+- 改决策时同 PR 更新 `docs/DECISIONS.md`；改端点时更新对应的 `docs/EAPI.md` 或 `docs/PAPI.md`。
 
 ## 5. PR 检查
 

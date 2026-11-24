@@ -1,7 +1,6 @@
 package com.qgming.zlib.feature.search
 
 import androidx.compose.ui.res.stringResource
-import com.qgming.zlib.core.common.appText
 import com.qgming.zlib.core.common.R as TextR
 
 import androidx.compose.foundation.layout.Arrangement
@@ -20,8 +19,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
@@ -38,7 +35,7 @@ import com.qgming.zlib.core.designsystem.ZlibGlassBottomSheet
 import com.qgming.zlib.core.designsystem.ZlibLoading
 import com.qgming.zlib.core.designsystem.ZlibPage
 import com.qgming.zlib.core.designsystem.ZlibSearchBar
-import com.qgming.zlib.core.designsystem.ZlibSearchHistoryChips
+import com.qgming.zlib.core.designsystem.ZlibRecentSearches
 import com.qgming.zlib.core.designsystem.ZlibStateCard
 import com.qgming.zlib.core.designsystem.fullWidthItem
 import com.qgming.zlib.core.designsystem.ZlibAutoPagination
@@ -46,8 +43,6 @@ import com.qgming.zlib.core.designsystem.ZlibMultiSelectPreference
 import com.qgming.zlib.core.designsystem.ZlibSelectionOption
 import com.qgming.zlib.core.designsystem.ZlibPreferenceMenu
 import com.qgming.zlib.core.designsystem.ZlibPreferenceGroup
-import com.qgming.zlib.core.designsystem.ZlibClearSearchHistoryButton
-import com.qgming.zlib.core.designsystem.ZlibConfirmDialog
 import com.qgming.zlib.core.model.SearchFilterOptions
 import com.qgming.zlib.core.model.SearchSort
 import top.yukonga.miuix.kmp.basic.Button
@@ -69,7 +64,6 @@ fun SearchScreen(
     val listState = rememberLazyGridState()
     val focusManager = LocalFocusManager.current
     var showFilters by remember { mutableStateOf(false) }
-    var confirmClearHistory by rememberSaveable { mutableStateOf(false) }
     var draft by remember { mutableStateOf(SearchFilters()) }
     ZlibAutoPagination(
         state = listState,
@@ -107,21 +101,12 @@ fun SearchScreen(
         ZlibBookGrid(padding = padding, state = listState) {
             when {
                 !state.searched && !state.loading -> fullWidthItem("search-recents") {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (history.queries.isNotEmpty()) {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically) {
-                                Text(stringResource(TextR.string.text_recent_searches), style = MiuixTheme.textStyles.title4)
-                                ZlibClearSearchHistoryButton(onClick = { confirmClearHistory = true })
-                            }
-                            ZlibSearchHistoryChips(
-                                queries = history.queries,
-                                onClick = { query -> focusManager.clearFocus(); viewModel.searchRecent(query) },
-                                onLongClick = viewModel::removeRecent,
-                                longClickLabel = stringResource(TextR.string.text_delete_search_history_entry),
-                            )
-                        }
-                    }
+                    ZlibRecentSearches(
+                        queries = history.queries,
+                        onSearch = { query -> focusManager.clearFocus(); viewModel.searchRecent(query) },
+                        onRemove = viewModel::removeRecent,
+                        onClear = viewModel::clearRecent,
+                    )
                 }
                 state.loading -> fullWidthItem("search-loading") { ZlibLoading() }
                 state.error != null -> fullWidthItem("search-error") {
@@ -171,18 +156,6 @@ fun SearchScreen(
                 },
             )
         }
-        ZlibConfirmDialog(
-            show = confirmClearHistory,
-            title = stringResource(TextR.string.text_clear_recent_searches_2),
-            summary = stringResource(TextR.string.text_this_cannot_be_undone),
-            confirmLabel = stringResource(TextR.string.text_clear),
-            destructive = true,
-            onDismiss = { confirmClearHistory = false },
-            onConfirm = {
-                confirmClearHistory = false
-                viewModel.clearRecent()
-            },
-        )
     }
 }
 @Composable

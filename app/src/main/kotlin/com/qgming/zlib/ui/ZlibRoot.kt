@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -53,10 +54,13 @@ import com.qgming.zlib.core.designsystem.userMessage
 import com.qgming.zlib.feature.account.AccountScreen
 import com.qgming.zlib.feature.account.LoginScreen
 import com.qgming.zlib.feature.downloads.DownloadsScreen
+import com.qgming.zlib.feature.library.BooklistBooksScreen
+import com.qgming.zlib.feature.library.BooklistViewModel
 import com.qgming.zlib.feature.library.DownloadHistoryScreen
 import com.qgming.zlib.feature.library.LibraryScreen
 import com.qgming.zlib.feature.library.LibrarySection
 import com.qgming.zlib.feature.library.LibraryTabs
+import com.qgming.zlib.feature.library.MyBooklistsScreen
 import com.qgming.zlib.feature.search.PopularScreen
 import com.qgming.zlib.feature.search.ReadingSource
 import com.qgming.zlib.feature.search.ReadingTabs
@@ -96,6 +100,12 @@ private sealed interface Route : NavKey {
 
     @Serializable
     data object DownloadHistory : Route
+
+    @Serializable
+    data object MyBooklists : Route
+
+    @Serializable
+    data class Booklist(val id: String) : Route
 
     @Serializable
     data object Account : Route
@@ -271,7 +281,7 @@ private fun StartupFailedScreen(
 
 @Composable
 private fun MainShell(appInfo: AboutAppInfo, updates: AboutViewModel, downloadRequest: Int) {
-    val nav = rememberNavController<Route>(Route.Home)
+    val nav = key("main-routes-v2") { rememberNavController<Route>(Route.Home) }
     var handledDownload by rememberSaveable { mutableIntStateOf(0) }
     LaunchedEffect(downloadRequest) {
         if (downloadRequest > handledDownload) {
@@ -282,6 +292,7 @@ private fun MainShell(appInfo: AboutAppInfo, updates: AboutViewModel, downloadRe
     val activity = LocalActivity.current
     val scope = rememberCoroutineScope()
     val supportsSharedView = remember { BookDetailLauncher.isSupported() }
+    val booklists: BooklistViewModel = hiltViewModel(key = "booklists")
     val openBook: (ZlibBookOpenRequest) -> Unit = { request ->
         activity?.let { scope.launch { BookDetailLauncher.open(it, request) } }
     }
@@ -299,6 +310,7 @@ private fun MainShell(appInfo: AboutAppInfo, updates: AboutViewModel, downloadRe
                     onOpenSearch = { if (nav.backStack.lastOrNull() == Route.Home) nav.push(Route.Search) },
                     onOpenDownloads = { if (nav.backStack.lastOrNull() == Route.Home) nav.push(Route.Downloads) },
                     onOpenAccount = { if (nav.backStack.lastOrNull() == Route.Home) nav.push(Route.Account) },
+                    onOpenMyBooklists = { if (nav.backStack.lastOrNull() == Route.Home) nav.push(Route.MyBooklists) },
                     onOpenDomains = { if (nav.backStack.lastOrNull() == Route.Home) nav.push(Route.DomainSettings) },
                     onOpenAbout = { if (nav.backStack.lastOrNull() == Route.Home) nav.push(Route.About) },
                 )
@@ -316,6 +328,23 @@ private fun MainShell(appInfo: AboutAppInfo, updates: AboutViewModel, downloadRe
             }
             entry<Route.DownloadHistory> {
                 DownloadHistoryScreen(onBack = { nav.pop() }, onOpenBook = openBook)
+            }
+            entry<Route.MyBooklists> {
+                MyBooklistsScreen(
+                    onBack = { nav.pop() },
+                    onOpenList = { id ->
+                        if (nav.backStack.lastOrNull() == Route.MyBooklists) nav.push(Route.Booklist(id))
+                    },
+                    viewModel = booklists,
+                )
+            }
+            entry<Route.Booklist> { route ->
+                BooklistBooksScreen(
+                    id = route.id,
+                    onBack = { nav.pop() },
+                    onOpenBook = openBook,
+                    viewModel = booklists,
+                )
             }
             entry<Route.Account> {
                 AccountScreen(onBack = { nav.pop() })
@@ -348,6 +377,7 @@ private fun HomeTabs(
     onOpenSearch: () -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenAccount: () -> Unit,
+    onOpenMyBooklists: () -> Unit,
     onOpenDomains: () -> Unit,
     onOpenAbout: () -> Unit,
 ) {
@@ -392,6 +422,7 @@ private fun HomeTabs(
                 )
                 ZlibTab.Settings -> SettingsScreen(
                     padding = padding, onOpenAccount = onOpenAccount,
+                    onOpenMyBooklists = onOpenMyBooklists,
                     onOpenDomains = onOpenDomains, onOpenAbout = onOpenAbout,
                 )
             }

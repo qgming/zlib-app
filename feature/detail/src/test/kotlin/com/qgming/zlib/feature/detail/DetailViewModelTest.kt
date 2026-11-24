@@ -82,7 +82,7 @@ class DetailViewModelTest {
             viewModel.showFormats()
             advanceUntilIdle()
             assertEquals("/eapi/book/7/abc/formats", server.nextPath())
-            assertEquals(listOf("8:pdfhash", "9:pdfother", "7:abc"), viewModel.state.value.formats?.options?.map { it.ref })
+            assertEquals(listOf("7:abc", "8:pdfhash", "9:pdfother"), viewModel.state.value.formats?.options?.map { it.ref })
             assertTrue(queued.isEmpty())
             assertEquals(2, server.requestCount)
 
@@ -132,7 +132,7 @@ class DetailViewModelTest {
             viewModel.showFormats()
             advanceUntilIdle()
             assertNull(viewModel.state.value.formats?.error)
-            assertEquals(listOf("8:pdf", "7:abc"), viewModel.state.value.formats?.options?.map { it.ref })
+            assertEquals(listOf("7:abc", "8:pdf"), viewModel.state.value.formats?.options?.map { it.ref })
         }
     }
 
@@ -153,8 +153,8 @@ class DetailViewModelTest {
             viewModel.showFormats()
             advanceUntilIdle()
             assertEquals("/eapi/book/7/abc/formats", server.nextPath())
-            assertEquals(listOf("pdf", "mobi", "epub"), viewModel.state.value.formats?.options?.map { it.extension })
-            assertEquals(listOf("8:pdfhash", "9:mobihash", "7:abc"), viewModel.state.value.formats?.options?.map { it.ref })
+            assertEquals(listOf("epub", "pdf", "mobi"), viewModel.state.value.formats?.options?.map { it.extension })
+            assertEquals(listOf("7:abc", "8:pdfhash", "9:mobihash"), viewModel.state.value.formats?.options?.map { it.ref })
             assertEquals("epub", viewModel.state.value.book?.extension)
             assertTrue(queued.isEmpty())
             assertEquals(3, server.requestCount)

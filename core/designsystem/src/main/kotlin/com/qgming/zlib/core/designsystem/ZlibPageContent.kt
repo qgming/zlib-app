@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.gestures.ScrollableState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -66,17 +67,21 @@ internal class ZlibContentPadding(private val insets: PaddingValues) : PaddingVa
 @Composable
 fun ZlibCardList(
     padding: PaddingValues,
+    state: LazyListState = rememberLazyListState(),
+    refreshing: Boolean = false,
+    onRefresh: (() -> Unit)? = null,
     content: LazyListScope.() -> Unit,
 ) {
-    val state = rememberLazyListState()
     val scrollBehavior = attachPageScroll(state)
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().withPageScroll(scrollBehavior),
-        state = state,
-        contentPadding = padding,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        content = content,
-    )
+    ZlibRefreshableContent(padding, refreshing, onRefresh, scrollBehavior) { modifier ->
+        LazyColumn(
+            modifier = modifier.fillMaxSize(),
+            state = state,
+            contentPadding = padding,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            content = content,
+        )
+    }
 }
 
 @Composable
@@ -89,7 +94,7 @@ fun ZlibBookGrid(
 ) {
     val scrollBehavior = attachPageScroll(state)
     val columns = LocalBookGridColumns.current
-    val grid: @Composable (Modifier) -> Unit = { modifier ->
+    ZlibRefreshableContent(padding, refreshing, onRefresh, scrollBehavior) { modifier ->
         BoxWithConstraints(modifier.fillMaxSize()) {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(columns.countForWidth(maxWidth.value.toInt())),
@@ -102,8 +107,18 @@ fun ZlibBookGrid(
             )
         }
     }
+}
+
+@Composable
+private fun ZlibRefreshableContent(
+    padding: PaddingValues,
+    refreshing: Boolean,
+    onRefresh: (() -> Unit)?,
+    scrollBehavior: ScrollBehavior?,
+    content: @Composable (Modifier) -> Unit,
+) {
     if (onRefresh == null) {
-        grid(Modifier.withPageScroll(scrollBehavior))
+        content(Modifier.withPageScroll(scrollBehavior))
     } else {
         PullToRefresh(
             isRefreshing = refreshing,
@@ -113,7 +128,7 @@ fun ZlibBookGrid(
             topAppBarScrollBehavior = scrollBehavior,
             refreshTexts = listOf(stringResource(TextR.string.text_pull_to_refresh), stringResource(TextR.string.text_release_to_refresh), stringResource(TextR.string.text_refreshing), stringResource(TextR.string.text_refresh_complete)),
         ) {
-            grid(Modifier)
+            content(Modifier)
         }
     }
 }

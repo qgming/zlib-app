@@ -2,9 +2,12 @@ package com.qgming.zlib.core.data.library
 
 import com.qgming.zlib.core.common.AppResult
 import com.qgming.zlib.core.model.Book
+import com.qgming.zlib.core.model.BookDetails
 import com.qgming.zlib.core.model.BookFormat
 import com.qgming.zlib.core.model.BookPage
+import com.qgming.zlib.core.model.OnlineBookPreview
 import com.qgming.zlib.core.model.SearchQuery
+import com.qgming.zlib.core.model.Session
 import com.qgming.zlib.core.network.EapiClient
 import com.qgming.zlib.core.data.session.SessionManager
 import kotlinx.coroutines.flow.emptyFlow
@@ -22,8 +25,10 @@ class BookRepository @Inject constructor(
     suspend fun search(query: SearchQuery, page: Int): AppResult<BookPage> =
         api.search(query, page)
 
-    suspend fun detail(id: String, hash: String): AppResult<Book> =
-        api.bookDetail(id, hash)
+    suspend fun detail(id: String, hash: String): AppResult<BookDetails> = api.bookDetails(id, hash)
+
+    suspend fun resolveOnlinePreview(id: String, hash: String, session: Session?): AppResult<OnlineBookPreview?> =
+        api.resolveOnlinePreview(id, hash, session)
 
     suspend fun formats(book: Book): AppResult<List<BookFormat>> = api.bookFormats(book.id, book.hash)
 

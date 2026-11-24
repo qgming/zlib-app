@@ -6,10 +6,7 @@ import com.qgming.zlib.core.model.AppRelease
 import com.qgming.zlib.core.model.ReleaseApk
 import java.io.IOException
 import java.util.concurrent.TimeUnit
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -18,8 +15,6 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import okhttp3.Call
-import okhttp3.Callback
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -87,21 +82,8 @@ class GitHubReleaseClient internal constructor(private val endpoint: HttpUrl) {
         }
     }
 
-    private suspend fun <T> fetch(request: Request, parseResponse: (Response) -> AppResult<T>): AppResult<T> = suspendCancellableCoroutine { continuation ->
-        val call = client.newCall(request)
-        continuation.invokeOnCancellation { call.cancel() }
-        call.enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) {
-                continuation.resumeWithException(e)
-            }
-
-            override fun onResponse(call: Call, response: Response) {
-                // Read and parse on OkHttp's worker thread; cancellation also closes the body.
-                val result = runCatching { response.use(parseResponse) }
-                result.fold(continuation::resume, continuation::resumeWithException)
-            }
-        })
-    }
+    private suspend fun <T> fetch(request: Request, parseResponse: (Response) -> AppResult<T>): AppResult<T> =
+        client.newCall(request).awaitParsed(parseResponse)
 
     private fun parse(response: Response): AppResult<AppRelease?> {
         if (response.code == 404) return AppResult.Success(null)

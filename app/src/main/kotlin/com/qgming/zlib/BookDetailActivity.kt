@@ -18,6 +18,7 @@ import com.qgming.zlib.core.designsystem.ZlibTheme
 import com.qgming.zlib.core.designsystem.LocalZlibBookSnapshotsEnabled
 import com.qgming.zlib.core.designsystem.ZlibBookOpenRequest
 import com.qgming.zlib.core.model.Book
+import com.qgming.zlib.feature.detail.BookPreviewScreen
 import com.qgming.zlib.feature.detail.DetailScreen
 import com.qgming.zlib.feature.search.SearchScreen
 import com.qgming.zlib.navigation.BookDetailLauncher
@@ -35,6 +36,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 private sealed interface DetailRoute : NavKey {
     @Serializable data object Book : DetailRoute
     @Serializable data class ContributorSearch(val name: String) : DetailRoute
+    @Serializable data object Preview : DetailRoute
 }
 
 @AndroidEntryPoint
@@ -90,13 +92,21 @@ class BookDetailActivity : ComponentActivity() {
                         previewBook = preview,
                         onOpenBook = openBook,
                         onBack = { finish() },
-                        onSearchContributor = { name ->
+                        onPreview = {
+                            if (nav.backStack.lastOrNull() == DetailRoute.Book) nav.push(DetailRoute.Preview)
+                        },
+                        onSearch = { name ->
                             if (nav.backStack.lastOrNull() == DetailRoute.Book) nav.push(DetailRoute.ContributorSearch(name))
                         },
                     )
                 }
                 entry<DetailRoute.ContributorSearch> { route ->
                     SearchScreen(initialQuery = route.name, onBack = { nav.pop() }, onOpenBook = openBook)
+                }
+                entry<DetailRoute.Preview> {
+                    BookPreviewScreen(preview.id, preview.hash, onBack = {
+                        if (nav.backStack.lastOrNull() == DetailRoute.Preview) nav.pop()
+                    })
                 }
             }
         }

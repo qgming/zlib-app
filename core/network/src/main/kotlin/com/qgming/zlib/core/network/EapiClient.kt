@@ -10,11 +10,14 @@ import com.qgming.zlib.core.common.AppResult
 import com.qgming.zlib.core.common.DefaultAppDispatchers
 import com.qgming.zlib.core.common.DomainStatus
 import com.qgming.zlib.core.common.SafeLog
+import com.qgming.zlib.core.common.map
 import com.qgming.zlib.core.common.mapCatching
 import com.qgming.zlib.core.model.Account
 import com.qgming.zlib.core.model.Book
+import com.qgming.zlib.core.model.BookDetails
 import com.qgming.zlib.core.model.BookFormat
 import com.qgming.zlib.core.model.BookPage
+import com.qgming.zlib.core.model.OnlineBookPreview
 import com.qgming.zlib.core.model.Quota
 import com.qgming.zlib.core.model.SearchQuery
 import com.qgming.zlib.core.model.SearchFilterOptions
@@ -28,6 +31,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import okhttp3.CacheControl
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -274,16 +278,42 @@ class EapiClient(
         )
     }
 
-    suspend fun bookDetail(id: String, hash: String): AppResult<Book> {
+    suspend fun bookDetail(id: String, hash: String): AppResult<Book> =
+        bookDetails(id, hash).map(BookDetails::book)
+
+    suspend fun bookDetails(id: String, hash: String): AppResult<BookDetails> =
+        readBookDetails(id, hash, sessionProvider())
+
+    suspend fun resolveOnlinePreview(id: String, hash: String, session: Session?): AppResult<OnlineBookPreview?> =
+        readBookDetails(id, hash, session, cacheControl = PREVIEW_CACHE_CONTROL).map(BookDetails::onlinePreview)
+
+    private suspend fun readBookDetails(
+        id: String,
+        hash: String,
+        session: Session?,
+        cacheControl: CacheControl? = null,
+    ): AppResult<BookDetails> {
         if (!BookMapper.isSafeRef(id, hash)) {
             return AppResult.Failure(AppError.Parse(appText(TextR.string.text_invalid_book_id_or_hash)))
         }
-        val auth = sessionProvider()
-        return execute(EapiEndpoints.detail(id, hash), null, auth, isGet = true)
+        return execute(EapiEndpoints.detail(id, hash), null, session, isGet = true, cacheControl = cacheControl)
             .mapCatching { exchange ->
                 val obj = exchange.root.obj("book") ?: exchange.root
-                BookMapper.fromJson(obj) ?: throw AppErrorException(AppError.Parse(appText(TextR.string.text_book_details_are_missing_an_id_or_hash)))
+                val book = BookMapper.fromJson(obj)
+                    ?: throw AppErrorException(AppError.Parse(appText(TextR.string.text_book_details_are_missing_an_id_or_hash)))
+                val preview = if (book.id == id && book.hash == hash && obj.boolOrNull("readOnlineAvailable") != false) {
+                    bookOnlinePreview(obj, exchange.responseHost)
+                } else {
+                    null
+                }
+                BookDetails(book, preview)
             }
+    }
+
+    private fun bookOnlinePreview(book: JsonObject, responseHost: String): OnlineBookPreview? {
+        val url = book.stringOrNull("readOnlineUrl") ?: return null
+        val host = DomainPolicy.normalizeHostInput(responseHost) ?: return null
+        return OnlineBookPreview.fromDetail(url, book.stringOrNull("href").orEmpty(), host)
     }
 
     suspend fun bookFormats(id: String, hash: String): AppResult<List<BookFormat>> {
@@ -328,6 +358,7 @@ class EapiClient(
         session: Session?,
         isGet: Boolean = false,
         allowRetry: Boolean = true,
+        cacheControl: CacheControl? = null,
     ): AppResult<Exchange> {
         val base = baseUrlFor(session) ?: return AppResult.Failure(AppError.NoDomain)
         val url = base.trimEnd('/') + path
@@ -338,7 +369,7 @@ class EapiClient(
         val attemptLimit = if (allowRetry) maxAttempts.coerceAtLeast(1) else 1
         while (attempt <= attemptLimit) {
             val outcome = try {
-                withContext(dispatchers.io) { executeOnce(url, form, session, isGet, allowRetry) }
+                withContext(dispatchers.io) { executeOnce(url, form, session, isGet, allowRetry, cacheControl) }
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (blocked: BlockedRedirectException) {
@@ -375,6 +406,7 @@ class EapiClient(
         session: Session?,
         isGet: Boolean,
         allowRetry: Boolean,
+        cacheControl: CacheControl?,
     ): Outcome {
         SafeLog.d(TAG, "request ${SafeLog.redactUrl(url)}")
         val builder = Request.Builder().url(url).markEapi()
@@ -385,6 +417,7 @@ class EapiClient(
         }
         builder.header("Accept", EapiHeaders.ACCEPT)
         builder.header("User-Agent", EapiHeaders.USER_AGENT)
+        if (cacheControl != null) builder.cacheControl(cacheControl)
         // ADR-076: the search endpoint rejects requests that do not identify the mobile client.
         builder.header(EapiHeaders.SOURCE, EapiHeaders.SOURCE_ANDROID)
         if (session != null) {
@@ -405,7 +438,7 @@ class EapiClient(
 
             if (root != null) {
                 when (root.intOrNull("success")) {
-                    1 -> return Outcome.Ok(Exchange(root, setCookies, code))
+                    1 -> return Outcome.Ok(Exchange(root, setCookies, code, response.request.url.host))
                     0 -> return Outcome.Err(mapEnvelopeError(root, code), retryable = false)
                     else -> if (code in 200..299) {
                         return Outcome.Err(AppError.Parse(appText(TextR.string.text_response_is_missing_the_success_field)), retryable = false)
@@ -483,6 +516,7 @@ class EapiClient(
         val root: JsonObject,
         val setCookies: List<String>,
         val code: Int,
+        val responseHost: String,
     )
 
     private sealed interface Outcome {
@@ -494,6 +528,7 @@ class EapiClient(
         private const val TAG = "Eapi"
         private val NUMERIC_BOOK_ID = Regex("[0-9]{1,32}")
         private val FILE_EXTENSION = Regex("[a-z0-9]{1,20}")
+        private val PREVIEW_CACHE_CONTROL = CacheControl.Builder().noCache().noStore().build()
         private val EMPTY_FORM: FormBody = FormBody.Builder().build()
     }
 }

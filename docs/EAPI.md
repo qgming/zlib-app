@@ -16,6 +16,7 @@
   remix-userkey: <key>
   ```
 - 列表 `limit` 默认 50；分页从 1 开始。
+- 书单 PAPI 不套用上述 EAPI 规则；独立契约见 [PAPI.md](PAPI.md)。
 - 响应统一 envelope：
   ```json
   { "success": 1, "error": "", "books": [], "pagination": { "current": 1, "total_pages": 10 } }
@@ -115,7 +116,14 @@ order=popular       # 可选
 GET /eapi/book/{id}/{hash}
 ```
 
-返回单本书的完整字段，结构与搜索项相同。详情页按 `id:hash` 缓存，避免重复请求。
+返回单本书的完整字段，结构与搜索项相同。详情页按 `id:hash` 缓存，避免重复请求。详情的格式与文件大小胶囊显示当前引用已返回的文件属性，不读取 `/formats`，也不代表最终选入下载队列的文件（ADR-085）。
+
+#### 在线预览（ADR-088/089/091）
+
+- 在线预览仍使用上述图书详情端点，不经 PAPI。进入预览或点击刷新时，向当前会话的镜像重新请求，使用 `Cache-Control: no-cache, no-store`，不使用详情页先前收到的链接。
+- 检查响应来源及 `id:hash`，明确 `readOnlineAvailable=false`、无 `readOnlineUrl` 或地址不是合法 HTTPS 时不打开。保留 `readOnlineUrl` 原始主机、路径和签名，不拼接或替换域名；`href` 仅用于复制不含签名的公开图书链接。
+- 预览 WebView 不注入 `remix_userid` / `remix_userkey` 或任何账号 Cookie，也不限制阅读器页面及其资源 CDN 域名；进入前清空 Cookie，退出再次清空。阅读器自行决定其页面、脚本、图片与内容 CDN 的请求，签名链接不得写入 URL 导航参数、剪贴板、持久存储或日志。`support@z-lib.bz` 是站方固定支持地址，不能作为当前镜像的判断依据。
+- 2026-11-25 在 `z101.by` 真机验证：详情返回 `readOnlineUrl`，阅读器顶层页面为 `reader.z101.by`，正文资源来自 `reader-content-alp-01.cdn-zlib.sk`。此前的 403／`Loading reader…` 来自客户端按资源主机名拦截，而不是缺少会话；移除页面与资源白名单、停止注入 Cookie 后可正常阅读。公开链接在未登录状态下也可打开。
 
 #### 同一本书的可用格式（ADR-045）
 
@@ -227,7 +235,7 @@ GET /eapi/user/book/downloaded?page=1&limit=50
 ```
 
 响应：`books[]` + `pagination`；日期优先取 `date_download`，兼容 `date` / `downloaded_at`。`date_download` 来源于 ZlibraryKO 的字段映射，后两者为现有兼容字段；实际账号响应仍需脱敏核对。
-这是账号的云端下载记录，原界面将其称为“历史”，并非浏览历史。按 ADR-049/051 从下载管理右上角云图标进入；书架为“本机 / 收藏”。云端记录不表示当前设备存在文件，也不确认网站其他图书馆分组使用同一端点。本机文件以设置的 SAF 下载目录实际扫描为准，不调用 EAPI。
+这是账号的云端下载记录，原界面将其称为“历史”，并非浏览历史。按 ADR-049/051 从下载管理右上角云图标进入。云端记录不表示当前设备存在文件，也不确认网站其他图书馆分组使用同一端点。本机文件以设置的 SAF 下载目录实际扫描为准，不调用 EAPI。
 
 2026-11-22 用户确认下载管理内云端下载记录真机验证成功；此确认不等于原始响应字段、账号切换、所有分页边界或缺图原因都已单独核验。
 
@@ -292,11 +300,9 @@ GET /eapi/info/domains
 
 体检对 `307 + Server: DiamWall`（或带 `__diamwall` cookie）直接判 `DIAMWALL`，不再误报重定向循环。`domains` 响应本身可以包含第三方代理（如 `proxy.zlibraryproxies.workers.dev`）；它只用于**校验**，不会被采纳为可用域名，也不会加入 allowlist。
 
-### 2.10 云端书单（已移出范围）
+### 2.10 书单（见 PAPI 文档）
 
-书单页面与模块已按 ADR-051 移除。2026-11-22 调查没有确认可用的书单 EAPI；第三方实现读取书单使用的是 JSON PAPI，而非本项目允许的 EAPI。本客户端不调用这些路径，不抓取网页，也不建立本地替代书单。
-
-历史调查中的用户书单 URL、标识和失败候选路径已清理；它们不是可调用契约。若未来重新纳入，先立 ADR，重新核对鉴权、端点及分页，并添加脱敏 fixture 后实现。
+未确认可用的书单 EAPI。「设置 → 我的书单」使用 [PAPI.md](PAPI.md) 中的只读 JSON 接口；登录、图书搜索、图书详情与图书收藏继续走 EAPI。
 
 ### 2.11 搜索语言与格式候选（已实测，筛选 UI 动态接入）
 
@@ -396,8 +402,8 @@ z-library.website, zlib.bz
 ## 6. 不支持 / 未验证
 
 - 全文本搜索：EAPI 无确认端点，返回 `Unsupported`。
-- 收藏写入：save/unsave 已按 ADR-033 接入，用户于 2026-11-22 确认真机验证成功；异常路径仍由模拟响应回归覆盖，账号切换/多设备仍需专项验收。书单创建/编辑继续待协议验证。
-- 云端书单读取/分页/详情：协议待验证，见 §2.10；不以本地书单代替。
+- 收藏写入：save/unsave 已按 ADR-033 接入，用户于 2026-11-22 确认真机验证成功；异常路径仍由模拟响应回归覆盖，账号切换/多设备仍需专项验收。
+- 未确认书单或图书评论的 EAPI；书单的 PAPI 范围及验证边界见 [PAPI.md](PAPI.md)。
 - Kindle 推送、微信读书导入：不做；只用系统分享。
 - HTML 页面抓取、Cloudflare 绕过：不做。
 - 本地电子书元数据编辑及第三方查源：计划已按 ADR-030 取消；本文件中的书名、作者、ISBN、封面等字段仍用于 EAPI 图书信息展示。
@@ -408,10 +414,8 @@ z-library.website, zlib.bz
 - `heartleo/zlib`：`docs/eapi.md`、`internal/zlib/eapi*.go`、`domain_policy.go`、`download.go`
 - [baroxyton/zlibrary-eapi-documentation README.md](https://github.com/baroxyton/zlibrary-eapi-documentation/blob/e2184c463ed6ea8e3772a8ebe0c588b421fe366a/README.md)：第三方非官方说明；2026-11-22 核对。用户提供的 raw `/README` 返回 404，实际文件名为 [`README.md`](https://raw.githubusercontent.com/baroxyton/zlibrary-eapi-documentation/main/README.md)。其旧域名与“必须个人域下载”的说明不能替代当前域名策略和已实测下载流程。
 - [ZlibraryKO api_shared.lua](https://github.com/ZlibraryKO/zlibrary.koplugin/blob/7d15f06166999ec559d5fb9901b3a4d7f3235906/zlibrary/api_shared.lua)：云端下载记录的日期与无效封面兼容依据。
-- [ZlibraryKO config_urls.lua](https://github.com/ZlibraryKO/zlibrary.koplugin/blob/7d15f06166999ec559d5fb9901b3a4d7f3235906/zlibrary/config_urls.lua)：书单实际使用 PAPI 的调查依据；不作为当前可调用端点。
-- [nassim-arifette/zlibrary-api eapi.py](https://github.com/nassim-arifette/zlibrary-api/blob/cedae14c1ca344b1b35ef8d779adb7d84743b19d/zlib_connector/eapi.py)：另一份书单读取实际调用 PAPI 的实现；仅作调查依据，未调用或接入。
 - [nassim-arifette/zlibrary-api books.py](https://github.com/nassim-arifette/zlibrary-api/blob/cedae14c1ca344b1b35ef8d779adb7d84743b19d/zlib_connector/books.py)：格式选项独立引用、扩展名与显示大小的映射依据。
 - [Ciallo-Reader ZLibraryEapiClient.kt](https://github.com/roxycon-dev/Ciallo-Reader/blob/50f374cde1cfa41cb16c072b7455e9b402863d0f/app/src/main/java/com/example/source/zlibrary/ZLibraryEapiClient.kt)：格式数组的 `id/hash/extension/filesize/filesizeString` 映射依据；只参考字段，不采用其其它鉴权、网页或下载凭据行为。
 - [rookslog/zlibrary-mcp ADR-005](https://github.com/rookslog/zlibrary-mcp/blob/70eebdae00a0499819c06c6eb1dcb132883084a5/docs/adr/ADR-005-EAPI-Migration.md)：该项目迁移 EAPI 时记录缺少书单端点；不作为所有服务端均不支持的证明。
 - 实测日期：2026-09-04、2026-10-25（域名与登录行为）
-- 本项目实测：2026-11-22（`zh.z-lib.by` 登录、资料、收藏对照与书单 EAPI 候选检查，见 §2.10）；记录不含账号标识或凭据。
+- 本项目实测：2026-11-22（`zh.z-lib.by` 登录、资料及图书收藏对照）；记录不含账号标识或凭据。

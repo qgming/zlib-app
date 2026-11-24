@@ -19,6 +19,7 @@ import com.qgming.zlib.core.network.EapiClient
 import com.qgming.zlib.core.network.EapiJson
 import com.qgming.zlib.core.network.EapiRedirectGuardInterceptor
 import com.qgming.zlib.core.network.GitHubReleaseClient
+import com.qgming.zlib.core.network.PapiBooklistClient
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -39,6 +40,11 @@ object AppModule {
     @Provides
     @Singleton
     fun gitHubReleaseClient(): GitHubReleaseClient = GitHubReleaseClient()
+
+    @Provides
+    @Singleton
+    fun papiBooklistClient(client: OkHttpClient, registry: AllowedHostRegistry): PapiBooklistClient =
+        PapiBooklistClient(client, registry::isAllowed)
 
     @Provides
     @Singleton

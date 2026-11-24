@@ -12,7 +12,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
-import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qgming.zlib.core.designsystem.ZlibBookTile
@@ -28,7 +27,6 @@ import com.qgming.zlib.core.designsystem.ZlibStateCard
 import com.qgming.zlib.core.designsystem.ZlibTopBarTabs
 import com.qgming.zlib.core.designsystem.fullWidthItem
 import com.qgming.zlib.core.designsystem.ZlibAutoPagination
-import top.yukonga.miuix.kmp.basic.TextButton
 
 @Composable
 fun LibraryTabs(selected: LibrarySection, onSelect: (LibrarySection) -> Unit) {
