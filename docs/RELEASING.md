@@ -7,9 +7,9 @@
 `app/build.gradle.kts` 的 `appVersionName` 使用 SemVer，`appVersionCode` 每次公开发布递增。
 Git 标签为 `v<appVersionName>`，例如 `v1.0.0`。同一版本的所有架构与通用包使用相同 versionCode，便于互相覆盖安装和后续更新。
 
-当前正式版为 `1.3.0`（`versionCode=5`），于2026-11-24 00:58:18（北京时间，UTC为2026-11-23 16:58:18）发布为 `v1.3.0` 并设为Latest，标签指向构建源码提交 `d236ad8036b500f292799bedc4e4bb864a66451e`。上一正式版为2026-11-23发布的 `v1.2.0`（`versionCode=4`），标签指向 `5784a9862152041539a65b3506852e0dabcc2222`；`v1.1.0`（`versionCode=3`）标签指向 `6c1ccb2103990b4d8fe8fed4dc8eeed4102b96ac`。
+当前正式版为 `1.3.1`（`versionCode=6`），于2026-11-24 12:54:16（北京时间，UTC为2026-11-24 04:54:16）发布为 `v1.3.1` 并设为Latest，标签指向构建源码提交 `e173ac2f9ea90dec8278ad031cbfe2d8090cf6fa`。上一正式版为2026-11-24 00:58:18（北京时间）发布的 `v1.3.0`（`versionCode=5`），标签指向 `d236ad8036b500f292799bedc4e4bb864a66451e`；`v1.2.0`（`versionCode=4`）标签指向 `5784a9862152041539a65b3506852e0dabcc2222`，`v1.1.0`（`versionCode=3`）标签指向 `6c1ccb2103990b4d8fe8fed4dc8eeed4102b96ac`。
 
-开发版本已提升为 `1.3.1`（`versionCode=6`），用于搜索来源头修复与搜索历史胶囊布局的本地构建和模拟器验收（ADR-076/077）；尚未创建标签、推送或发布。
+1.3.1 修复了移动端搜索被拒绝的问题（ADR-076），并将最近搜索改为胶囊布局（ADR-077）；正文见 `docs/releases/v1.3.1.txt`，发布授权与验证见 ADR-078。
 
 按ADR-071/072/074，1.3.0起只打包并交付正式通用APK；本机构建与公开发布独立记录。1.3.0日志在 `docs/releases/v1.3.0.txt`，开头含移动端搜索服务异常声明；用户已确认并授权全部提交与发布（ADR-075），线上正文与文件逐字一致。
 
@@ -89,3 +89,13 @@ APK 的包名、签名须匹配已安装应用，versionCode 必须更大，vers
 - 用户确认日志后授权全部提交及发布。构建源码以 `d236ad8036b500f292799bedc4e4bb864a66451e` 提交并推送main，`v1.3.0`标签指向该提交。2026-11-23 16:58:18 UTC正式发布 `https://github.com/qgming/zlib-app/releases/tag/v1.3.0`，非草稿、非预发布并设为Latest。
 - 三个附件为唯一 `zhishi-1.3.0-universal.apk`、`SHA256SUMS.txt`、`v1.3.0.txt`。草稿阶段核对正文、名称、字节数及GitHub SHA-256摘要；发布后重新下载全部附件逐字节比对本地一致，更新正文与确认后的TXT逐字一致。未上传调试包或独立架构包。
 - 通过已有GitHub认证读取latest确认v1.3.0；匿名latest API返回HTTP403限流，不标记为成功。公开通用APK匿名下载为HTTP200，4,905,150字节及SHA-256核对通过。未重新进行应用内旧版到新版下载/安装，不能把元数据和公开下载成功等同于该链路验收。
+
+## v1.3.1 构建与发布记录
+
+- 2026-11-24 执行 `test lint :app:prepareReleaseAssets` 成功；275 项单测通过，失败、错误、跳过均为 0；15 个 lint 结果文件无 issue。R8 与资源裁剪的正式构建通过。
+- 输出仅含 `zhishi-1.3.1-universal.apk`（4,921,534 字节）与 `SHA256SUMS.txt`。APK 的 SHA-256 为 `e07486901a1b561c3f487cf840c968162b165aeb176610eee06d45fad5ed2e90`。
+- 原签名证书 SHA-256 d964fb1414f44fc8eb0f4a3c4835a5c8fb70e4527e3f039bc70b0e1ccaca032e；包名 com.qgming.zlib、versionName 1.3.1/versionCode 6、minSdk 33、targetSdk 37、非 debuggable；四种原生 ABI、16KB ZIP 对齐与 SHA256SUMS.txt 均已核对。
+- 正式通用包已在 emulator-5554 覆盖安装，系统报告 1.3.1/code6，未清除应用数据。用户确认搜索恢复正常，并在胶囊版搜索历史安装后确认界面无问题；其它 ABI 真机与应用内 1.3.0 到 1.3.1 的更新链路未专项验收。
+- 用户确认后授权全部提交与发布。构建源码以 `e173ac2f9ea90dec8278ad031cbfe2d8090cf6fa` 提交并推送 main，`v1.3.1` 标签指向该提交。2026-11-24 04:54:16 UTC（北京时间 12:54:16）正式发布 `https://github.com/qgming/zlib-app/releases/tag/v1.3.1`，非草稿、非预发布并设为 Latest。
+- 三个附件为唯一 `zhishi-1.3.1-universal.apk`、`SHA256SUMS.txt`、`v1.3.1.txt`。草稿阶段核对正文、名称、字节数及 GitHub SHA-256 摘要；发布后重新下载全部附件，逐字节与本地一致，正文与 TXT 一致（GitHub 正文比 TXT 多一个行尾换行，与此前版本相同）。
+- 无凭据 latest API 本次返回 HTTP 200，读取为 `v1.3.1`；公开通用 APK 匿名下载 HTTP 200，4,921,534 字节及 SHA-256 一致。未据此声称其它 ABI、所有异常路径或应用内旧版更新链路已验收。
