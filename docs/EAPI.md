@@ -8,6 +8,7 @@
 - 只使用 HTTPS；域名必须通过 allowlist（`AGENTS.md` §3.2）。
 - `Accept: application/json`
 - `User-Agent`：桌面 Chrome（与 CLI 一致）
+- `source: android`：每个请求都带（ADR-076）。2026-11-24 复测：缺少该头时 `/eapi/book/search` 即使带有效会话也返回 HTTP 400 `{"success":0,"error":"Access denied"}`，登录、profile、热门等端点不受影响；上游 `heartleo/zlib` 加该头后实测搜索恢复（v0.0.16）。本项目同日匿名 curl 在 `zlib.bz` / `z101.by` 加头仍被拒，说明该头可能不是唯一条件（还可能与网络、会话或 TLS 指纹有关），以用户有效会话真机验证为准。
 - POST：`Content-Type: application/x-www-form-urlencoded`
 - 鉴权：Cookie `remix_userid` / `remix_userkey`，同时发同名请求头：
   ```

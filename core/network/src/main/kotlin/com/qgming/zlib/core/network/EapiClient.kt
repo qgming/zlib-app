@@ -385,6 +385,8 @@ class EapiClient(
         }
         builder.header("Accept", EapiHeaders.ACCEPT)
         builder.header("User-Agent", EapiHeaders.USER_AGENT)
+        // ADR-076: the search endpoint rejects requests that do not identify the mobile client.
+        builder.header(EapiHeaders.SOURCE, EapiHeaders.SOURCE_ANDROID)
         if (session != null) {
             if (session.cookieHeader.isNotBlank()) builder.header("Cookie", session.cookieHeader)
             builder.header(EapiHeaders.REMIX_USER_ID, session.remixUserId)

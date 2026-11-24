@@ -17,8 +17,8 @@ val keystoreProperties = Properties().apply {
         keystorePropertiesFile.inputStream().use { load(it) }
     }
 }
-val appVersionName = "1.3.0"
-val appVersionCode = 5
+val appVersionName = "1.3.1"
+val appVersionCode = 6
 
 android {
     namespace = "com.qgming.zlib"

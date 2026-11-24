@@ -4,25 +4,83 @@ import androidx.compose.ui.res.stringResource
 import com.qgming.zlib.core.common.appText
 import com.qgming.zlib.core.common.R as TextR
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.InputField
 import top.yukonga.miuix.kmp.basic.SearchBar
+import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Search
 import top.yukonga.miuix.kmp.icon.basic.SearchCleanup
 import top.yukonga.miuix.kmp.icon.glass.Close
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+
+private val SearchHistoryChipShape = RoundedCornerShape(percent = 50)
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun ZlibSearchHistoryChips(
+    queries: List<String>,
+    onClick: (String) -> Unit,
+    onLongClick: (String) -> Unit,
+    longClickLabel: String,
+    modifier: Modifier = Modifier,
+) {
+    FlowRow(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        queries.forEach { query ->
+            Box(
+                modifier = Modifier
+                    .widthIn(max = 280.dp)
+                    .heightIn(min = 40.dp)
+                    .clip(SearchHistoryChipShape)
+                    .background(MiuixTheme.colorScheme.surfaceContainer)
+                    .combinedClickable(
+                        role = Role.Button,
+                        onClick = { onClick(query) },
+                        onLongClickLabel = longClickLabel,
+                        onLongClick = { onLongClick(query) },
+                    )
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = query,
+                    style = MiuixTheme.textStyles.body2,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
 
 @Composable
 fun ZlibClearSearchHistoryButton(onClick: () -> Unit) {

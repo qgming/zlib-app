@@ -7,6 +7,14 @@ object EapiHeaders {
             "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
     const val ACCEPT = "application/json"
+
+    /**
+     * Client source marker sent by the mobile apps. `/eapi/book/search` answers
+     * HTTP 400 `Access denied` without it, even for a valid session (ADR-076).
+     */
+    const val SOURCE = "source"
+    const val SOURCE_ANDROID = "android"
+
     const val REMIX_USER_ID = "remix-userid"
     const val REMIX_USER_KEY = "remix-userkey"
     const val REMIX_USER_KEY_ALT = "remix-user-key"

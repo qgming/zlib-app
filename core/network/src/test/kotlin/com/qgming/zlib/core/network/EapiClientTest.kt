@@ -209,6 +209,19 @@ class EapiClientTest {
         assertTrue(body.contains("order=popular"))
         assertEquals("7", request.getHeader("remix-userid"))
         assertEquals("key", request.getHeader("remix-userkey"))
+        assertEquals("android", request.getHeader(EapiHeaders.SOURCE))
+    }
+
+    @Test
+    fun `search identifies the android client source`() {
+        server.enqueue(enqueueJson("""{"success":1,"books":[],"pagination":{"current":1,"total_pages":0}}"""))
+
+        val result = kotlinx.coroutines.runBlocking { client().search(SearchQuery("dune")) }
+        assertIs<AppResult.Success<BookPage>>(result)
+
+        val request = server.takeRequest()
+        assertEquals("/eapi/book/search", request.path)
+        assertEquals("android", request.getHeader(EapiHeaders.SOURCE))
     }
 
     @Test

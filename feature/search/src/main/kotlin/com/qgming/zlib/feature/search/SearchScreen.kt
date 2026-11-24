@@ -4,12 +4,10 @@ import androidx.compose.ui.res.stringResource
 import com.qgming.zlib.core.common.appText
 import com.qgming.zlib.core.common.R as TextR
 
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -26,8 +24,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -42,6 +38,7 @@ import com.qgming.zlib.core.designsystem.ZlibGlassBottomSheet
 import com.qgming.zlib.core.designsystem.ZlibLoading
 import com.qgming.zlib.core.designsystem.ZlibPage
 import com.qgming.zlib.core.designsystem.ZlibSearchBar
+import com.qgming.zlib.core.designsystem.ZlibSearchHistoryChips
 import com.qgming.zlib.core.designsystem.ZlibStateCard
 import com.qgming.zlib.core.designsystem.fullWidthItem
 import com.qgming.zlib.core.designsystem.ZlibAutoPagination
@@ -117,16 +114,12 @@ fun SearchScreen(
                                 Text(stringResource(TextR.string.text_recent_searches), style = MiuixTheme.textStyles.title4)
                                 ZlibClearSearchHistoryButton(onClick = { confirmClearHistory = true })
                             }
-                            history.queries.forEach { query ->
-                                Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).combinedClickable(
-                                    role = Role.Button,
-                                    onClick = { focusManager.clearFocus(); viewModel.searchRecent(query) },
-                                    onLongClickLabel = stringResource(TextR.string.text_delete_search_history_entry),
-                                    onLongClick = { viewModel.removeRecent(query) },
-                                ).padding(vertical = 12.dp)) {
-                                    Text(query, style = MiuixTheme.textStyles.body2, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                }
-                            }
+                            ZlibSearchHistoryChips(
+                                queries = history.queries,
+                                onClick = { query -> focusManager.clearFocus(); viewModel.searchRecent(query) },
+                                onLongClick = viewModel::removeRecent,
+                                longClickLabel = stringResource(TextR.string.text_delete_search_history_entry),
+                            )
                         }
                     }
                 }
