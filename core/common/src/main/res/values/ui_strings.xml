@@ -488,6 +488,23 @@
     <string name="text_booklist_created_with_book">"已创建「%1$s」并加入本书"</string>
     <string name="text_back_to_booklists">"返回书单列表"</string>
     <string name="text_try_other_keywords">"试试其他关键词。"</string>
+    <string name="text_share_image_title">"分享图片"</string>
+    <string name="text_share_action">"分享"</string>
+    <string name="text_save_image">"保存到本地"</string>
+    <string name="text_generating_share_image">"正在生成分享图片…"</string>
+    <string name="text_share_image_failed">"无法生成分享图片"</string>
+    <string name="text_share_image_saved">"图片已保存"</string>
+    <string name="text_share_image_save_failed">"无法保存图片，请重试"</string>
+    <string name="text_share_image_no_receiver">"没有应用可以接收图片"</string>
+    <string name="text_share_image_unavailable">"分享内容已失效，请返回重新分享"</string>
+    <plurals name="share_booklist_preview">
+        <item quantity="other">"预览前 %1$d 本"</item>
+    </plurals>
+    <plurals name="share_booklist_total">
+        <item quantity="other">"共 %1$d 本"</item>
+    </plurals>
+    <string name="text_share_booklist">"书单"</string>
+    <string name="text_share_empty_booklist">"这份书单还没有图书"</string>
     <plurals name="comment_reply_count">
         <item quantity="other">"%1$d 条回复"</item>
     </plurals>

@@ -11,6 +11,7 @@ import com.qgming.zlib.core.model.Book
 import com.qgming.zlib.core.model.BooklistPage
 import com.qgming.zlib.core.model.CloudBooklist
 import com.qgming.zlib.core.model.Session
+import com.qgming.zlib.core.model.ShareImageContent
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
@@ -135,6 +136,19 @@ class BooklistViewModel @Inject constructor(private val repository: BooklistRepo
 
     internal fun canOpenBook(ref: String): Boolean =
         !resetSession() && _books.value.page?.books?.any { it.ref == ref } == true
+
+    internal fun shareList(onShare: (CloudBooklist, List<Book>, Boolean) -> Unit) {
+        if (resetSession()) return
+        val state = _books.value
+        val booklist = state.booklist ?: return
+        val page = state.page ?: return
+        if (openedListId != booklist.id || state.sessionChanged || state.request == LibraryRequest.Refresh || state.error != null) return
+        onShare(
+            booklist,
+            page.books.take(ShareImageContent.MAX_BOOKS),
+            page.nextPage != null || page.books.size > ShareImageContent.MAX_BOOKS,
+        )
+    }
 
     private fun loadBooklists(request: LibraryRequest) {
         if (resetSession() || !booklistsVisible) return

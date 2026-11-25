@@ -29,6 +29,8 @@ import com.qgming.zlib.feature.detail.DetailScreen
 import com.qgming.zlib.feature.detail.DetailViewModel
 import com.qgming.zlib.feature.search.SearchScreen
 import com.qgming.zlib.navigation.BookDetailLauncher
+import com.qgming.zlib.share.ShareImageActivity
+import com.qgming.zlib.share.ShareImagePayload
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.launch
@@ -116,6 +118,9 @@ class BookDetailActivity : ComponentActivity() {
                         hash = preview.hash,
                         previewBook = preview,
                         onOpenBook = openBook,
+                        onShare = { book ->
+                            ShareImageActivity.launch(this@BookDetailActivity, ShareImagePayload.book(this@BookDetailActivity, book))
+                        },
                         onBack = { finish() },
                         onPreview = {
                             if (nav.backStack.lastOrNull() == DetailRoute.Book) nav.push(DetailRoute.Preview)

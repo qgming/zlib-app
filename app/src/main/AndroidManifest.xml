@@ -36,6 +36,19 @@
             android:theme="@style/Theme.Zlib"
             android:windowSoftInputMode="adjustResize" />
 
+        <activity
+            android:name=".share.ShareImageActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Zlib" />
+
+        <provider
+            android:name=".share.ShareImageProvider"
+            android:authorities="${applicationId}.share-images"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/share_image_paths" />
+        </provider>
+
         <service
             android:name="com.qgming.zlib.core.data.update.UpdateDownloadService"
             android:exported="false"

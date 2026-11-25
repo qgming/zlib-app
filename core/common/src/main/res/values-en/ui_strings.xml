@@ -488,6 +488,25 @@
     <string name="text_booklist_created_with_book">"Created “%1$s” and added this book"</string>
     <string name="text_back_to_booklists">"Back to booklists"</string>
     <string name="text_try_other_keywords">"Try other keywords."</string>
+    <string name="text_share_image_title">"Share image"</string>
+    <string name="text_share_action">"Share"</string>
+    <string name="text_save_image">"Save locally"</string>
+    <string name="text_generating_share_image">"Generating image…"</string>
+    <string name="text_share_image_failed">"Unable to generate image"</string>
+    <string name="text_share_image_saved">"Image saved"</string>
+    <string name="text_share_image_save_failed">"Could not save image. Try again."</string>
+    <string name="text_share_image_no_receiver">"No app can receive this image"</string>
+    <string name="text_share_image_unavailable">"Return to the previous page to share again"</string>
+    <plurals name="share_booklist_preview">
+        <item quantity="one">"Preview of first %1$d book"</item>
+        <item quantity="other">"Preview of first %1$d books"</item>
+    </plurals>
+    <plurals name="share_booklist_total">
+        <item quantity="one">"%1$d book"</item>
+        <item quantity="other">"%1$d books"</item>
+    </plurals>
+    <string name="text_share_booklist">"Booklist"</string>
+    <string name="text_share_empty_booklist">"This booklist is empty"</string>
     <plurals name="comment_reply_count">
         <item quantity="one">"%1$d reply"</item>
         <item quantity="other">"%1$d replies"</item>

@@ -20,9 +20,12 @@ import com.qgming.zlib.core.designsystem.ZlibBooklistCard
 import com.qgming.zlib.core.designsystem.ZlibCardList
 import com.qgming.zlib.core.designsystem.ZlibLoading
 import com.qgming.zlib.core.designsystem.ZlibPage
+import com.qgming.zlib.core.designsystem.ZlibShareButton
 import com.qgming.zlib.core.designsystem.ZlibStateCard
 import com.qgming.zlib.core.designsystem.fullWidthItem
 import com.qgming.zlib.core.designsystem.userMessage
+import com.qgming.zlib.core.model.Book
+import com.qgming.zlib.core.model.CloudBooklist
 
 @Composable
 fun MyBooklistsScreen(
@@ -85,6 +88,7 @@ fun BooklistBooksScreen(
     id: String,
     onBack: () -> Unit,
     onOpenBook: (ZlibBookOpenRequest) -> Unit,
+    onShare: (CloudBooklist, List<Book>, Boolean) -> Unit,
     viewModel: BooklistViewModel,
 ) {
     DisposableEffect(viewModel, id) {
@@ -102,7 +106,18 @@ fun BooklistBooksScreen(
         onLoadMore = viewModel::loadMore,
     )
     val pageTitle = state.booklist?.title ?: stringResource(TextR.string.text_booklists)
-    ZlibPage(title = pageTitle, onBack = onBack) { padding ->
+    ZlibPage(
+        title = pageTitle,
+        onBack = onBack,
+        actions = {
+            ZlibShareButton(
+                enabled = state.booklist != null && page != null && !state.sessionChanged &&
+                    state.request != LibraryRequest.Refresh && state.error == null,
+            ) {
+                viewModel.shareList(onShare)
+            }
+        },
+    ) { padding ->
         ZlibBookGrid(
             padding = padding,
             state = gridState,

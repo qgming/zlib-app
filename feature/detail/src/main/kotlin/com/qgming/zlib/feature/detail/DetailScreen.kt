@@ -48,7 +48,6 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.net.toUri
-import com.qgming.zlib.core.designsystem.ZlibAddToBooklistButton
 import com.qgming.zlib.core.designsystem.ZlibBookCommentCard
 import com.qgming.zlib.core.designsystem.ZlibBookDescriptionCard
 import com.qgming.zlib.core.designsystem.ZlibBookFavoriteButton
@@ -65,6 +64,7 @@ import com.qgming.zlib.core.designsystem.ZlibBookGrid
 import com.qgming.zlib.core.designsystem.ZlibBookTile
 import com.qgming.zlib.core.designsystem.ZlibBookOpenRequest
 import com.qgming.zlib.core.designsystem.ZlibSectionTitle
+import com.qgming.zlib.core.designsystem.ZlibShareButton
 import com.qgming.zlib.core.designsystem.formatBookFileSize
 import com.qgming.zlib.core.designsystem.fullWidthItem
 import com.qgming.zlib.core.designsystem.hasPublicationInfo
@@ -83,6 +83,7 @@ fun DetailScreen(
     onSearch: (String) -> Unit,
     onOpenBook: (ZlibBookOpenRequest) -> Unit,
     onPreview: () -> Unit,
+    onShare: (Book) -> Unit,
     onComments: (String) -> Unit,
     onOpenComment: (bookId: String, commentId: String) -> Unit,
     commentsViewModel: BookCommentsViewModel,
@@ -130,11 +131,11 @@ fun DetailScreen(
         title = stringResource(TextR.string.text_book_details),
         onBack = onBack,
         actions = {
-            ZlibAddToBooklistButton(enabled = state.book != null && !picker.open) {
-                state.book?.let { pickerViewModel.open(it.id) }
-            }
-            Spacer(Modifier.width(8.dp))
             ZlibBookFavoriteButton(favorite.saved, favorite.busy, favoriteViewModel::toggle)
+            Spacer(Modifier.width(8.dp))
+            ZlibShareButton(enabled = state.book != null) {
+                state.book?.let(onShare)
+            }
         },
     ) { padding ->
         val book = state.book ?: previewBook?.takeIf { it.ref == "$id:$hash" }
@@ -190,6 +191,13 @@ fun DetailScreen(
                     }
                     fullWidthItem("detail-more-comments") {
                         ZlibMenuAction(stringResource(TextR.string.text_view_more_comments), onClick = { onComments(book.id) })
+                    }
+                    fullWidthItem("detail-add-to-booklist") {
+                        ZlibMenuAction(
+                            text = stringResource(TextR.string.text_add_to_booklist),
+                            enabled = !picker.open,
+                            onClick = { pickerViewModel.open(book.id) },
+                        )
                     }
                     if (book.hasPublicationInfo) {
                         fullWidthItem("detail-publication") { ZlibPublicationCard(book, onSearchPublisher = onSearch) }

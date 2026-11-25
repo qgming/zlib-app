@@ -8,6 +8,7 @@ import com.qgming.zlib.core.data.library.BooklistRepository
 import com.qgming.zlib.core.data.session.SessionManager
 import com.qgming.zlib.core.data.session.SessionStore
 import com.qgming.zlib.core.data.session.SessionVault
+import com.qgming.zlib.core.model.Book
 import com.qgming.zlib.core.model.BooklistMembership
 import com.qgming.zlib.core.model.CloudBooklist
 import com.qgming.zlib.core.model.Session
@@ -266,6 +267,85 @@ class BooklistViewModelTest {
             viewModel.showBooklists()
             assertEquals("New list", viewModel.booklists.first { it.lists != null }.lists?.single()?.title)
             assertEquals("/papi/booklist/current-user/0", server.take().path)
+        }
+    }
+
+    @Test
+    fun `a loaded empty booklist is shareable without inventing a total`() = runTest {
+        withBooklists { server, _, viewModel ->
+            server.enqueue(lists())
+            server.enqueue(json("""{"success":1,"books":[]}"""))
+            viewModel.openList("42")
+            viewModel.books.first { it.page != null }
+            var shared = false
+            viewModel.shareList { list, books, partial ->
+                shared = true
+                assertEquals("42", list.id)
+                assertNull(list.bookCount)
+                assertTrue(books.isEmpty())
+                assertFalse(partial)
+            }
+            assertTrue(shared)
+            assertEquals(2, server.requestCount)
+        }
+    }
+
+    @Test
+    fun `share uses six loaded books at most and reports omitted books or another page`() = runTest {
+        withBooklists { server, _, viewModel ->
+            for ((size, next) in listOf(8 to false, 6 to true, 6 to false)) {
+                server.enqueue(lists())
+                val rows = (1..size).joinToString(",") { id -> """{"book":{"id":$id,"hash":"abcd","title":"Book $id"}}""" }
+                server.enqueue(json("""{"success":1,"books":[$rows],"pagination":{"current":1,"next":${if (next) "2" else "false"}}}"""))
+                viewModel.openList("42")
+                viewModel.books.first { it.page != null }
+                var sharedBooks: List<Book>? = null
+                var isPartial: Boolean? = null
+                viewModel.shareList { _, books, partial ->
+                    sharedBooks = books
+                    isPartial = partial
+                }
+                assertEquals((1..6).map(Int::toString), sharedBooks?.map(Book::id))
+                assertEquals(size > 6 || next, isPartial)
+                viewModel.closeList("42")
+            }
+            assertEquals(6, server.requestCount)
+        }
+    }
+
+    @Test
+    fun `sharing is refused while a refresh can replace the loaded snapshot`() = runTest {
+        withBooklists { server, _, viewModel ->
+            server.enqueue(lists())
+            server.enqueue(books(1, 2))
+            viewModel.openList("42")
+            viewModel.books.first { it.page != null }
+            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            viewModel.refreshBooks()
+            assertEquals(LibraryRequest.Refresh, viewModel.books.value.request)
+            viewModel.shareList { _, _, _ -> error("The old snapshot must not be shared during refresh") }
+            viewModel.closeList("42")
+        }
+    }
+
+    @Test
+    fun `sharing checks a changed session before its collector clears the old booklist`() = runTest {
+        withBooklists { server, sessions, viewModel ->
+            server.enqueue(lists())
+            server.enqueue(books(1, 2))
+            viewModel.openList("42")
+            viewModel.books.first { it.page != null }
+
+            sessions.save(session("8"))
+            // The session collector is queued on StandardTestDispatcher, so the old state still exists.
+            assertEquals("42", viewModel.books.value.booklist?.id)
+            assertFalse(viewModel.books.value.sessionChanged)
+            viewModel.shareList { _, _, _ -> error("A previous account's snapshot must never be shared") }
+            assertTrue(viewModel.books.value.sessionChanged)
+            assertNull(viewModel.books.value.booklist)
+            assertNull(viewModel.books.value.page)
+            runCurrent()
+            assertEquals(2, server.requestCount)
         }
     }
 

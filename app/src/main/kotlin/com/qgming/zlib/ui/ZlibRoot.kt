@@ -75,6 +75,8 @@ import com.qgming.zlib.feature.settings.AppUpdateHost
 import com.qgming.zlib.feature.settings.ReleaseHistoryScreen
 import com.qgming.zlib.feature.settings.SettingsScreen
 import com.qgming.zlib.navigation.BookDetailLauncher
+import com.qgming.zlib.share.ShareImageActivity
+import com.qgming.zlib.share.ShareImagePayload
 import kotlinx.serialization.Serializable
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Button
@@ -281,6 +283,7 @@ private fun StartupFailedScreen(
 
 @Composable
 private fun MainShell(appInfo: AboutAppInfo, updates: AboutViewModel, downloadRequest: Int) {
+    val context = LocalContext.current
     val nav = key("main-routes-v2") { rememberNavController<Route>(Route.Home) }
     var handledDownload by rememberSaveable { mutableIntStateOf(0) }
     LaunchedEffect(downloadRequest) {
@@ -343,6 +346,9 @@ private fun MainShell(appInfo: AboutAppInfo, updates: AboutViewModel, downloadRe
                     id = route.id,
                     onBack = { nav.pop() },
                     onOpenBook = openBook,
+                    onShare = { booklist, books, hasMore ->
+                        ShareImageActivity.launch(context, ShareImagePayload.booklist(booklist, books, hasMore))
+                    },
                     viewModel = booklists,
                 )
             }

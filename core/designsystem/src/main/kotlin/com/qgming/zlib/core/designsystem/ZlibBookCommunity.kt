@@ -23,22 +23,8 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.glass.Add
-import top.yukonga.miuix.kmp.icon.glass.AddBookmark
 import top.yukonga.miuix.kmp.icon.glass.Ok
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-
-@Composable
-fun ZlibAddToBooklistButton(enabled: Boolean, onClick: () -> Unit) {
-    val colors = MiuixTheme.colorScheme
-    TopBarButton(
-        icon = MiuixIcons.Glass.Normal.AddBookmark,
-        description = stringResource(TextR.string.text_add_to_booklist),
-        onClick = onClick,
-        glass = LocalZlibGlass.current,
-        enabled = enabled,
-        tint = if (enabled) colors.onSurface else colors.onSurfaceVariantSummary,
-    )
-}
 
 @Composable
 fun ZlibBooklistChoice(membership: BooklistMembership, adding: Boolean, enabled: Boolean, onClick: () -> Unit) {
