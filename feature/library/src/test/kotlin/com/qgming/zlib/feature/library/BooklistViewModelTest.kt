@@ -3,10 +3,13 @@ package com.qgming.zlib.feature.library
 import androidx.lifecycle.viewModelScope
 import com.qgming.zlib.core.common.AppDispatchers
 import com.qgming.zlib.core.common.AppError
+import com.qgming.zlib.core.common.AppResult
 import com.qgming.zlib.core.data.library.BooklistRepository
 import com.qgming.zlib.core.data.session.SessionManager
 import com.qgming.zlib.core.data.session.SessionStore
 import com.qgming.zlib.core.data.session.SessionVault
+import com.qgming.zlib.core.model.BooklistMembership
+import com.qgming.zlib.core.model.CloudBooklist
 import com.qgming.zlib.core.model.Session
 import com.qgming.zlib.core.network.PapiBooklistClient
 import java.util.concurrent.TimeUnit
@@ -45,17 +48,34 @@ class BooklistViewModelTest {
             assertEquals("Reading", original?.single()?.title)
             assertEquals("/papi/booklist/current-user/0", server.take().path)
 
-            server.enqueue(json("""{"success":0}""", 503))
+            repeat(4) { server.enqueue(json("""{"success":0}""", 503)) }
             viewModel.refreshBooklists()
             val failure = viewModel.booklists.first { it.error != null }
             assertEquals(LibraryRequest.Refresh, failure.failedRequest)
             assertEquals(original, failure.lists)
-            assertEquals("/papi/booklist/current-user/0", server.take().path)
+            repeat(4) { assertEquals("/papi/booklist/current-user/0", server.take().path) }
 
             server.enqueue(json("""{"success":1,"list":[]}"""))
             viewModel.retryBooklists()
             assertEquals(emptyList(), viewModel.booklists.first { it.lists?.isEmpty() == true }.lists)
             assertEquals("/papi/booklist/current-user/0", server.take().path)
+        }
+    }
+
+    @Test
+    fun `a transient initial booklist failure retries automatically and keeps the session`() = runTest {
+        withBooklists { server, _, viewModel ->
+            server.enqueue(json("""{"success":0}""", 503).setHeader("Retry-After", "0"))
+            server.enqueue(lists())
+            viewModel.showBooklists()
+            val loaded = viewModel.booklists.first { it.lists != null }
+            assertNull(loaded.error)
+            repeat(2) {
+                val request = server.take()
+                assertEquals("/papi/booklist/current-user/0", request.path)
+                assertEquals("remix_userid=7; remix_userkey=key-7", request.getHeader("Cookie"))
+            }
+            assertEquals(2, server.requestCount)
         }
     }
 
@@ -88,15 +108,15 @@ class BooklistViewModelTest {
             assertEquals("/papi/booklist/current-user/0", server.take().path)
             assertEquals("/papi/booklist/42/get-books/1", server.take().path)
 
-            server.enqueue(json("""{"success":0}""", 503))
+            repeat(4) { server.enqueue(json("""{"success":0}""", 503)) }
             viewModel.loadMore()
             val failure = viewModel.books.first { it.error != null }
-            assertEquals("/papi/booklist/42/get-books/3", server.take().path)
+            repeat(4) { assertEquals("/papi/booklist/42/get-books/3", server.take().path) }
             assertEquals(listOf("123:abcd"), failure.page?.books?.map { it.ref })
             assertEquals(LibraryRequest.Append, failure.failedRequest)
             viewModel.loadMore()
             runCurrent()
-            assertEquals(3, server.requestCount)
+            assertEquals(6, server.requestCount)
 
             server.enqueue(books(3, 4))
             viewModel.retryBooks()
@@ -212,7 +232,49 @@ class BooklistViewModelTest {
         }
     }
 
-    private suspend fun TestScope.withBooklists(block: suspend TestScope.(MockWebServer, SessionManager, BooklistViewModel) -> Unit) {
+    @Test
+    fun `confirmed details write invalidates the hidden list and refreshes open booklist books`() = runTest {
+        withBooklistRepository { server, sessions, viewModel, repository ->
+            server.enqueue(lists())
+            viewModel.showBooklists()
+            assertEquals("Reading", viewModel.booklists.first { it.lists != null }.lists?.single()?.title)
+            server.take()
+            viewModel.hideBooklists()
+
+            server.enqueue(lists())
+            server.enqueue(books(1, 2))
+            viewModel.openList("42")
+            assertEquals("123", viewModel.books.first { it.page != null }.page?.books?.single()?.id)
+            server.take()
+            server.take()
+
+            server.enqueue(json("""{"success":1}"""))
+            server.enqueue(lists())
+            server.enqueue(json("""{"success":1,"books":[{"book":{"id":456,"hash":"abcd"}}]}"""))
+            val expected = checkNotNull(sessions.current())
+            val membership = BooklistMembership(CloudBooklist("42", "Reading", null), false)
+            assertEquals(AppResult.Success(Unit), repository.addBook(expected, membership, "456"))
+            assertEquals("456", viewModel.books.first { it.page?.books?.singleOrNull()?.id == "456" }.page?.books?.single()?.id)
+            assertNull(viewModel.books.value.page?.nextPage)
+            assertEquals("/papi/booklist/42/add-book/456", server.take().path)
+            assertEquals("/papi/booklist/current-user/0", server.take().path)
+            assertEquals("/papi/booklist/42/get-books/1", server.take().path)
+            assertNull(viewModel.booklists.value.lists)
+
+            viewModel.closeList("42")
+            server.enqueue(lists("57", "New list"))
+            viewModel.showBooklists()
+            assertEquals("New list", viewModel.booklists.first { it.lists != null }.lists?.single()?.title)
+            assertEquals("/papi/booklist/current-user/0", server.take().path)
+        }
+    }
+
+    private suspend fun TestScope.withBooklists(block: suspend TestScope.(MockWebServer, SessionManager, BooklistViewModel) -> Unit) =
+        withBooklistRepository { server, sessions, viewModel, _ -> block(server, sessions, viewModel) }
+
+    private suspend fun TestScope.withBooklistRepository(
+        block: suspend TestScope.(MockWebServer, SessionManager, BooklistViewModel, BooklistRepository) -> Unit,
+    ) {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
         try {
@@ -229,9 +291,10 @@ class BooklistViewModelTest {
                     chain.proceed(request.newBuilder().url(server.url(request.url.encodedPath)).build())
                 }.build()
                 val client = PapiBooklistClient(http) { it == "z-lib.gd" }
-                val viewModel = BooklistViewModel(BooklistRepository(client, sessions))
+                val repository = BooklistRepository(client, sessions)
+                val viewModel = BooklistViewModel(repository)
                 try {
-                    block(server, sessions, viewModel)
+                    block(server, sessions, viewModel, repository)
                 } finally {
                     viewModel.viewModelScope.cancel()
                     runCurrent()

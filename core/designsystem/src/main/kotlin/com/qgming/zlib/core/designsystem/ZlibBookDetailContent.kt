@@ -26,7 +26,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -54,12 +56,11 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.glass.Data
 import top.yukonga.miuix.kmp.icon.glass.Date
 import top.yukonga.miuix.kmp.icon.glass.Document
-import top.yukonga.miuix.kmp.icon.glass.ExpandLess
-import top.yukonga.miuix.kmp.icon.glass.ExpandMore
 import top.yukonga.miuix.kmp.icon.glass.StarFill
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-private const val COLLAPSED_DESCRIPTION_LINES = 10
+private const val COLLAPSED_DESCRIPTION_LINES = 5
+private val DescriptionToggleSpacing = 4.dp
 private val PillShape = RoundedCornerShape(percent = 50)
 
 internal enum class BookDetailField(val labelRes: Int) {
@@ -158,7 +159,7 @@ fun ZlibBookDescriptionCard(text: AnnotatedString, expanded: Boolean, onToggle: 
     var canToggle by remember(text) { mutableStateOf(false) }
     val bodyStyle = MiuixTheme.textStyles.body2
     ZlibCard(
-        insideMargin = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = if (canToggle) 0.dp else 16.dp),
+        insideMargin = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = if (canToggle) DescriptionToggleSpacing else 16.dp),
     ) {
         Text(
             stringResource(TextR.string.text_description),
@@ -180,10 +181,9 @@ fun ZlibBookDescriptionCard(text: AnnotatedString, expanded: Boolean, onToggle: 
         }
         if (canToggle) {
             val colors = MiuixTheme.colorScheme
-            val icons = MiuixIcons.Glass.Normal
             val state = stringResource(if (expanded) R.string.zlib_expanded else R.string.zlib_collapsed)
             Row(
-                modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp)
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = DescriptionToggleSpacing)
                     .clip(PillShape).clickable(role = Role.Button, onClick = onToggle)
                     .heightIn(min = 48.dp).padding(horizontal = 12.dp)
                     .semantics { stateDescription = state },
@@ -196,9 +196,9 @@ fun ZlibBookDescriptionCard(text: AnnotatedString, expanded: Boolean, onToggle: 
                     color = colors.primary,
                 )
                 Icon(
-                    imageVector = if (expanded) icons.ExpandLess else icons.ExpandMore,
+                    painter = painterResource(R.drawable.zlib_description_arrow_up),
                     contentDescription = null,
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(16.dp).rotate(if (expanded) 0f else 180f),
                     tint = colors.primary,
                 )
             }

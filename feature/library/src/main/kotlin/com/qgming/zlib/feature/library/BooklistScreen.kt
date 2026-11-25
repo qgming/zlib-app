@@ -9,7 +9,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qgming.zlib.core.common.R as TextR
@@ -61,10 +60,7 @@ fun MyBooklistsScreen(
                     )
                 }
                 !loaded.isNullOrEmpty() -> items(loaded, key = { it.id }) { booklist ->
-                    val count = booklist.bookCount?.let { value ->
-                        pluralStringResource(TextR.plurals.booklist_book_count, value, value)
-                    }
-                    ZlibBooklistCard(title = booklist.title, summary = count, covers = booklist.covers) {
+                    ZlibBooklistCard(booklist) {
                         viewModel.selectList(booklist.id, onOpenList)
                     }
                 }

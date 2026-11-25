@@ -20,6 +20,7 @@ import com.qgming.zlib.core.network.EapiJson
 import com.qgming.zlib.core.network.EapiRedirectGuardInterceptor
 import com.qgming.zlib.core.network.GitHubReleaseClient
 import com.qgming.zlib.core.network.PapiBooklistClient
+import com.qgming.zlib.core.network.PapiCommentsClient
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -45,6 +46,11 @@ object AppModule {
     @Singleton
     fun papiBooklistClient(client: OkHttpClient, registry: AllowedHostRegistry): PapiBooklistClient =
         PapiBooklistClient(client, registry::isAllowed)
+
+    @Provides
+    @Singleton
+    fun papiCommentsClient(client: OkHttpClient, registry: AllowedHostRegistry): PapiCommentsClient =
+        PapiCommentsClient(client, registry::isAllowed)
 
     @Provides
     @Singleton

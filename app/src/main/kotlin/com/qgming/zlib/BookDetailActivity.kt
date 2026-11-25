@@ -8,18 +8,25 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.qgming.zlib.core.data.domain.DomainRepository
 import com.qgming.zlib.core.data.session.SessionManager
 import com.qgming.zlib.core.designsystem.ZlibTheme
 import com.qgming.zlib.core.designsystem.LocalZlibBookSnapshotsEnabled
+import com.qgming.zlib.core.designsystem.LocalZlibCommentAvatarLoader
 import com.qgming.zlib.core.designsystem.ZlibBookOpenRequest
 import com.qgming.zlib.core.model.Book
+import com.qgming.zlib.feature.detail.BookCommentDetailScreen
+import com.qgming.zlib.feature.detail.BookCommentsScreen
+import com.qgming.zlib.feature.detail.BookCommentsViewModel
 import com.qgming.zlib.feature.detail.BookPreviewScreen
 import com.qgming.zlib.feature.detail.DetailScreen
+import com.qgming.zlib.feature.detail.DetailViewModel
 import com.qgming.zlib.feature.search.SearchScreen
 import com.qgming.zlib.navigation.BookDetailLauncher
 import dagger.hilt.android.AndroidEntryPoint
@@ -37,6 +44,8 @@ private sealed interface DetailRoute : NavKey {
     @Serializable data object Book : DetailRoute
     @Serializable data class ContributorSearch(val name: String) : DetailRoute
     @Serializable data object Preview : DetailRoute
+    @Serializable data class Comments(val bookId: String) : DetailRoute
+    @Serializable data class Comment(val bookId: String, val commentId: String) : DetailRoute
 }
 
 @AndroidEntryPoint
@@ -75,12 +84,28 @@ class BookDetailActivity : ComponentActivity() {
     @Composable
     private fun DetailNavigation(preview: Book) {
         val nav = rememberNavController<DetailRoute>(DetailRoute.Book)
+        val comments = hiltViewModel<BookCommentsViewModel>()
+        val detail = hiltViewModel<DetailViewModel>(key = preview.ref)
+        LaunchedEffect(detail, preview.ref) { detail.load(preview.id, preview.hash) }
+        val avatarLoader = remember { (application as ZlibApplication).commentAvatarLoader }
+        val currentRoute = nav.backStack.lastOrNull()
+        LaunchedEffect(comments, currentRoute) {
+            when (currentRoute) {
+                is DetailRoute.Comments -> comments.open(currentRoute.bookId)
+                is DetailRoute.Comment -> comments.open(currentRoute.bookId, currentRoute.commentId)
+                DetailRoute.Book -> Unit // Starts the preview after the resolved book is available.
+                else -> comments.close()
+            }
+        }
         val scope = rememberCoroutineScope()
         val supportsSharedView = remember { BookDetailLauncher.isSupported() }
         val openBook: (ZlibBookOpenRequest) -> Unit = { request ->
             scope.launch { BookDetailLauncher.open(this@BookDetailActivity, request) }
         }
-        CompositionLocalProvider(LocalZlibBookSnapshotsEnabled provides supportsSharedView) {
+        CompositionLocalProvider(
+            LocalZlibBookSnapshotsEnabled provides supportsSharedView,
+            LocalZlibCommentAvatarLoader provides avatarLoader,
+        ) {
             NavDisplay(
                 navController = nav,
                 effects = NavDisplayEffects(backdropColor = MiuixTheme.colorScheme.surface, blockInputDuringTransition = true),
@@ -95,6 +120,15 @@ class BookDetailActivity : ComponentActivity() {
                         onPreview = {
                             if (nav.backStack.lastOrNull() == DetailRoute.Book) nav.push(DetailRoute.Preview)
                         },
+                        commentsViewModel = comments,
+                        viewModel = detail,
+                        active = currentRoute == DetailRoute.Book,
+                        onComments = { bookId ->
+                            if (nav.backStack.lastOrNull() == DetailRoute.Book) nav.push(DetailRoute.Comments(bookId))
+                        },
+                        onOpenComment = { bookId, commentId ->
+                            if (nav.backStack.lastOrNull() == DetailRoute.Book) nav.push(DetailRoute.Comment(bookId, commentId))
+                        },
                         onSearch = { name ->
                             if (nav.backStack.lastOrNull() == DetailRoute.Book) nav.push(DetailRoute.ContributorSearch(name))
                         },
@@ -106,6 +140,20 @@ class BookDetailActivity : ComponentActivity() {
                 entry<DetailRoute.Preview> {
                     BookPreviewScreen(preview.id, preview.hash, onBack = {
                         if (nav.backStack.lastOrNull() == DetailRoute.Preview) nav.pop()
+                    })
+                }
+                entry<DetailRoute.Comments> { route ->
+                    BookCommentsScreen(
+                        viewModel = comments,
+                        onBack = { if (nav.backStack.lastOrNull() == route) nav.pop() },
+                        onOpenComment = { id ->
+                            if (nav.backStack.lastOrNull() == route) nav.push(DetailRoute.Comment(route.bookId, id))
+                        },
+                    )
+                }
+                entry<DetailRoute.Comment> { route ->
+                    BookCommentDetailScreen(route.commentId, comments, onBack = {
+                        if (nav.backStack.lastOrNull() == route) nav.pop()
                     })
                 }
             }

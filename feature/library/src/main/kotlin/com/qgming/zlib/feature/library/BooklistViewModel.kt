@@ -47,13 +47,35 @@ class BooklistViewModel @Inject constructor(private val repository: BooklistRepo
     private var booklistsRequest: Job? = null
     private var booksRequest: Job? = null
     private var booklistsVisible = false
+    private var revision = repository.revision.value
     private var visibleListIds = emptySet<String>()
-    private val previews = BooklistPreviews(repository, viewModelScope)
+    private val previews = repository.previews(viewModelScope)
     private var openedListId: String? = null
 
     init {
         viewModelScope.launch {
             repository.session.collect { resetSession() }
+        }
+        viewModelScope.launch {
+            repository.revision.collect { latest ->
+                if (latest == revision) return@collect
+                revision = latest
+                if (resetSession()) return@collect
+                booklistsRequest?.cancel()
+                previews.clear()
+                if (booklistsVisible) {
+                    _booklists.value = _booklists.value.copy(request = null)
+                    loadBooklists(LibraryRequest.Refresh)
+                } else {
+                    _booklists.value = BooklistsUiState()
+                }
+                if (openedListId != null) {
+                    booksRequest?.cancel()
+                    val state = _books.value
+                    _books.value = state.copy(request = null, page = state.page?.copy(nextPage = null))
+                    loadBooks(LibraryRequest.Refresh)
+                }
+            }
         }
     }
 
@@ -131,7 +153,7 @@ class BooklistViewModel @Inject constructor(private val repository: BooklistRepo
             if (repository.session.value != session || !booklistsVisible) return@launch
             when (result) {
                 is AppResult.Success -> {
-                    _booklists.value = BooklistsUiState(lists = previews.withCachedCovers(result.value))
+                    _booklists.value = BooklistsUiState(lists = result.value.map(previews::withCachedCovers))
                     loadVisiblePreviews()
                 }
                 is AppResult.Failure -> _booklists.value = previous.copy(request = null, error = result.error, failedRequest = request)
@@ -142,9 +164,9 @@ class BooklistViewModel @Inject constructor(private val repository: BooklistRepo
     private fun loadVisiblePreviews() {
         val session = activeSession ?: return
         if (booklists.value.request != null) return
-        previews.loadVisible(session, booklists.value.lists.orEmpty(), visibleListIds) { loaded ->
+        previews.loadVisible(session, booklists.value.lists.orEmpty(), visibleListIds) { id, covers ->
             val state = booklists.value
-            _booklists.value = state.copy(lists = state.lists?.map { if (it.id == loaded.id) loaded else it })
+            _booklists.value = state.copy(lists = state.lists?.map { if (it.id == id) it.withCoverPreview(covers) else it })
         }
     }
 

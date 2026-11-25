@@ -456,11 +456,44 @@
     <string name="text_booklist_no_longer_available">"当前账号无法查看此书单，请返回“我的书单”刷新列表。"</string>
     <string name="text_booklist_session_changed">"当前登录或域名已变更"</string>
     <string name="text_booklist_return_hint">"请返回“我的书单”，重新选择要查看的书单。"</string>
-    <string name="text_booklist_session_not_accepted">"当前域名未接受用于书单的登录状态。可尝试在此域名重新登录，或通过账号页导入 Cookie。"</string>
-    <string name="text_booklist_rate_limited">"书单请求过于频繁，请稍后重试。"</string>
-    <string name="text_booklist_request_refused">"Z-Library 拒绝了书单请求。"</string>
+    <string name="text_papi_session_not_accepted">"当前域名未接受登录状态。可尝试在此域名重新登录，或通过账号页导入 Cookie。"</string>
+    <string name="text_papi_rate_limited">"请求过于频繁，请稍后重试。"</string>
+    <string name="text_papi_request_refused">"Z-Library 拒绝了请求。"</string>
     <string name="text_my_booklists">"我的书单"</string>
+    <string name="text_view_more_comments">"查看更多评论"</string>
+    <string name="text_book_comments">"图书评论"</string>
+    <string name="text_book_comment_detail">"评论详情"</string>
+    <string name="text_book_comment_unavailable">"这条评论暂不可查看"</string>
+    <string name="text_comment_replies">"回复"</string>
+    <string name="text_no_comment_replies">"暂无回复"</string>
+    <string name="text_load_more_comment_replies">"查找更多回复"</string>
+    <string name="text_comments_disabled">"这本书的评论已关闭"</string>
+    <string name="text_no_comments">"暂无评论"</string>
+    <string name="text_load_more_comments">"加载更多评论"</string>
+    <string name="text_cannot_load_more_comments">"无法加载更多评论"</string>
+    <string name="text_comment_author_unknown">"未知读者"</string>
+    <string name="text_comment_reply_to">"回复%1$s："</string>
+    <string name="text_comment_metric_number">"%1$d"</string>
+    <string name="text_add_to_booklist">"加入书单"</string>
+    <string name="text_create_booklist">"新建书单"</string>
+    <string name="text_booklist_name">"书单名称"</string>
+    <string name="text_create_and_add">"创建并加入"</string>
+    <string name="text_booklist_already_contains_book">"已加入"</string>
+    <string name="text_booklist_add_in_progress">"正在加入…"</string>
+    <string name="text_booklist_create_in_progress">"正在创建…"</string>
+    <string name="text_booklist_check_in_progress">"正在确认图书已加入…"</string>
+    <string name="text_booklist_recheck">"重新检查书单"</string>
+    <string name="text_booklist_create_unconfirmed">"暂未确认新书单包含本书。请先检查书单，避免重复创建。"</string>
+    <string name="text_book_added_to_booklist">"已加入「%1$s」"</string>
+    <string name="text_booklist_created_with_book">"已创建「%1$s」并加入本书"</string>
+    <string name="text_back_to_booklists">"返回书单列表"</string>
     <string name="text_try_other_keywords">"试试其他关键词。"</string>
+    <plurals name="comment_reply_count">
+        <item quantity="other">"%1$d 条回复"</item>
+    </plurals>
+    <plurals name="comment_like_count">
+        <item quantity="other">"%1$d 个赞"</item>
+    </plurals>
     <plurals name="booklist_book_count">
         <item quantity="other">"%1$d 本书"</item>
     </plurals>

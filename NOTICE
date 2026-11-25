@@ -37,6 +37,13 @@ Third-party software and references
    provenance, checksum, integration details, and release-license status.
    No example image assets are included.
 
+6. minglaiyo/zlibx
+   https://github.com/minglaiyo/zlibx
+   Referenced at a4c9f13cc7ec07b62c03e8b07a68d4d8044fc0e3 for documented
+   comment and booklist request/response shapes.
+   No source code or visual assets are copied from it. Its redirects,
+   verification handling and WebView challenge solver are not used.
+
 No Z-Library name, logo, or other trademark is claimed by this project. The
 Chinese display name "芝士读书" and project name "Zlib" identify this
 independent client and do not claim any affiliation with Z-Library.

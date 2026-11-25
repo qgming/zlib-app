@@ -7,14 +7,17 @@ import com.qgming.zlib.core.common.R as TextR
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,9 +45,11 @@ import androidx.compose.ui.text.fromHtml
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.net.toUri
+import com.qgming.zlib.core.designsystem.ZlibAddToBooklistButton
+import com.qgming.zlib.core.designsystem.ZlibBookCommentCard
 import com.qgming.zlib.core.designsystem.ZlibBookDescriptionCard
 import com.qgming.zlib.core.designsystem.ZlibBookFavoriteButton
 import com.qgming.zlib.core.designsystem.ZlibBookMetadataChips
@@ -55,6 +60,7 @@ import com.qgming.zlib.core.designsystem.ZlibMenuAction
 import com.qgming.zlib.core.designsystem.ZlibPage
 import com.qgming.zlib.core.designsystem.ZlibPublicationCard
 import com.qgming.zlib.core.designsystem.ZlibStateCard
+import com.qgming.zlib.core.designsystem.ZlibToastHost
 import com.qgming.zlib.core.designsystem.ZlibBookGrid
 import com.qgming.zlib.core.designsystem.ZlibBookTile
 import com.qgming.zlib.core.designsystem.ZlibBookOpenRequest
@@ -77,6 +83,10 @@ fun DetailScreen(
     onSearch: (String) -> Unit,
     onOpenBook: (ZlibBookOpenRequest) -> Unit,
     onPreview: () -> Unit,
+    onComments: (String) -> Unit,
+    onOpenComment: (bookId: String, commentId: String) -> Unit,
+    commentsViewModel: BookCommentsViewModel,
+    active: Boolean,
     previewBook: Book? = null,
     viewModel: DetailViewModel = hiltViewModel(key = "$id:$hash"),
     favoriteViewModel: BookFavoriteViewModel = hiltViewModel(key = "$id:$hash:favorite"),
@@ -85,6 +95,11 @@ fun DetailScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val favorite by favoriteViewModel.state.collectAsStateWithLifecycle()
     val similar by similarViewModel.state.collectAsStateWithLifecycle()
+    val comments by commentsViewModel.state.collectAsStateWithLifecycle()
+    val pickerViewModel = hiltViewModel<BooklistPickerViewModel>(key = "$id:$hash:booklist-picker")
+    val picker by pickerViewModel.state.collectAsStateWithLifecycle()
+    DisposableEffect(pickerViewModel) { onDispose { pickerViewModel.leaveDetail() } }
+    ZlibToastHost(pickerViewModel.events, key = picker.toastKey)
     val context = LocalContext.current
     val locale = LocalConfiguration.current.locales[0]
     var descriptionExpanded by rememberSaveable(id, hash) { mutableStateOf(false) }
@@ -92,6 +107,9 @@ fun DetailScreen(
     LaunchedEffect(id, hash) { viewModel.load(id, hash) }
     LaunchedEffect(id, hash) { favoriteViewModel.load(id) }
     LaunchedEffect(state.book?.ref) { if (state.book != null) similarViewModel.load(id, hash) }
+    LaunchedEffect(active, state.book?.id) {
+        if (active) state.book?.id?.let(commentsViewModel::showPreview)
+    }
     LaunchedEffect(viewModel) { viewModel.events.collect { notice = it } }
     LaunchedEffect(viewModel, context) {
         viewModel.openFiles.collect { file ->
@@ -111,7 +129,13 @@ fun DetailScreen(
     ZlibPage(
         title = stringResource(TextR.string.text_book_details),
         onBack = onBack,
-        actions = { ZlibBookFavoriteButton(favorite.saved, favorite.busy, favoriteViewModel::toggle) },
+        actions = {
+            ZlibAddToBooklistButton(enabled = state.book != null && !picker.open) {
+                state.book?.let { pickerViewModel.open(it.id) }
+            }
+            Spacer(Modifier.width(8.dp))
+            ZlibBookFavoriteButton(favorite.saved, favorite.busy, favoriteViewModel::toggle)
+        },
     ) { padding ->
         val book = state.book ?: previewBook?.takeIf { it.ref == "$id:$hash" }
         val error = state.error
@@ -156,6 +180,17 @@ fun DetailScreen(
                             ZlibBookDescriptionCard(description, descriptionExpanded) { descriptionExpanded = !descriptionExpanded }
                         }
                     }
+                    for (comment in comments.previewComments) {
+                        fullWidthItem("detail-comment-${comment.id}") {
+                            ZlibBookCommentCard(
+                                comment, comments.threads.replyCount(comment.id),
+                                onOpen = { onOpenComment(book.id, comment.id) },
+                            )
+                        }
+                    }
+                    fullWidthItem("detail-more-comments") {
+                        ZlibMenuAction(stringResource(TextR.string.text_view_more_comments), onClick = { onComments(book.id) })
+                    }
                     if (book.hasPublicationInfo) {
                         fullWidthItem("detail-publication") { ZlibPublicationCard(book, onSearchPublisher = onSearch) }
                     }
@@ -175,6 +210,7 @@ fun DetailScreen(
             }
         }
 
+        BooklistPickerSheet(picker, pickerViewModel)
         ZlibGlassBottomSheet(show = state.formats != null, title = stringResource(TextR.string.text_choose_download_format), onDismiss = viewModel::dismissFormats) {
             state.formats?.let { menu ->
                 Column(
