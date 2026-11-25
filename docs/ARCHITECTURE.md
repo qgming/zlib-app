@@ -32,7 +32,7 @@
 
 | 模块 | 职责 |
 |---|---|
-| `:app` | `ZlibApplication`、`MainActivity`、`BookDetailActivity`、SharedView Kit 适配、根导航、Hilt 入口、全局错误宿主 |
+| `:app` | `ZlibApplication`、`MainActivity`、`BookDetailActivity`、`ShareImageActivity` 与分享图生成／导出、SharedView Kit 适配、根导航、Hilt 入口、全局错误宿主 |
 | `:core:common` | `AppError`、`Result`、`DispatcherProvider`、文本/ISBN/文件名工具 |
 | `:core:model` | 领域模型与 UI 共享模型，不依赖 Android 框架（除可空注解） |
 | `:core:designsystem` | Miuix 深浅色主题、玻璃导航壳 `ZlibAppShell` / `ZlibPage`、统一弹层、图书网格、设置分组 |
@@ -112,9 +112,13 @@ ADR-045/048/092：上述“用户点下载”指在格式菜单中点选具体�
 
 ### 4.5 分享
 
-`BookDetail` → “打开/分享” → 使用 SAF 文件 URI + `FLAG_GRANT_READ_URI_PERMISSION` → `Intent.ACTION_SEND` + `type`（EPUB/MOBI/PDF…）→ 系统分享面板（微信读书、阅读器）。图书分享不申请安装权限、不直接调微信 SDK；ADR-056 的显式应用更新另声明 REQUEST_INSTALL_PACKAGES。
+本机文件由书架长按「分享文件」→ SAF 文件 URI + `FLAG_GRANT_READ_URI_PERMISSION` → `Intent.ACTION_SEND` + `type`（EPUB/MOBI/PDF…）→ 系统分享面板。文件分享不申请安装权限、不直接调用第三方 SDK；ADR-056 的显式应用更新另声明 REQUEST_INSTALL_PACKAGES。
 
-> 分享策略见 ADR-021：直接授予 SAF 文档 URI，不经过 `FileProvider`。
+本机图书文件沿用 ADR-021：直接授予 SAF 文档 URI，不经过 `FileProvider`。
+
+ADR-101：图书详情与自有书单详情通过 app 回调创建有界的 `ShareImageContent` 显示快照，交非导出的 `ShareImageActivity`。`ShareImagePayload` 仅传递上限 24 KiB 的严格 JSON，不序列化完整 Book／会话；`ShareImageViewModel` 在 IO 通过无 Cookie、无会话、无重定向的图片客户端读取已有封面，在 Default 用 `ShareImageRenderer`／`StaticLayout` 绘制固定 1080px 宽、最高 3000px 的图片，并于 IO 编码 PNG 到专用私有缓存。缺图绘本地经典书封，底部固定原图标和本地化软件名称。预览直接显示同一导出 Bitmap。书单仅展示前六本已加载图书，标明已知总数和部分预览，不为分享分页或改变公开状态。
+
+「保存到本地」使用 `CreateDocument(image/png)`，由用户选择 SAF 文档位置；「分享」通过专用 `share-images` FileProvider、`EXTRA_STREAM`、`ClipData` 和临时只读授权发送单张 PNG。Provider 只暴露分享缓存目录，不暴露其它私有文件；缓存生成时清理过期图片，失败不保留半文件。此图片导出与本机电子书、云端书单真相及下载队列分离，不加入存储或相册权限。
 
 ### 4.6 我的图书馆
 
@@ -242,7 +246,7 @@ Routes: login, search, downloads, download-history, my-booklists, booklist, acco
 
 ADR-040 将详情从 miuix-nav 路由改为独立 `BookDetailActivity`，以接入 ITGSA SharedView Kit 的 ActivityOptions。SDK 固定 AAR 仅由 app 引用；设计系统通过 `ZlibBookOpenRequest` 提供封面快照和实时坐标，feature 只提交请求。按 ADR-041 默认尝试 ROM 能力、不提供设置项或应用内模拟转场；设备支持时使用 Bitmap 源打开，返回前更新 WINDOW/SCREEN 声明对应的封面落点，不支持／快照失效时普通打开。详情先展示基础信息并读取完整详情，加载完成后才提供下载。进程重建从 Intent 图书引用恢复，转场 Bitmap 和来源查询器不落盘、不含凭据。具体来源、边界、许可和验收见 `ANIMATIONS.md`。
 
-ADR-085/087/088/092/096：详情依次显示封面、书名、作者、信息胶囊、下载／预览操作、简介、评论预览与查看更多、出版信息和相似图书；「加入书单」在顶栏收藏左侧。胶囊按评分、出版年份、当前文件格式、当前文件大小排列，使用同色图标，自动换行，缺项不占位；仅展示当前详情已有字段，不发起格式查询。简介按 Compose 实际排版在超过五行时提供上下箭头展开／收起，保存同一详情的展开状态，按钮上下等距。`BookDescription` 只在本地格式化 EAPI 的 `description`，保留换行、列表、强调和复制，移除图片、链接行为与脚本；不使用 WebView。出版信息展示出版社、语言、版次、页数、ISBN 和完整分类，不重复胶囊字段；只有出版社为蓝色可点击搜索，其余字段为普通只读文本，不复制。下载格式菜单、操作反馈、网络字段与存储保持不变。
+ADR-085/087/088/092/096/100/101：详情依次显示封面、书名、作者、信息胶囊、下载／预览操作、简介、评论预览与查看更多、同宽同样式的「加入书单」、出版信息和相似图书；顶栏为收藏、分享。胶囊按评分、出版年份、当前文件格式、当前文件大小排列，使用同色图标，自动换行，缺项不占位；仅展示当前详情已有字段，不发起格式查询。简介按 Compose 实际排版在超过五行时提供上下箭头展开／收起，保存同一详情的展开状态，按钮上下等距。`BookDescription` 只在本地格式化 EAPI 的 `description`，保留换行、列表、强调和复制，移除图片、链接行为与脚本；不使用 WebView。出版信息展示出版社、语言、版次、页数、ISBN 和完整分类，不重复胶囊字段；只有出版社为蓝色可点击搜索，其余字段为普通只读文本，不复制。下载格式菜单、操作反馈、网络字段与存储保持不变。
 
 ADR-093–096：`BookDetailActivity` 内的图书详情预览、评论列表与评论详情共用 `BookCommentsViewModel`，导航只传图书及评论 ID。预览最多三张主评论卡片；列表没有书名，只展示主评论的三行摘要；评论详情显示全文及按 `parent_id` 排列的回复，为嵌套回复显示实际回复对象。在这三页之间往返保留同一本书的已加载数据；转入其他路由、切书、切号或更换镜像时取消旧读取。头像使用独立无凭据图片加载器。`BooklistPickerViewModel` 在图书详情驱动玻璃选择面板与创建表单，复用「我的书单」的四封面卡片与可见时取图逻辑；写入绑定打开时的会话，确认后通过设计系统 Toast 反馈。
 
@@ -270,7 +274,7 @@ ADR-054：图标源保存于 `app/artwork/zhishi.svg`，app 使用对应的 Andr
 
 ADR-070：更新日志与许可页共用设计系统 `ZlibExpandableText`，整行标题切换、正文向下展开且可复制，24dp 圆角和12dp间距。日志可比较的版本优先、按版本降序，其余标签按发布时间降序置后，按 tag 去重，仅最新一项默认展开；许可按依赖族展示离线来源与完整许可，默认全部收起，SharedView SDK单独说明发布方条款。各项展开状态由页面保存，滚动或旋转不覆盖手动选择；开源文本及来源记录见 `feature/settings/src/main/legal/README.md`。
 
-ADR-072/073/075/076/077/078：当前版本1.3.1/code6，已发布。所有EAPI请求统一携带`source: android`，用于通过搜索端点的客户端来源校验；最近搜索以自动换行胶囊展示。设置外观组依次为主题模式、软件语言、网络格数；`ApplicationLanguages`以Android13+原生`LocaleManager.applicationLocales`为语言唯一持久来源，空列表跟随系统，zh-CN/en为显式选择，manifest声明localeConfig。系统配置重建Activity，Compose使用stringResource读取当前资源，非Compose的ViewModel事件和Repository错误通过core:common的AppText应用资源桥接；JVM默认表从同一XML构建生成。中文首页统一“发现”，英文Discover，内部路由与双击回顶不变。许可页直接显示项目及各依赖，移除介绍与单独Project attribution条目，根NOTICE仍在仓库维护。
+ADR-072/073/075/076/077/078：线上正式版为1.3.1/code6；当前构建为1.4.0/code7，日志已确认且获授权正式发布，结果见 `RELEASING.md`。所有EAPI请求统一携带`source: android`，用于通过搜索端点的客户端来源校验；最近搜索以自动换行胶囊展示。设置外观组依次为主题模式、软件语言、网络格数；`ApplicationLanguages`以Android13+原生`LocaleManager.applicationLocales`为语言唯一持久来源，空列表跟随系统，zh-CN/en为显式选择，manifest声明localeConfig。系统配置重建Activity，Compose使用stringResource读取当前资源，非Compose的ViewModel事件和Repository错误通过core:common的AppText应用资源桥接；JVM默认表从同一XML构建生成。中文首页统一“发现”，英文Discover，内部路由与双击回顶不变。许可页直接显示项目及各依赖，移除介绍与单独Project attribution条目，根NOTICE仍在仓库维护。
 
 ## 9. DI 与并发
 
