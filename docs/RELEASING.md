@@ -7,11 +7,11 @@
 `app/build.gradle.kts` 的 `appVersionName` 使用 SemVer，`appVersionCode` 每次公开发布递增。
 Git 标签为 `v<appVersionName>`，例如 `v1.0.0`。同一版本的所有架构与通用包使用相同 versionCode，便于互相覆盖安装和后续更新。
 
-当前正式版为 `1.3.1`（`versionCode=6`），于2026-11-24 12:54:16（北京时间，UTC为2026-11-24 04:54:16）发布为 `v1.3.1` 并设为Latest，标签指向构建源码提交 `e173ac2f9ea90dec8278ad031cbfe2d8090cf6fa`。上一正式版为2026-11-24 00:58:18（北京时间）发布的 `v1.3.0`（`versionCode=5`），标签指向 `d236ad8036b500f292799bedc4e4bb864a66451e`；`v1.2.0`（`versionCode=4`）标签指向 `5784a9862152041539a65b3506852e0dabcc2222`，`v1.1.0`（`versionCode=3`）标签指向 `6c1ccb2103990b4d8fe8fed4dc8eeed4102b96ac`。
+当前正式版为 `1.4.0`（`versionCode=7`），于 2026-11-25 16:51:49（北京时间，UTC 为 2026-11-25 08:51:49）发布为 `v1.4.0` 并设为 Latest，标签指向构建源码提交 `32fd44ba0be5d72c72f63d23a05668925d7546c9`。上一正式版 `v1.3.1`（`versionCode=6`）于 2026-11-24 12:54:16（北京时间）发布，标签指向 `e173ac2f9ea90dec8278ad031cbfe2d8090cf6fa`。`v1.3.0`（`versionCode=5`）于 2026-11-24 00:58:18（北京时间）发布，标签指向 `d236ad8036b500f292799bedc4e4bb864a66451e`；`v1.2.0`（`versionCode=4`）标签指向 `5784a9862152041539a65b3506852e0dabcc2222`，`v1.1.0`（`versionCode=3`）标签指向 `6c1ccb2103990b4d8fe8fed4dc8eeed4102b96ac`。
 
 1.3.1 修复了移动端搜索被拒绝的问题（ADR-076），并将最近搜索改为胶囊布局（ADR-077）；正文见 `docs/releases/v1.3.1.txt`，发布授权与验证见 ADR-078。
 
-本地待发布版本为 `1.4.0`（`versionCode=7`），沿用原包名与签名，按正式通用版任务构建。用户于 2026-11-25 确认完整日志 `docs/releases/v1.4.0.txt`，并要求“全部git提交。正式版也发布到release”，已授权提交全部改动、推送 main、创建 `v1.4.0` 标签及发布正式 Release；先核对草稿正文和三个附件，再发布并设为 Latest。本轮不安装新版本。
+1.4.0 沿用原包名与签名，按正式通用版任务构建。用户于 2026-11-25 确认完整日志 `docs/releases/v1.4.0.txt`，并要求“全部git提交。正式版也发布到release”；全部改动已提交并推送 main，`v1.4.0` 标签及正式 Release 已发布，草稿阶段与公开下载后均核对三个附件。本轮未安装新版本。
 
 按ADR-071/072/074，1.3.0起只打包并交付正式通用APK；本机构建与公开发布独立记录。1.3.0日志在 `docs/releases/v1.3.0.txt`，开头含移动端搜索服务异常声明；用户已确认并授权全部提交与发布（ADR-075），线上正文与文件逐字一致。
 
@@ -102,10 +102,13 @@ APK 的包名、签名须匹配已安装应用，versionCode 必须更大，vers
 - 三个附件为唯一 `zhishi-1.3.1-universal.apk`、`SHA256SUMS.txt`、`v1.3.1.txt`。草稿阶段核对正文、名称、字节数及 GitHub SHA-256 摘要；发布后重新下载全部附件，逐字节与本地一致，正文与 TXT 一致（GitHub 正文比 TXT 多一个行尾换行，与此前版本相同）。
 - 无凭据 latest API 本次返回 HTTP 200，读取为 `v1.3.1`；公开通用 APK 匿名下载 HTTP 200，4,921,534 字节及 SHA-256 一致。未据此声称其它 ABI、所有异常路径或应用内旧版更新链路已验收。
 
-## v1.4.0 构建与发布准备记录
+## v1.4.0 构建与发布记录
 
 - 2026-11-25 执行 `test lint :app:prepareReleaseAssets --offline --max-workers=1` 成功（3 分 16 秒）。当前模块共 63 个测试套件、357 项单测，失败、错误、跳过均为 0；13 个当前模块 lint 无 issue。正式包启用 R8 与资源裁剪，未构建调试包或独立架构包。
 - 输出仅含 `zhishi-1.4.0-universal.apk`（5,202,010 字节）和 `SHA256SUMS.txt`。APK 的 SHA-256 为 `f7ea11321f73719639e6c0038938f4a85486be0e6f1f2373c0fb63c738f2a252`，与校验文件一致。
 - 原签名证书 SHA-256 为 `d964fb1414f44fc8eb0f4a3c4835a5c8fb70e4527e3f039bc70b0e1ccaca032e`；包名 `com.qgming.zlib`、versionName `1.4.0`、versionCode `7`、minSdk 33、targetSdk 37、非 debuggable。四种 ABI 及各自完整原生库、16KB ZIP 对齐、六份离线许可资产与仓库原文字节一致均已核对。
 - 完整纯文本日志为 `docs/releases/v1.4.0.txt`，以公开 1.3.1 为基线，汇总最终保留的我的书单、评论、加入／创建书单、在线预览、图片分享和详情调整；不包含已取消的实验功能。用户确认并授权全部提交及正式发布；发布前复核 APK 和待提交内容，无凭据、本机配置或构建产物混入源码提交。
 - 本轮未使用模拟器，未安装或操作真机；不将打包及静态检查等同于分享保存、第三方接收或真实账号交互验收。完整验证边界见 `TESTING.md` 第 19 节。
+- 分享实现提交为 `5b51890ab181064943f8d125fde0b71b43b431a2`，版本及已确认日志提交为 `32fd44ba0be5d72c72f63d23a05668925d7546c9`；此前两份本地功能提交一并推送 main，`v1.4.0` 标签指向后者。2026-11-25 08:51:49 UTC 正式发布 `https://github.com/qgming/zlib-app/releases/tag/v1.4.0`，非草稿、非预发布并设为 Latest。
+- 三个附件为唯一 `zhishi-1.4.0-universal.apk`、`SHA256SUMS.txt`、`v1.4.0.txt`。草稿阶段核对名称、字节数及 GitHub SHA-256 摘要；正式发布后匿名重新下载三个附件均为 HTTP 200，逐字节与本地一致，线上正文与确认后的 TXT 完全一致。
+- 已有 GitHub 登录状态读取 latest 确认为 `v1.4.0`；无凭据 latest API 返回 HTTP 403 且明确为 rate limit exceeded（剩余额度 0），未将其记为成功。未进行应用内旧版到新版下载／安装或新增真机操作，发布资产校验不能代替这些交互验收。
