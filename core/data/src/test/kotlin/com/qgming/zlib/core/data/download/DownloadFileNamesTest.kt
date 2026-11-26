@@ -133,6 +133,12 @@ class DownloadFileNamesTest {
     }
 
     @Test
+    fun `selected book format overrides a conflicting disposition or endpoint suffix`() {
+        assertEquals("book.pdf", DownloadFileNames.finalName(null, "book.php", "Title", "pdf"))
+        assertEquals("book.epub", DownloadFileNames.finalName("attachment; filename=book.pdf", null, "Title", "epub"))
+    }
+
+    @Test
     fun `final name sanitizes path traversal and illegal characters`() {
         val name = DownloadFileNames.finalName(
             contentDisposition = "attachment; filename=\"../../evil:name?.pdf\"",

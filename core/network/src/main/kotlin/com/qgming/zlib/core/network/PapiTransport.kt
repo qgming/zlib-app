@@ -12,13 +12,10 @@ import java.util.concurrent.TimeUnit
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import okhttp3.Authenticator
 import okhttp3.CacheControl
-import okhttp3.CookieJar
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
-import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.Response
@@ -34,14 +31,7 @@ private class PapiRequestCredentials(val cookie: String)
 
 /** One-shot transport shared by documented booklist and comment JSON requests. */
 private fun restrictedBooklistClient(client: OkHttpClient): OkHttpClient = client.newBuilder()
-    .authenticator(Authenticator.NONE)
-    .proxyAuthenticator(Authenticator.NONE)
-    .cookieJar(CookieJar.NO_COOKIES)
-    .cache(null)
-    .retryOnConnectionFailure(false)
-    .followRedirects(false)
-    .followSslRedirects(false)
-    .protocols(listOf(Protocol.HTTP_1_1))
+    .oneShotTransport()
     .callTimeout(30, TimeUnit.SECONDS)
     .addNetworkInterceptor { chain ->
         val original = chain.request()
@@ -56,13 +46,7 @@ private fun restrictedBooklistClient(client: OkHttpClient): OkHttpClient = clien
             // Do not restore a Cookie already removed by an upstream credential guard.
             .apply { if (cookie != null && original.header(EapiHeaders.COOKIE) != null) header(EapiHeaders.COOKIE, cookie) }
             .build()
-        val response = chain.proceed(request)
-        // Unlike 408, OkHttp can replay a 503 with Retry-After: 0 even with retries disabled.
-        if (response.code == 503 && response.header("Retry-After") != null) {
-            response.newBuilder().removeHeader("Retry-After").build()
-        } else {
-            response
-        }
+        chain.proceed(request)
     }
     .build()
 
@@ -115,8 +99,7 @@ internal class PapiTransport(
         if (response.code == 429) throw AppErrorException(AppError.Unsupported(appText(TextR.string.text_papi_rate_limited)))
         val type = response.body.contentType()
         if (type?.subtype == "html") throw AppErrorException(AppError.DomainBlocked(DomainStatus.CHALLENGED))
-        if (response.body.source().request(MAX_RESPONSE_BYTES + 1)) malformedPapiResponse()
-        val body = response.body.string()
+        val body = response.body.stringUpTo(MAX_RESPONSE_BYTES) ?: malformedPapiResponse()
         if (createConfirmation && response.isSuccessful && body.isEmpty()) return JsonObject(emptyMap())
         val root = jsonObject(body)
         val success = root?.intOrNull("success")
@@ -152,11 +135,9 @@ internal class PapiTransport(
     }
 
     private fun sessionCookie(session: Session): String? {
-        if (!session.isValid || !cookieValueIsSafe(session.remixUserId) || !cookieValueIsSafe(session.remixUserKey)) return null
-        return "${Session.USER_ID_COOKIE}=${session.remixUserId}; ${Session.USER_KEY_COOKIE}=${session.remixUserKey}"
+        if (!session.isValid) return null
+        return session.cookieHeader
     }
-
-    private fun cookieValueIsSafe(value: String) = value.all { it in '!'..'~' && it !in "\",;\\" }
 
     private companion object {
         const val MAX_RESPONSE_BYTES = 4L * 1024 * 1024

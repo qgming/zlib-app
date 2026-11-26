@@ -320,6 +320,7 @@ class LibraryViewModelTest {
                     sessionProvider = sessions::current,
                     dispatchers = dispatchers,
                     maxAttempts = 1,
+                    isAllowedUrl = { it.host == server.hostName && it.port == server.port },
                 )
                 val favorites = FavoritesRepository(api, sessions)
                 block(server, sessions, favorites, LibraryViewModel(LibraryRepository(api), sessions, favorites))

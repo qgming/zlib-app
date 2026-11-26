@@ -17,6 +17,7 @@ import com.qgming.zlib.core.data.settings.SearchHistoryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 
 data class SearchUiState(
@@ -54,6 +56,8 @@ class SearchViewModel @Inject constructor(
 
     private val _state = MutableStateFlow(SearchUiState(query = savedState["query"] ?: "", filters = restoreFilters()))
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
+    private val _messages = Channel<String>(Channel.BUFFERED)
+    val messages = _messages.receiveAsFlow()
     private var submittedQuery: SearchQuery? = null
     private var request: Job? = null
     private var initialQueryApplied = savedState.get<Boolean>("submitted") == true
@@ -120,11 +124,11 @@ class SearchViewModel @Inject constructor(
     fun search() {
         val current = _state.value
         if (current.query.isBlank()) {
-            _state.update { it.copy(error = appText(TextR.string.text_enter_a_title_author_or_isbn)) }
+            _messages.trySend(appText(TextR.string.text_enter_a_title_author_or_isbn))
             return
         }
         if (!current.filters.yearRangeValid) {
-            _state.update { it.copy(error = appText(TextR.string.text_the_start_year_cannot_be_later_than_the_end_year)) }
+            _messages.trySend(appText(TextR.string.text_the_start_year_cannot_be_later_than_the_end_year))
             return
         }
         // Restored selections may come from a previous server candidate list. Load the current
@@ -260,7 +264,7 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch {
             val repository = historyRepository ?: return@launch
             try { action(repository) } catch (_: java.io.IOException) {
-                _state.update { it.copy(error = appText(TextR.string.text_cannot_save_recent_searches_please_retry)) }
+                _messages.trySend(appText(TextR.string.text_cannot_save_recent_searches_please_retry))
             }
         }
     }

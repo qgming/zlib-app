@@ -1,7 +1,6 @@
 package com.qgming.zlib.feature.settings
 
 import androidx.compose.ui.res.stringResource
-import com.qgming.zlib.core.common.appText
 import com.qgming.zlib.core.common.R as TextR
 
 import androidx.compose.foundation.layout.Arrangement
@@ -20,26 +19,35 @@ import com.qgming.zlib.core.designsystem.ZlibAddDomainButton
 import com.qgming.zlib.core.designsystem.ZlibAddDomainForm
 import com.qgming.zlib.core.designsystem.ZlibCardList
 import com.qgming.zlib.core.designsystem.ZlibConfirmDialog
+import com.qgming.zlib.core.designsystem.ZlibCommunityMirrorConfirmation
 import com.qgming.zlib.core.designsystem.ZlibDomainAutoSwitch
 import com.qgming.zlib.core.designsystem.ZlibDomainCard
+import com.qgming.zlib.core.designsystem.ZlibDomainGroupHeading
 import com.qgming.zlib.core.designsystem.ZlibGlassBottomSheet
 import com.qgming.zlib.core.designsystem.ZlibMenuAction
 import com.qgming.zlib.core.designsystem.ZlibPage
 import com.qgming.zlib.core.designsystem.ZlibProbeDomainsButton
 import com.qgming.zlib.core.designsystem.ZlibToastHost
 import com.qgming.zlib.core.designsystem.rememberZlibToastHostState
+import com.qgming.zlib.core.model.DomainGroup
 
 @Composable
-fun DomainSettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
+fun DomainSettingsScreen(
+    onBack: () -> Unit,
+    viewModel: SettingsViewModel = hiltViewModel(),
+    onVerifyDomain: (String) -> Unit = {},
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val busy by viewModel.domainBusy.collectAsStateWithLifecycle()
     val form by viewModel.addDomain.collectAsStateWithLifecycle()
+    val pendingMirrorHost by viewModel.pendingMirrorHost.collectAsStateWithLifecycle()
     val toast = rememberZlibToastHostState()
     var actionHost by remember { mutableStateOf<String?>(null) }
     var removeHost by remember { mutableStateOf<String?>(null) }
     val controlsEnabled = !busy && !state.probing
 
     LaunchedEffect(viewModel, toast) { viewModel.events.collect { toast.showMessage(it) } }
+    LaunchedEffect(viewModel, onVerifyDomain) { viewModel.verificationRequests.collect(onVerifyDomain) }
     ZlibToastHost(toast)
 
     ZlibPage(
@@ -59,13 +67,20 @@ fun DomainSettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hilt
                     onChange = viewModel::setAutoSwitch,
                 )
             }
-            items(state.checks, key = { it.host }) { check ->
-                ZlibDomainCard(
-                    check = check, current = check.host == state.currentHost, enabled = controlsEnabled,
-                    onSelect = { viewModel.selectHost(check.host) },
-                    onProbe = { viewModel.probeHost(check.host) },
-                    onLongClick = if (check.host in state.customHosts) ({ actionHost = check.host }) else null,
-                )
+            DomainGroup.entries.forEach { group ->
+                val groupChecks = state.checks.filter { it.group == group }
+                if (groupChecks.isNotEmpty()) {
+                    item("group:$group") { ZlibDomainGroupHeading(group) }
+                    items(groupChecks, key = { it.host }) { check ->
+                        ZlibDomainCard(
+                            check = check, current = check.host == state.currentHost, enabled = controlsEnabled,
+                            onSelect = { viewModel.selectHost(check.host) },
+                            onProbe = { viewModel.probeHost(check.host) },
+                            onLongClick = if (check.host in state.customHosts) ({ actionHost = check.host }) else null,
+                            onVerify = { viewModel.selectHost(check.host) },
+                        )
+                    }
+                }
             }
         }
         ZlibGlassBottomSheet(show = form.visible, title = stringResource(TextR.string.text_add_domain), onDismiss = viewModel::dismissAddDomain) {
@@ -75,12 +90,17 @@ fun DomainSettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hilt
             )
         }
         ZlibGlassBottomSheet(show = actionHost != null, title = stringResource(TextR.string.text_domain_actions), onDismiss = { actionHost = null }) {
-            ZlibMenuAction(stringResource(TextR.string.text_delete_domain), enabled = controlsEnabled) { removeHost = actionHost; actionHost = null }
+            ZlibMenuAction(stringResource(TextR.string.text_revoke_mirror_approval), enabled = controlsEnabled) { removeHost = actionHost; actionHost = null }
         }
         ZlibConfirmDialog(
-            show = removeHost != null, title = stringResource(TextR.string.text_delete_domain_2), summary = removeHost.orEmpty(),
-            confirmLabel = stringResource(TextR.string.text_delete), destructive = true, onDismiss = { removeHost = null },
+            show = removeHost != null, title = stringResource(TextR.string.text_revoke_mirror_approval_confirm), summary = removeHost.orEmpty(),
+            confirmLabel = stringResource(TextR.string.text_revoke_approval), destructive = true, onDismiss = { removeHost = null },
             onConfirm = { removeHost?.let(viewModel::removeCustomHost); removeHost = null },
+        )
+        ZlibCommunityMirrorConfirmation(
+            host = pendingMirrorHost,
+            onConfirm = viewModel::confirmCommunityMirror,
+            onDismiss = viewModel::dismissCommunityMirror,
         )
     }
 }

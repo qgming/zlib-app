@@ -53,6 +53,10 @@ Git 标签为 `v<appVersionName>`，例如 `v1.0.0`。同一版本的所有架�
 APK 的包名、签名须匹配已安装应用，versionCode 必须更大，versionName 须匹配 Release 标签。GitHub 返回资产摘要时同时校验 SHA-256。
 下载在用户点击更新后才开始，完成后保存在已授权 SAF 下载目录；用户再次点击安装，由系统确认。不会静默安装。
 
+ADR-104：遵从 GitHub 匿名限流时间；限流或查询失败时可展示明确标记的已缓存发布信息并打开固定 Releases 页面。缓存不证明已是最新版，也不提供应用内 APK 下载；只有成功完成在线检查并确认新版可用，才提供显式更新操作。
+
+ADR-105：手动更新检查与日志的连接失败／明确限流统一使用短 Toast「网络环境异常，请关闭或开启 VPN 后重试。」；检查更新不弹失败面板，启动失败静默。服务端等待时间在同一默认网络上继续有效，Android 确认切网后可手动重查，切回原网络仍受原等待约束。网络变化不自动查询，GitHub 匿名配额仍由其服务端按出口 IP 计算。
+
 发布后核对应用的真实日志、最新版本状态和旧版更新到新版的下载／安装链路；发生网络限流时必须如实记录，不能用模拟数据代替线上结果。
 
 ## v1.0.0 构建记录
@@ -112,3 +116,13 @@ APK 的包名、签名须匹配已安装应用，versionCode 必须更大，vers
 - 分享实现提交为 `5b51890ab181064943f8d125fde0b71b43b431a2`，版本及已确认日志提交为 `32fd44ba0be5d72c72f63d23a05668925d7546c9`；此前两份本地功能提交一并推送 main，`v1.4.0` 标签指向后者。2026-11-25 08:51:49 UTC 正式发布 `https://github.com/qgming/zlib-app/releases/tag/v1.4.0`，非草稿、非预发布并设为 Latest。
 - 三个附件为唯一 `zhishi-1.4.0-universal.apk`、`SHA256SUMS.txt`、`v1.4.0.txt`。草稿阶段核对名称、字节数及 GitHub SHA-256 摘要；正式发布后匿名重新下载三个附件均为 HTTP 200，逐字节与本地一致，线上正文与确认后的 TXT 完全一致。
 - 已有 GitHub 登录状态读取 latest 确认为 `v1.4.0`；无凭据 latest API 返回 HTTP 403 且明确为 rate limit exceeded（剩余额度 0），未将其记为成功。未进行应用内旧版到新版下载／安装或新增真机操作，发布资产校验不能代替这些交互验收。
+
+## 更新提示与镜像本地候选（2026-11-26）
+
+ADR-105/106 的本地构建仅生成 `app/build/release/zhishi-1.4.0-universal.apk`（5,292,530 字节）和 `SHA256SUMS.txt`，仍为 `1.4.0`／`versionCode=7`。APK 的 SHA-256 为 `f9b4d6db6e74907308b369ea7b1e9d1284a4d8b2ffc0f401471631ca21221997`，原签名、四种 ABI 与 16 KB ZIP 对齐均通过。此候选未发布，不替换同名线上资产。完整验证见 `TESTING.md` 第 21 节。
+
+## 双分组镜像与人工验证本地构建（2026-11-26）
+
+- `test lint :app:prepareReleaseAssets --offline --max-workers=1 --console=plain` 通过。当前 13 个模块共 68 个测试套件、427 项单测，失败、错误、跳过均为 0；lint 无错误，隔离挑战 WebView 的必要 JavaScript 启用保留一条 `SetJavaScriptEnabled` 安全提醒。
+- 唯一正式通用包为 `zhishi-1.4.0-universal.apk`，5,350,954 字节，SHA-256 `b42ccd8c3e6cc47f9e0ffb8a2e9e9a6cad628379e6faa3afa8cddda45390e044`，与 `SHA256SUMS.txt` 一致。包名 `com.qgming.zlib`、`1.4.0`／`versionCode=7`、minSdk 33、targetSdk 37；原签名证书 SHA-256 `d964fb1414f44fc8eb0f4a3c4835a5c8fb70e4527e3f039bc70b0e1ccaca032e`。四 ABI 原生库、16 KB ZIP 对齐和六份许可资产均已核验。
+- 本地包未发布、未递增版本号、未安装真机；不得以此同版本本地构建替换已发布资产。挑战实际可用性、VPN 上的客户端更新操作和账号功能保留给用户真机验收，详见 `TESTING.md` 第 22 节。

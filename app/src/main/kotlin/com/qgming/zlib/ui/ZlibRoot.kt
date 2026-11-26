@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
 import android.Manifest
+import android.app.Activity
 import android.content.pm.PackageManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -39,18 +40,23 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qgming.zlib.AppViewModel
 import com.qgming.zlib.BuildConfig
 import com.qgming.zlib.R
+import com.qgming.zlib.domain.DomainVerificationActivity
 import com.qgming.zlib.core.data.startup.StartupState
 import com.qgming.zlib.core.designsystem.ZlibAppShell
 import com.qgming.zlib.core.designsystem.ZlibAppOverlay
 import com.qgming.zlib.core.designsystem.LocalZlibBookSnapshotsEnabled
 import com.qgming.zlib.core.designsystem.ZlibBookOpenRequest
 import com.qgming.zlib.core.designsystem.ZlibCard
+import com.qgming.zlib.core.designsystem.ZlibDomainPicker
+import com.qgming.zlib.core.designsystem.ZlibCommunityMirrorConfirmation
 import com.qgming.zlib.core.designsystem.ZlibLoadingIndicator
 import com.qgming.zlib.core.designsystem.ZlibPage
 import com.qgming.zlib.core.designsystem.ZlibCardList
 import com.qgming.zlib.core.designsystem.ZlibTab
 import com.qgming.zlib.core.designsystem.ZlibTheme
+import com.qgming.zlib.core.designsystem.ZlibToastHost
 import com.qgming.zlib.core.designsystem.userMessage
+import com.qgming.zlib.core.model.DomainCheck
 import com.qgming.zlib.feature.account.AccountScreen
 import com.qgming.zlib.feature.account.LoginScreen
 import com.qgming.zlib.feature.downloads.DownloadsScreen
@@ -133,8 +139,33 @@ fun ZlibRoot(viewModel: AppViewModel = hiltViewModel(), downloadRequest: Int = 0
     val accounts by viewModel.accounts.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val domainChecks by viewModel.domainChecks.collectAsStateWithLifecycle()
+    val domainProbing by viewModel.domainProbing.collectAsStateWithLifecycle()
+    val recoveryBusy by viewModel.recoveryBusy.collectAsStateWithLifecycle()
+    val recoveryApprovalHost by viewModel.recoveryApprovalHost.collectAsStateWithLifecycle()
     val choosingDirectory by viewModel.choosingDirectory.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val verificationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        viewModel.completeDomainVerification(
+            host = result.data?.getStringExtra(DomainVerificationActivity.EXTRA_HOST),
+            rawCookies = result.data?.getStringExtra(DomainVerificationActivity.EXTRA_COOKIES),
+            completed = result.resultCode == Activity.RESULT_OK,
+            verifiedNetwork = result.data?.getLongExtra(DomainVerificationActivity.EXTRA_NETWORK, -1L)?.takeIf { it >= 0 },
+        )
+    }
+    LaunchedEffect(viewModel, verificationLauncher) {
+        viewModel.verificationRequests.collect { host ->
+            try {
+                verificationLauncher.launch(DomainVerificationActivity.launchIntent(context, host))
+            } catch (_: android.content.ActivityNotFoundException) {
+                viewModel.verificationOpenFailed()
+            } catch (_: SecurityException) {
+                viewModel.verificationOpenFailed()
+            } catch (_: IllegalArgumentException) {
+                viewModel.verificationOpenFailed()
+            }
+        }
+    }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     LaunchedEffect(startup) {
         if (startup is StartupState.Ready && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -162,14 +193,28 @@ fun ZlibRoot(viewModel: AppViewModel = hiltViewModel(), downloadRequest: Int = 0
                     actionError = message,
                     onRetry = viewModel::retry,
                     onAddHost = viewModel::addCustomHost,
+                    lockedHost = settings.lockedHost,
+                    checks = domainChecks,
+                    busy = recoveryBusy || domainProbing,
+                    approvalPending = recoveryApprovalHost != null,
+                    onSelect = viewModel::chooseRecoveryHost,
+                    onProbe = viewModel::probeRecoveryHost,
+                    onVerify = viewModel::chooseRecoveryHost,
                 )
 
                 StartupState.Ready -> if (session == null) {
-                    if (accounts.entries.isEmpty()) LoginScreen() else AccountScreen(onBack = null)
+                    if (accounts.entries.isEmpty()) LoginScreen(onVerifyDomain = viewModel::requestDomainVerification)
+                    else AccountScreen(onBack = null, onVerifyDomain = viewModel::requestDomainVerification)
                 } else {
-                    MainShell(appInfo, updates, downloadRequest)
+                    MainShell(appInfo, updates, downloadRequest, viewModel::requestDomainVerification)
                 }
             }
+            ZlibCommunityMirrorConfirmation(
+                host = recoveryApprovalHost,
+                onConfirm = viewModel::confirmRecoveryApproval,
+                onDismiss = viewModel::dismissRecoveryApproval,
+            )
+            ZlibToastHost(viewModel.events, key = session?.remixUserId)
             if (startup is StartupState.Ready) AppUpdateHost(appInfo, updates)
         }
     }
@@ -225,8 +270,27 @@ private fun StartupFailedScreen(
     actionError: String?,
     onRetry: () -> Unit,
     onAddHost: (String) -> Unit,
+    lockedHost: String?,
+    checks: List<DomainCheck>,
+    busy: Boolean,
+    approvalPending: Boolean,
+    onSelect: (String) -> Unit,
+    onProbe: (String) -> Unit,
+    onVerify: (String) -> Unit,
 ) {
     var host by remember { mutableStateOf("") }
+    var showDomains by remember { mutableStateOf(false) }
+    ZlibDomainPicker(
+        show = showDomains && !approvalPending,
+        checks = checks,
+        currentHost = null,
+        busy = busy,
+        error = actionError,
+        onSelect = onSelect,
+        onProbe = onProbe,
+        onVerify = onVerify,
+        onDismiss = { showDomains = false },
+    )
     Scaffold { padding ->
         Column(
             modifier = Modifier
@@ -241,13 +305,24 @@ private fun StartupFailedScreen(
                 style = MiuixTheme.textStyles.body2,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
             )
-            Button(onClick = onRetry) {
+            if (lockedHost != null) {
+                Text(stringResource(TextR.string.text_locked_domain_unavailable, lockedHost), style = MiuixTheme.textStyles.body2)
+            }
+            Button(onClick = onRetry, enabled = !busy) {
                 Text(stringResource(TextR.string.text_check_again))
+            }
+            if (checks.isNotEmpty()) {
+                Button(onClick = { showDomains = true }, enabled = !busy) { Text(stringResource(TextR.string.text_switch_domain)) }
             }
             ZlibCard {
                 Text(stringResource(TextR.string.text_add_a_mirror), style = MiuixTheme.textStyles.body2)
                 Text(
                     text = stringResource(TextR.string.text_if_the_built_in_domains_are_unavailable_add_a_trusted_https_mirror_host),
+                    style = MiuixTheme.textStyles.footnote1,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+                Text(
+                    text = stringResource(TextR.string.text_optional_mirror_credential_warning),
                     style = MiuixTheme.textStyles.footnote1,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 )
@@ -272,7 +347,7 @@ private fun StartupFailedScreen(
                     onClick = {
                         if (host.isNotBlank()) onAddHost(host)
                     },
-                    enabled = host.isNotBlank(),
+                    enabled = !busy && host.isNotBlank(),
                 ) {
                     Text(stringResource(TextR.string.text_add_and_retry))
                 }
@@ -282,7 +357,7 @@ private fun StartupFailedScreen(
 }
 
 @Composable
-private fun MainShell(appInfo: AboutAppInfo, updates: AboutViewModel, downloadRequest: Int) {
+private fun MainShell(appInfo: AboutAppInfo, updates: AboutViewModel, downloadRequest: Int, onVerifyDomain: (String) -> Unit) {
     val context = LocalContext.current
     val nav = key("main-routes-v2") { rememberNavController<Route>(Route.Home) }
     var handledDownload by rememberSaveable { mutableIntStateOf(0) }
@@ -353,10 +428,10 @@ private fun MainShell(appInfo: AboutAppInfo, updates: AboutViewModel, downloadRe
                 )
             }
             entry<Route.Account> {
-                AccountScreen(onBack = { nav.pop() })
+                AccountScreen(onBack = { nav.pop() }, onVerifyDomain = onVerifyDomain)
             }
             entry<Route.DomainSettings> {
-                DomainSettingsScreen(onBack = { nav.pop() })
+                DomainSettingsScreen(onBack = { nav.pop() }, onVerifyDomain = onVerifyDomain)
             }
             entry<Route.About> {
                 AboutScreen(

@@ -33,6 +33,7 @@ class DownloadService : Service() {
     private var pendingCommands = 0
     private var latestStartId = 0
     private var queueRequested = false
+    private var stopping = false
     private val controlMutex = Mutex()
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -43,12 +44,21 @@ class DownloadService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (stopping) return START_NOT_STICKY
         val action = intent?.action
         val id = intent?.getStringExtra(DownloadServiceActions.EXTRA_ID)
         latestStartId = startId
         pendingCommands++
         // Post immediately, including commands received while a foreground launch is pending.
-        startForeground(DownloadNotifications.NOTIFICATION_ID, notifications.progress(null), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        try {
+            startForeground(DownloadNotifications.NOTIFICATION_ID, notifications.progress(null), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } catch (_: IllegalStateException) {
+            stopForForegroundLimit(DownloadCodes.FOREGROUND_UNAVAILABLE)
+            return START_NOT_STICKY
+        } catch (_: SecurityException) {
+            stopForForegroundLimit(DownloadCodes.FOREGROUND_UNAVAILABLE)
+            return START_NOT_STICKY
+        }
         scope.launch {
             controlMutex.withLock {
                 try {
@@ -71,6 +81,7 @@ class DownloadService : Service() {
     }
 
     private fun startQueue() {
+        if (stopping) return
         if (job?.isActive == true) {
             queueRequested = true
             return
@@ -94,6 +105,20 @@ class DownloadService : Service() {
                 }
             }
         }
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        if (fgsType == ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC) {
+            stopForForegroundLimit(DownloadCodes.FOREGROUND_TIMEOUT)
+        }
+    }
+
+    private fun stopForForegroundLimit(reason: String) {
+        stopping = true
+        job?.cancel()
+        runner.stopForForegroundLimit(reason)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     override fun onDestroy() {

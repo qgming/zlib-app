@@ -38,6 +38,7 @@ internal object StreamCopy {
         if (input == null) throw IOException(appText(TextR.string.text_cannot_read_the_download))
         if (output == null) throw IOException(appText(TextR.string.text_cannot_write_the_destination_file))
 
+        val expected = expectedBytes?.takeIf { it >= 0 }
         var written = 0L
         val buffer = ByteArray(BUFFER_SIZE)
         while (true) {
@@ -49,6 +50,9 @@ internal object StreamCopy {
             }
             if (read < 0) break
             currentCoroutineContext().ensureActive()
+            if (expected != null && read > expected - written) {
+                throw DownloadIncompleteException(expected, written + read)
+            }
             try {
                 output.write(buffer, 0, read)
             } catch (io: IOException) {
@@ -63,7 +67,6 @@ internal object StreamCopy {
             throw DownloadWriteException(io)
         }
         if (written == 0L) throw DownloadEmptyException()
-        val expected = expectedBytes?.takeIf { it >= 0 }
         if (expected != null && written != expected) {
             throw DownloadIncompleteException(expected, written)
         }

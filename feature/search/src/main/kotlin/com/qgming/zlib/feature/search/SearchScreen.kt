@@ -37,6 +37,7 @@ import com.qgming.zlib.core.designsystem.ZlibPage
 import com.qgming.zlib.core.designsystem.ZlibSearchBar
 import com.qgming.zlib.core.designsystem.ZlibRecentSearches
 import com.qgming.zlib.core.designsystem.ZlibStateCard
+import com.qgming.zlib.core.designsystem.ZlibToastHost
 import com.qgming.zlib.core.designsystem.fullWidthItem
 import com.qgming.zlib.core.designsystem.ZlibAutoPagination
 import com.qgming.zlib.core.designsystem.ZlibMultiSelectPreference
@@ -61,6 +62,7 @@ fun SearchScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val history by viewModel.history.collectAsStateWithLifecycle()
+    ZlibToastHost(viewModel.messages)
     val listState = rememberLazyGridState()
     val focusManager = LocalFocusManager.current
     var showFilters by remember { mutableStateOf(false) }

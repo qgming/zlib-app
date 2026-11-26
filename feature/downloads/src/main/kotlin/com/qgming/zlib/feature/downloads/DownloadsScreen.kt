@@ -120,7 +120,7 @@ private fun DownloadRow(
                 } else {
                     Text(
                         item.state.label() +
-                            if (item.state == DownloadState.FAILED) {
+                            if (item.state == DownloadState.FAILED || item.state == DownloadState.PAUSED) {
                                 item.error?.let { " · ${it.errorLabel()}" }.orEmpty()
                             } else {
                                 ""
@@ -189,6 +189,8 @@ private fun String.errorLabel(): String = when (this) {
     "incomplete" -> appText(TextR.string.text_download_incomplete_progress_is_saved_retry_to_resume_2)
     "http_416" -> appText(TextR.string.text_resume_position_expired_retry_the_download)
     "http_404" -> appText(TextR.string.text_file_not_found)
+    "foreground_unavailable" -> appText(TextR.string.text_download_foreground_unavailable)
+    "foreground_timeout" -> appText(TextR.string.text_download_foreground_timeout)
     else -> appText(TextR.string.text_please_retry)
 }
 

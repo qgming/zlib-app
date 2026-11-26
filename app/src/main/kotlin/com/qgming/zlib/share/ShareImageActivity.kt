@@ -48,7 +48,7 @@ class ShareImageActivity : ComponentActivity() {
             ZlibTheme(mode = settings.themeMode, bookGridColumns = settings.bookGridColumns) {
                 val toast = rememberZlibToastHostState()
                 ZlibToastHost(toast)
-                ZlibToastHost(viewModel.messages)
+                LaunchedEffect(viewModel, toast) { viewModel.messages.collect { toast.showMessage(it) } }
                 val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { uri ->
                     uri?.let(viewModel::save)
                 }

@@ -1,12 +1,14 @@
 package com.qgming.zlib.core.data.update
 
+import android.app.ForegroundServiceStartNotAllowedException
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.net.Uri
+import android.os.Build
 import androidx.core.content.ContextCompat
-import com.qgming.zlib.core.data.download.DownloadDirectoryStore
 import com.qgming.zlib.core.common.AppResult
+import com.qgming.zlib.core.data.download.DownloadDirectoryStore
+import com.qgming.zlib.core.data.download.DownloadRepository
 import com.qgming.zlib.core.model.AppRelease
 import com.qgming.zlib.core.model.apkFor
 import com.qgming.zlib.core.network.ReleaseApkDownloader
@@ -16,17 +18,15 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.job
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 enum class UpdateDownloadPhase { Idle, Starting, Queued, Downloading, Verifying, Saving, Ready, Failed }
-enum class UpdateDownloadFailure { Directory, Asset, Transfer, Verification, Storage }
+enum class UpdateDownloadFailure { Directory, Asset, Transfer, Interrupted, Verification, Storage }
 data class UpdateDownloadState(
     val phase: UpdateDownloadPhase = UpdateDownloadPhase.Idle,
     val release: AppRelease? = null,
@@ -42,97 +42,115 @@ data class UpdateDownloadState(
 class UpdateDownloadManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val directory: DownloadDirectoryStore,
+    private val bookDownloads: DownloadRepository,
     private val files: UpdateApkStore,
 ) {
     private val downloader = ReleaseApkDownloader()
-    private val _state = MutableStateFlow(UpdateDownloadState())
-    val state = _state.asStateFlow()
-    @Volatile private var attempt = 0L
-    @Volatile private var worker: Job? = null
+    private val attempts = UpdateDownloadAttempts()
+    val state = attempts.state
+    private val fileAccess = Mutex()
     private var restored = false
 
-    suspend fun restoreReady() {
-        if (restored) return
-        restored = true
-        val saved = withContext(Dispatchers.IO) { files.restoreReady() } ?: return
-        if (_state.value.phase == UpdateDownloadPhase.Idle) {
-            _state.value = UpdateDownloadState(phase = UpdateDownloadPhase.Ready, release = saved.first, savedUri = saved.second)
+    suspend fun restoreReady(): Unit = withContext(Dispatchers.IO) {
+        fileAccess.withLock {
+            if (restored) return@withLock
+            val saved = files.restoreReady()
+            restored = true
+            if (saved != null) attempts.restore(saved.first, saved.second)
         }
     }
 
-    suspend fun setDirectory(uri: Uri): Boolean = directory.setTree(uri) is AppResult.Success
+    suspend fun setDirectory(uri: Uri): Boolean = bookDownloads.setDownloadDirectory(uri) is AppResult.Success
 
     suspend fun start(release: AppRelease) {
-        if (_state.value.busy) return
-        val id = ++attempt
-        _state.value = UpdateDownloadState(phase = UpdateDownloadPhase.Starting, release = release)
-        worker?.join()
-        currentCoroutineContext().ensureActive()
-        if (attempt != id) return
-        if (directory.ensureLoaded() == null) {
-            if (attempt == id) _state.value = UpdateDownloadState(release = release, phase = UpdateDownloadPhase.Failed, failure = UpdateDownloadFailure.Directory)
-            return
-        }
-        if (release.apkFor(Build.SUPPORTED_ABIS.toList()) == null) {
-            _state.value = UpdateDownloadState(release = release, phase = UpdateDownloadPhase.Failed, failure = UpdateDownloadFailure.Asset)
-            return
-        }
-        if (attempt != id) return
+        val id = attempts.begin(release) ?: return
         try {
-            _state.update { it.copy(phase = UpdateDownloadPhase.Queued) }
-            ContextCompat.startForegroundService(context, Intent(context, UpdateDownloadService::class.java))
-        } catch (_: Exception) {
-            _state.value = _state.value.copy(phase = UpdateDownloadPhase.Failed, failure = UpdateDownloadFailure.Transfer)
-        }
-    }
-
-    suspend fun run(progress: (UpdateDownloadState) -> Unit) = withContext(Dispatchers.IO) {
-        val initial = _state.value
-        val release = initial.release ?: return@withContext
-        val asset = release.apkFor(Build.SUPPORTED_ABIS.toList()) ?: return@withContext
-        if (initial.phase != UpdateDownloadPhase.Queued) return@withContext
-        worker = currentCoroutineContext().job
-        val id = attempt
-        var temporary: File? = null
-        var failure = UpdateDownloadFailure.Transfer
-        try {
-            val target = files.temporary()
-            temporary = target
-            _state.value = initial.copy(phase = UpdateDownloadPhase.Downloading, total = asset.size)
-            downloader.download(asset, target) { written, total ->
-                if (attempt == id) {
-                    _state.update { it.copy(written = written, total = total) }
-                    progress(_state.value)
-                }
+            if (!directory.currentAccessible()) {
+                attempts.fail(id, UpdateDownloadFailure.Directory)
+                return
+            }
+            if (release.apkFor(Build.SUPPORTED_ABIS.toList()) == null) {
+                attempts.fail(id, UpdateDownloadFailure.Asset)
+                return
             }
             currentCoroutineContext().ensureActive()
-            if (attempt != id) return@withContext
-            failure = UpdateDownloadFailure.Verification
-            _state.update { it.copy(phase = UpdateDownloadPhase.Verifying) }
-            files.validate(target, release)
-            failure = UpdateDownloadFailure.Storage
-            _state.update { it.copy(phase = UpdateDownloadPhase.Saving) }
-            val saved = files.save(target, release)
-            val ready = files.ready()
-            ready.delete()
-            if (!target.renameTo(ready)) { target.copyTo(ready, overwrite = true); target.delete() }
-            files.recordReady(release, saved)
-            _state.update { it.copy(phase = UpdateDownloadPhase.Ready, savedUri = saved.toString()) }
+            if (!attempts.change(id) { it.copy(phase = UpdateDownloadPhase.Queued) }) return
+            ContextCompat.startForegroundService(context, Intent(context, UpdateDownloadService::class.java).putExtra(UpdateDownloadService.EXTRA_ATTEMPT, id))
         } catch (cancellation: CancellationException) {
-            if (attempt == id) _state.update { it.copy(phase = UpdateDownloadPhase.Failed, failure = UpdateDownloadFailure.Transfer) }
+            attempts.interrupt(id)
             throw cancellation
+        } catch (_: ForegroundServiceStartNotAllowedException) {
+            attempts.fail(id, UpdateDownloadFailure.Interrupted)
         } catch (_: Exception) {
-            if (attempt == id) _state.update { it.copy(phase = UpdateDownloadPhase.Failed, failure = failure) }
-        } finally {
-            temporary?.delete()
+            attempts.fail(id, UpdateDownloadFailure.Transfer)
         }
     }
 
-    fun cancel() {
-        attempt++
-        worker?.cancel()
-        if (_state.value.busy) _state.value = UpdateDownloadState()
+    internal fun isQueued(id: Long): Boolean = attempts.isPhase(id, UpdateDownloadPhase.Queued)
+
+    internal fun isReady(id: Long): Boolean = attempts.isPhase(id, UpdateDownloadPhase.Ready)
+
+    internal fun isBusy(id: Long): Boolean = attempts.isBusy(id)
+
+    internal suspend fun run(id: Long) {
+        val worker = currentCoroutineContext().job
+        val release = attempts.claim(id, worker) ?: return
+        try {
+            withContext(Dispatchers.IO) {
+                fileAccess.withLock {
+                    if (attempts.isBusy(id)) transfer(id, release)
+                }
+            }
+        } catch (cancellation: CancellationException) {
+            attempts.fail(id, UpdateDownloadFailure.Interrupted)
+            throw cancellation
+        } catch (_: Exception) {
+            attempts.fail(id, UpdateDownloadFailure.Transfer)
+        } finally {
+            attempts.release(id)
+        }
     }
 
-    fun installerFile(): File? = files.ready().takeIf { _state.value.phase == UpdateDownloadPhase.Ready && it.isFile }
+    private suspend fun transfer(id: Long, release: AppRelease) {
+        val asset = release.apkFor(Build.SUPPORTED_ABIS.toList()) ?: run {
+            attempts.fail(id, UpdateDownloadFailure.Asset)
+            return
+        }
+        val target = files.temporary()
+        var saved: Uri? = null
+        var published = false
+        var failure = UpdateDownloadFailure.Transfer
+        try {
+            if (!attempts.change(id) { it.copy(total = asset.size) }) return
+            downloader.download(asset, target) { written, total ->
+                attempts.change(id) { it.copy(written = written, total = total) }
+            }
+            currentCoroutineContext().ensureActive()
+            failure = UpdateDownloadFailure.Verification
+            if (!attempts.change(id) { it.copy(phase = UpdateDownloadPhase.Verifying) }) return
+            files.validate(target, release)
+            currentCoroutineContext().ensureActive()
+            failure = UpdateDownloadFailure.Storage
+            if (!attempts.change(id) { it.copy(phase = UpdateDownloadPhase.Saving) }) return
+            val destination = files.save(target, release)
+            saved = destination
+            currentCoroutineContext().ensureActive()
+            if (!attempts.isBusy(id)) return
+            files.publishReady(target, release, destination)
+            published = attempts.change(id) { it.copy(phase = UpdateDownloadPhase.Ready, savedUri = destination.toString()) }
+            if (!published) files.discardReady()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            attempts.fail(id, failure)
+        } finally {
+            if (!published) saved?.let(files::discardSaved)
+            target.delete()
+        }
+    }
+
+    internal fun interrupted(id: Long) = attempts.interrupt(id)
+    fun cancel() = attempts.cancel()
+
+    fun installerFile(): File? = files.ready().takeIf { state.value.phase == UpdateDownloadPhase.Ready && it.isFile }
 }

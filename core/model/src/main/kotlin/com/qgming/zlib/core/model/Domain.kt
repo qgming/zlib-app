@@ -2,6 +2,11 @@ package com.qgming.zlib.core.model
 
 import com.qgming.zlib.core.common.DomainStatus
 
+enum class DomainGroup {
+    OFFICIAL,
+    COMMUNITY,
+}
+
 /** Probe result for a single host. */
 data class DomainCheck(
     val host: String,
@@ -15,6 +20,7 @@ data class DomainCheck(
      */
     val redirectTarget: String? = null,
     val checkedAtMillis: Long = 0L,
+    val group: DomainGroup = DomainGroup.COMMUNITY,
 ) {
     val healthy: Boolean get() = status == DomainStatus.HEALTHY
 

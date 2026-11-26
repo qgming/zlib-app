@@ -6,6 +6,7 @@ import com.qgming.zlib.core.common.R as TextR
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qgming.zlib.core.common.AppResult
+import com.qgming.zlib.core.common.DomainStatus
 import com.qgming.zlib.core.data.account.AccountRepository
 import com.qgming.zlib.core.data.domain.DomainRepository
 import com.qgming.zlib.core.data.download.DownloadRepository
@@ -90,9 +91,13 @@ class SettingsViewModel @Inject constructor(
     val domainBusy = _domainBusy.asStateFlow()
     private val _addDomain = MutableStateFlow(AddDomainState())
     val addDomain = _addDomain.asStateFlow()
+    private val _pendingMirrorHost = MutableStateFlow<String?>(null)
+    val pendingMirrorHost = _pendingMirrorHost.asStateFlow()
+    private val _verificationRequests = Channel<String>(Channel.BUFFERED)
+    val verificationRequests = _verificationRequests.receiveAsFlow()
 
     fun probeAll() = domainAction {
-        domainRepository.probeAll(switchToBest = true)
+        domainRepository.probeAll(switchToBest = true, includeCommunity = true)
         _events.send(appText(TextR.string.text_all_domain_checks_complete))
     }
 
@@ -142,8 +147,48 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun selectHost(host: String) = domainAction {
-        when (val result = domainRepository.setCurrentHost(host)) {
+    fun selectHost(host: String) {
+        if (_domainBusy.value || _addDomain.value.busy || state.value.probing || _pendingMirrorHost.value != null) return
+        if (domainRepository.requiresApproval(host)) {
+            _pendingMirrorHost.value = host
+            return
+        }
+        domainAction {
+            if (requiresVerification(host) && domainRepository.isApprovedHost(host)) _verificationRequests.send(host)
+            else completeSelection(host, domainRepository.setCurrentHost(host))
+        }
+    }
+
+    fun dismissCommunityMirror() {
+        _pendingMirrorHost.value = null
+    }
+
+    fun confirmCommunityMirror() {
+        val host = _pendingMirrorHost.value ?: return
+        if (_domainBusy.value || _addDomain.value.busy || state.value.probing) return
+        _pendingMirrorHost.value = null
+        domainAction {
+            if (requiresVerification(host)) {
+                when (val result = domainRepository.approveCommunityHost(host)) {
+                    is AppResult.Success -> _verificationRequests.send(result.value)
+                    is AppResult.Failure -> _events.send(result.error.userMessage())
+                }
+            } else {
+                completeSelection(host, domainRepository.approveAndSelectHost(host))
+            }
+        }
+    }
+
+    private fun requiresVerification(host: String): Boolean = domainRepository.checks.value.any {
+        it.host == host && (it.status == DomainStatus.DIAMWALL || it.status == DomainStatus.CHALLENGED)
+    }
+
+    private suspend fun completeSelection(host: String, result: AppResult<String>) {
+        if (domainRepository.isApprovedHost(host) && requiresVerification(host)) {
+            _verificationRequests.send(host)
+            return
+        }
+        when (result) {
             is AppResult.Success -> _events.send(appText(TextR.string.text_switched_to, result.value))
             is AppResult.Failure -> _events.send(result.error.userMessage())
         }

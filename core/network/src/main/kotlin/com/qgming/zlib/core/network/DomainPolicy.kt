@@ -4,6 +4,7 @@ import com.qgming.zlib.core.common.appText
 import com.qgming.zlib.core.common.R as TextR
 
 import com.qgming.zlib.core.common.AppResult
+import okhttp3.HttpUrl
 
 /**
  * Pure host allowlist logic. No Android dependencies, fully unit-tested.
@@ -26,6 +27,7 @@ object DomainPolicy {
         "z-lib.gl",
         "z-lib.sk",
         "z-library.ec",
+        "z-library.gy",
         "z-library.im",
         "z-library.qa",
         "z-library.sk",
@@ -48,6 +50,7 @@ object DomainPolicy {
         "z-lib.gd",
         "z-lib.gl",
         "z-library.ec",
+        "z-library.gy",
         "z-library.qa",
         "z-library.website",
         "article.sk",
@@ -59,8 +62,51 @@ object DomainPolicy {
         "z-lib.fm",
     )
 
+    val COMMUNITY_MIRROR_HOSTS: List<String> = listOf(
+        "bookroom.lifestyle",
+        "bibliotheca.world",
+        "bibliotheca.study",
+        "bibliotheca.lifestyle",
+        "luto.top",
+        "bibliotheca.life",
+        "anthology.lifestyle",
+        "elaborate.monster",
+        "s0u1.top",
+        "26h2.tech",
+        "orangerain.space",
+        "zouwu.top",
+        "xn--t8j0bxa8hymnb.jp",
+        "553211.xyz",
+        "loves.works",
+        "ireadhuang.sbs",
+        "elaborate.quest",
+        "elaborate.wtf",
+        "9libmirror.tech",
+        "shunfei.shop",
+        "elaboratethinking.online",
+        "bookorg.tech",
+        "booook.me",
+        "95427279.xyz",
+        "zkoo.site",
+        "adsblaze.com",
+        "817523.xyz",
+        "toffeeboba.com",
+        "interflow.ch",
+        "110434.xyz",
+        "226272.xyz",
+        "86110101.xyz",
+        "909190.xyz",
+        "libb.la",
+    )
+
+    private val communityMirrorHosts = COMMUNITY_MIRROR_HOSTS.toSet()
+    private val catalogHosts = DEFAULT_PROBE_HOSTS.toSet() + communityMirrorHosts
     private val hostPattern = Regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$")
     private val ipv4Pattern = Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")
+
+    fun isCommunityMirror(host: String): Boolean = host.lowercase() in communityMirrorHosts
+
+    fun isCatalogHost(host: String): Boolean = host.lowercase() in catalogHosts
 
     fun isBuiltIn(host: String): Boolean {
         val h = host.lowercase()
@@ -73,10 +119,7 @@ object DomainPolicy {
         return customHosts.any { it.equals(h, ignoreCase = true) }
     }
 
-    /**
-     * True when [host] belongs to a domain family the server itself advertises. Used only to
-     * validate a redirect target before it enters the runtime allowlist (ADR-065).
-     */
+    /** Identifies a known family in anonymous probe responses without approving the responder. */
     fun isKnownDomainFamily(host: String, known: Set<String> = BUILT_IN_SUFFIXES.toSet()): Boolean {
         val h = host.lowercase().trim()
         if (h.isEmpty()) return false
@@ -84,6 +127,10 @@ object DomainPolicy {
     }
 
     fun baseUrl(host: String): String = "https://$host"
+
+    fun isStandardHttps(url: HttpUrl): Boolean =
+        url.isHttps && url.port == 443 && url.encodedUsername.isEmpty() && url.encodedPassword.isEmpty() &&
+            normalizeHostInput(url.host) == url.host
 
     fun hostFromUrl(url: String): String? = runCatching {
         val uri = java.net.URI(url)
@@ -125,9 +172,6 @@ object DomainPolicy {
         if (!hostPattern.matches(host)) return null
         return host
     }
-
-    /** True when [host] is the exact host of a redirect target that the runtime allowlist accepted. */
-    fun isForeignHostAcceptable(host: String): Boolean = normalizeHostInput(host) != null
 
     /** Validates and normalises a user-supplied mirror host. */
     fun validateCustomHost(raw: String?): AppResult<String> {

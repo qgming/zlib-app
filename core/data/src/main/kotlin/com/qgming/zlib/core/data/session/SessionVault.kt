@@ -24,11 +24,16 @@ internal class SessionVaultCodec(private val cipher: SecretCipher) {
     fun encode(vault: SessionVault): String = Base64.getEncoder().encodeToString(
         cipher.encrypt(json.encodeToString(StoredVault.from(vault)).toByteArray(Charsets.UTF_8)),
     )
-    fun decode(encoded: String?): SessionVault = runCatching {
-        if (encoded.isNullOrBlank()) return SessionVault()
-        val plain = cipher.decrypt(Base64.getDecoder().decode(encoded)) ?: return SessionVault()
-        json.decodeFromString<StoredVault>(plain.toString(Charsets.UTF_8)).toVault()
-    }.getOrDefault(SessionVault())
+    fun decode(encoded: String?): SessionVault = decodeForMigration(encoded).vault
+
+    fun decodeForMigration(encoded: String?): DecodedVault = runCatching {
+        if (encoded.isNullOrBlank()) return DecodedVault()
+        val plain = cipher.decrypt(Base64.getDecoder().decode(encoded)) ?: return DecodedVault()
+        val stored = json.decodeFromString<StoredVault>(plain.toString(Charsets.UTF_8))
+        DecodedVault(stored.toVault(), stored.entries.any { it.cookies != null })
+    }.getOrDefault(DecodedVault())
+
+    data class DecodedVault(val vault: SessionVault = SessionVault(), val needsRewrite: Boolean = false)
 }
 
 @Serializable
@@ -49,15 +54,15 @@ private data class StoredSession(
     @SerialName("user_id") val userId: String,
     @SerialName("user_key") val userKey: String,
     val domain: String,
-    val cookies: Map<String, String> = emptyMap(),
+    val cookies: Map<String, String>? = null,
     @SerialName("created_at") val createdAt: Long = 0,
     val expired: Boolean = false,
     val profile: StoredProfile? = null,
 ) {
-    fun toSession() = Session(userId, userKey, domain, cookies, createdAt).also { require(it.isValid) }
+    fun toSession() = Session(userId, userKey, domain, createdAtMillis = createdAt).withAuthenticationCookies().also { require(it.isValid) }
     companion object {
         fun from(entry: SessionEntry) = with(entry.session) {
-            StoredSession(remixUserId, remixUserKey, domain, cookies, createdAtMillis, entry.expired, entry.profile?.let(StoredProfile::from))
+            StoredSession(remixUserId, remixUserKey, domain, createdAt = createdAtMillis, expired = entry.expired, profile = entry.profile?.let(StoredProfile::from))
         }
     }
 }

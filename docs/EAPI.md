@@ -53,6 +53,7 @@ email=<email>&password=<password>
 - `id` 可能是数字或字符串，统一转字符串。
 - 失败：`{"success":0,"error":"Incorrect email or password"}` 或 `Authorization failed`。
 - **已知问题**：部分账号密码登录被拒，但用浏览器 Cookie 可以正常调用其它端点。因此客户端必须保留 Cookie 导入；内嵌 WebView 登录已按 ADR-052 移除。
+- 密码表单仅发送至请求发起时已授权的标准 HTTPS 来源，不跟随重定向。Cookie 导入接受 Netscape `#HttpOnly_` 行和浏览器导出，按来源解析，仅保留所需 remix 凭据（ADR-102）。
 - 登录成功后，后续请求带 Cookie + 头；不要把密码写入任何存储。
 
 ### 2.2 搜索
@@ -158,14 +159,14 @@ GET /eapi/book/{id}/{hash}/formats
 GET /eapi/book/{id}/{hash}/file
 ```
 
-- 通常 302 到 CDN；必须跟随，但**离开 allowlist 的每一跳都要剥离** `Cookie`、`remix-userid`、`remix-userkey`。
+- 通常 302 到 CDN；跟随时使用独立无凭据通道，不携带也不恢复 `Cookie`、`remix-userid`、`remix-userkey`。JSON 签名链接同样不继承账号凭据。
 - **部分镜像（2026-11 实测 z-lib.gl）返回 200 JSON 而不是 302**：
   ```json
   {"success":1,"file":{"downloadLink":"https://cdn.../book.epub?token=...","description":"","author":"","extension":"epub","allowDownload":true}}
   ```
   客户端必须先解析 `file.downloadLink`，再对 CDN 地址发 GET；`allowDownload=false` 或无链接视为失败。不要记录/持久化带签名的完整 URL。
 - 文件名优先 `Content-Disposition: filename=...`，其次 URL 末段；清洗 `../`、控制字符、Windows 非法字符。
-- 支持 `Range: bytes=<written>-`；206 继续，200 重新开始。
+- 只有确认是同一资源且有强验证器时才发送 `Range: bytes=<written>-` 和 `If-Range`；206 还须验证匹配的验证器、范围及长度，200 从零写入。没有可信验证器的旧片段不能拼接（ADR-103）。
 - 错误：4xx 不重试；网络/502/503/504 指数退避最多 3 次；`daily limit` 不重试。
 - 下载 URL 带签名参数，不要写日志、不要持久化完整 URL（只存 `book_id/hash`，需要时重新解析）。
 
@@ -279,15 +280,14 @@ GET /eapi/info/domains
 - 其它非 2xx → `HTTP_ERROR`
 - 连接失败/超时 → `NETWORK_ERROR`
 
-#### 跳转到 allowlist 之外时的发现（ADR-065）
+#### 跳转到 allowlist 之外时的发现（ADR-102）
 
 2026-11-23 实测：`z-lib.by` → `301 https://zh.z101.by/`，`zlib.re` → 当天先为 `302 https://zh.us101.ru/`、后为 `301 https://z-lib.by/`（跳转目标会变，多数目标都在内置 allowlist 之外），旧行为判 `INVALID`（“重定向到非允许域名”）。新行为：
 
-1. 仍以内置/用户域名为起点，只对这些 host 携带凭据；跳转目标一律**无 Cookie、无 remix 头**地探测。
-2. 对目标 host（HTTPS、合法主机名）请求 `https://<目标>/eapi/info/domains`，最多跟 3 跳，忽略跳转携带的路径（总是重写为上面的端点）。
-3. 只有 `200` + `success:1` + `domains` 数组中至少一项属于已知域名家族（`DomainPolicy.isKnownDomainFamily`，例如 `z-library.sk`、`1lib.sk`）才认为校验通过；随后把**精确目标 host** 加入会话内运行时 allowlist，作为当前域名使用，Redirector 卡片显示“重定向 → 目标”。
-4. 目标返回 HTML/513/517/非 2xx/超时，或 JSON 里没有已知域名家族 → 保留 Redirector 自身条目的失败状态（`INVALID` 文案“未通过校验”），绝不使用。
-5. 已校验目标记入 DataStore `discovered_hosts`；下次冷启动先无凭据复检，通过才重新获得信任，不通过即从列表移除（当前/锁定域名除外）。
+1. 体检所有请求均**无 Cookie、无 remix 头**。
+2. 对目标 host 通过标准 HTTPS 请求 `/eapi/info/domains`，最多跟 3 跳，重写端点路径，不沿用查询或凭据。
+3. 对未知目标，成功 JSON 中包含已知家族只表示接口兼容，且结果归属实际应答的主机。未知 `discovered_hosts` 仅用于候选展示与复检；需用户明确添加，才允许它接收凭据。
+4. 目标如果已受信任且可用，可作为自动切换候选。保存的旧锁定值仍可显示，但未批准时不会被设为可请求的当前来源。
 
 2026-11-23 经用户系统代理（`127.0.0.1:7897`）复测，区分出三类真实状态：
 
@@ -296,7 +296,7 @@ GET /eapi/info/domains
 | 直连 EAPI 可用 | `zlib.bz`、`z101.by`、`z-lib.by`、`z-lib.gd`、`z-lib.gl`、`z-library.ec`、`z-library.qa`、`z-library.website`、`article.sk`、`articles.sk` | 200 + `success:1`，1.0–3.0s |
 | DiamWall 人机验证 | `z-library.im`、`z-lib.sk`、`z-library.sk`、`1lib.sk` | 首次命中 `307` 自重定向 + `Server: DiamWall` + `Set-Cookie: __diamwall=…`；带 cookie 重放后为 `513` 或再次 `307`，最终是挑战页。浏览器因执行 JS 挑战而可用，EAPI 客户端不绕过 → `DIAMWALL` |
 | 证书过期 | `z-lib.fm` | `schannel: SEC_E_CERT_EXPIRED`；浏览器也不可用 |
-| 跳转器 | `zlib.re` → `z-lib.by/`；`z-lib.by` 根路径偶发 `503` | 按 ADR-065 采用已校验目标，不另建条目 |
+| 跳转器 | `zlib.re` → `z-lib.by/`；`z-lib.by` 根路径偶发 `503` | `z-lib.by` 已在内置允许列表；按 ADR-102，只有已授权且体检通过的目标可自动切换 |
 
 体检对 `307 + Server: DiamWall`（或带 `__diamwall` cookie）直接判 `DIAMWALL`，不再误报重定向循环。`domains` 响应本身可以包含第三方代理（如 `proxy.zlibraryproxies.workers.dev`）；它只用于**校验**，不会被采纳为可用域名，也不会加入 allowlist。
 
@@ -369,13 +369,40 @@ GET /eapi/book/{id}/{hash}/similar
 
 ```
 1lib.sk, article.sk, articles.sk, z-lib.by, z-lib.fm, z-lib.gd, z-lib.gl,
-z-lib.sk, z-library.ec, z-library.im, z-library.qa, z-library.sk,
-z-library.website, zlib.bz
+z-lib.sk, z-library.ec, z-library.gy, z-library.im, z-library.qa, z-library.sk,
+z-library.website, z101.by, zlib.bz, zlib.re
 ```
 
 - 用户可添加精确 host（HTTPS、无端口/路径/查询/凭据、非 IP、非单标签）。
 - 不允许 `http://`。
-- 登录重定向到 allowlist 外 → 拒绝；下载重定向到 CDN → 跟随但剥离凭据。
+- 密码登录不跟随重定向，EAPI 其他请求不跨来源继续；下载重定向到 CDN 时无凭据跟随。
+
+### 直接分组的内置镜像（ADR-107）
+
+目录直接展示 17 个官方与 34 个社区镜像。官方保留既有 16 个主机，增加团队公告的 `z-library.gy`。2026-11-26 对参考项目 `zlibx-ref` 提交 `a4c9f13cc7ec07b62c03e8b07a68d4d8044fc0e3` 的全部 41 个主机以及既有官方主机，分别通过本机 VPN 代理和不使用代理的直连路径做匿名检查；确认两条路径的出口不同。新增主机以至少一条路径 `/eapi/info/domains` 返回 HTTP 200、`success:1` 与 `domains` 数组为条件，不将 HTML 或跳转当作通过。
+
+社区组按参考顺序直接纳入 33 个通过的精确主机，另加团队定制镜像公告中的 `libb.la`：
+
+```
+bookroom.lifestyle, bibliotheca.world, bibliotheca.study,
+bibliotheca.lifestyle, luto.top, bibliotheca.life, anthology.lifestyle,
+elaborate.monster, s0u1.top, 26h2.tech, orangerain.space, zouwu.top,
+xn--t8j0bxa8hymnb.jp, 553211.xyz, loves.works, ireadhuang.sbs,
+elaborate.quest, elaborate.wtf, 9libmirror.tech, shunfei.shop,
+elaboratethinking.online, bookorg.tech, booook.me, 95427279.xyz,
+zkoo.site, adsblaze.com, 817523.xyz, toffeeboba.com, interflow.ch,
+110434.xyz, 226272.xyz, 86110101.xyz, 909190.xyz, libb.la
+```
+
+参考中的 `z-library.im` 已在官方组，双线路均返回 DiamWall。另七个主机两条线路均失败，未纳入新增目录。完整逐域结果、失败分类与公告来源见 [MIRROR_AUDIT.md](MIRROR_AUDIT.md)。`z-library.gy` 和 `libb.la` 返回有效但为空的 `domains` 数组；目录精确主机允许此响应，未知跳转目标仍须证明已知家族兼容，不能据空数组进入发现列表。
+
+社区主机不扩充可信后缀。首次选择需确认精确主机授权，撤销后仍展示内置卡片；匿名体检成功不授信。手动全部体检覆盖完整目录，启动与故障恢复只覆盖官方、当前及已批准主机，局部结果合并保留。检查只证明当时接口兼容和连通性，不证明社区域名归属、长期可用性或真实账号业务。
+
+### 人机验证页（ADR-108）
+
+已授权镜像被标记 `DIAMWALL`／`CHALLENGED` 后可打开独立进程的同域 HTTPS 网页，让用户手动完成挑战。网页与图书预览的 Cookie 存储隔离，不注入账号凭据、不抓取 HTML 数据或自动求解。匿名传输只支持精确主机的 GET／HEAD，限制五次同源跳转、25 秒请求链和 8 MiB 单资源，513 挑战正文可继续渲染；跨域、表单、worker 与登录路径不支持。完成后只筛选 `__diamwall`，同时核对验证与接收时的系统网络，按精确主机及当前网络在主进程内存中保留最多 15 分钟；切网监听仅清理临时状态，只发送至原主机的 `/eapi/` 请求，匿名体检仍不带账号凭据。跨域跳转、PAPI、图片、阅读预览、CDN、更新服务均不接收它。
+
+用户点击完成后，仓库在同一次加锁操作内重新确认授权、匿名体检原主机并选择，只有原主机 EAPI 成功才切换；跳转到其它主机的成功不算验证通过。网页加载完成不等于挑战解除，实际效果留待用户在真机与当前出口验证。
 
 ## 4. 错误与状态码
 
@@ -386,7 +413,7 @@ z-library.website, zlib.bz
 | 400 + `Incorrect email or password` | `AuthFailed` | 提示凭据错误；不要重试 |
 | `Authorization failed`（登录） | `AuthFailed` | 引导 Cookie 导入 |
 | `daily limit` / `Daily limit reached` | `Quota` | 显示剩余/重置提示；不重试 |
-| 513 / 517 / DiamWall 标题 | `DomainBlocked` | 切域；提示 VPN/代理 |
+| 513 / 517 / DiamWall 标题 | `DomainBlocked` | 标记人机验证，可手动验证后重新体检，或切换域名／网络 |
 | 自重定向 / 超过 10 跳 | `RedirectLoop` | 切域 |
 | 502 / 503 / 504 | `Transient` | 指数退避，最多 3 次 |
 | 其它 4xx | `Server` | 展示错误，不重试 |

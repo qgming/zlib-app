@@ -9,6 +9,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
@@ -19,7 +20,8 @@ class GitHubReleaseClientTest {
 
     @BeforeTest fun setup() { server = MockWebServer(); server.start() }
     @AfterTest fun teardown() { server.shutdown() }
-    private fun client() = GitHubReleaseClient(server.url("/repos/qgming/zlib-app/releases/latest"))
+    private fun client(network: () -> Long? = { null }, now: () -> Long = System::currentTimeMillis) =
+        GitHubReleaseClient(server.url("/repos/qgming/zlib-app/releases/latest"), now, network)
     private val release = """{"tag_name":"v0.2.0","body":"A new release","draft":false,"prerelease":false,"html_url":"https://example.org/untrusted"}"""
 
     @Test
@@ -45,11 +47,118 @@ class GitHubReleaseClientTest {
     @Test
     fun `rate limit and server errors are never reported as current and never retried`() = runBlocking {
         val api = client()
-        for (code in listOf(403, 429, 503)) {
+        for (code in listOf(403, 503, 429)) {
             server.enqueue(MockResponse().setResponseCode(code))
             assertEquals(code, assertIs<AppError.Server>(assertIs<AppResult.Failure>(api.latestRelease()).error).code)
         }
         assertEquals(3, server.requestCount)
+    }
+
+    @Test
+    fun `rate limit on latest gates history and honors the later server deadline`() = runBlocking {
+        var now = 1_790_000_000_000L
+        val deadline = now + 75_000
+        val api = client { now }
+        server.enqueue(MockResponse().setResponseCode(403)
+            .addHeader("X-RateLimit-Remaining", "0")
+            .addHeader("X-RateLimit-Reset", (deadline / 1000).toString())
+            .addHeader("Retry-After", "30"))
+        val error = assertIs<AppResult.Failure>(api.latestRelease())
+        assertEquals(deadline, assertIs<AppError.Server>(error.error).retryAtEpochMillis)
+        now = deadline - 1
+        assertEquals(error, api.releaseHistory())
+        assertEquals(1, server.requestCount)
+        now = deadline
+        server.enqueue(MockResponse().setBody("[$release]"))
+        assertIs<AppResult.Success<List<AppRelease>>>(api.releaseHistory())
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `new default network can check again without clearing the previous network limit`() = runBlocking {
+        var now = 1_790_000_000_000L
+        var network: Long? = 1L
+        val api = client({ network }) { now }
+        server.enqueue(MockResponse().setResponseCode(429).addHeader("Retry-After", "60"))
+        val limited = assertIs<AppResult.Failure>(api.latestRelease())
+        assertEquals(limited, api.releaseHistory())
+        network = null
+        assertEquals(limited, api.latestRelease())
+        assertEquals(1, server.requestCount)
+
+        network = 2L
+        server.enqueue(MockResponse().setBody("[$release]"))
+        assertIs<AppResult.Success<List<AppRelease>>>(api.releaseHistory())
+        assertEquals(0, server.takeRequest().sequenceNumber)
+        assertEquals(0, server.takeRequest().sequenceNumber)
+
+        network = 1L
+        assertEquals(limited, api.latestRelease())
+        assertEquals(2, server.requestCount)
+        now += 60_000
+        server.enqueue(MockResponse().setBody(release))
+        assertIs<AppResult.Success<AppRelease?>>(api.latestRelease())
+        assertEquals(3, server.requestCount)
+    }
+
+    @Test
+    fun `limit on an unknown network is honored when a default network becomes known`() = runBlocking {
+        var network: Long? = null
+        val api = client({ network }) { 1_790_000_000_000L }
+        server.enqueue(MockResponse().setResponseCode(429))
+        val limited = assertIs<AppResult.Failure>(api.latestRelease())
+        network = 2L
+        assertEquals(limited, api.releaseHistory())
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun `unattributable limit during network change gates all networks`() = runBlocking {
+        var network = 1L
+        var samples = 0
+        val api = client({ if (++samples == 1) 1L else network }) { 1_790_000_000_000L }
+        network = 2L
+        server.enqueue(MockResponse().setResponseCode(429))
+        val limited = assertIs<AppResult.Failure>(api.latestRelease())
+        assertEquals(limited, api.releaseHistory())
+        network = 3L
+        assertEquals(limited, api.latestRelease())
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun `successful response exhausting the shared quota does not invalidate its result`() = runBlocking {
+        val now = 1_790_000_000_000L
+        val api = client { now }
+        server.enqueue(MockResponse().setBody(release)
+            .addHeader("X-RateLimit-Remaining", "0")
+            .addHeader("X-RateLimit-Reset", (now / 1000 + 20).toString()))
+        assertNotNull(assertIs<AppResult.Success<AppRelease?>>(api.latestRelease()).value)
+        assertEquals(429, assertIs<AppError.Server>(assertIs<AppResult.Failure>(api.releaseHistory()).error).code)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun `ordinary forbidden response does not enable rate limiting but secondary limit does`() = runBlocking {
+        val now = 1_790_000_000_000L
+        val api = client { now }
+        server.enqueue(MockResponse().setResponseCode(403).setBody("""{"message":"Forbidden"}"""))
+        assertNull(assertIs<AppError.Server>(assertIs<AppResult.Failure>(api.latestRelease()).error).retryAtEpochMillis)
+        server.enqueue(MockResponse().setResponseCode(403).setBody("""{"message":"You have exceeded a secondary rate limit."}"""))
+        val error = assertIs<AppResult.Failure>(api.latestRelease())
+        assertEquals(now + 60_000L, assertIs<AppError.Server>(error.error).retryAtEpochMillis)
+        assertEquals(error, api.latestRelease())
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `a large success response and an invalid history do not replace valid metadata`() = runBlocking {
+        val api = client()
+        server.enqueue(MockResponse().setBody(" ".repeat(2 * 1024 * 1024 + 1)))
+        assertIs<AppError.Parse>(assertIs<AppResult.Failure>(api.latestRelease()).error)
+        server.enqueue(MockResponse().setBody("[false]"))
+        assertIs<AppError.Parse>(assertIs<AppResult.Failure>(api.releaseHistory()).error)
+        assertEquals(2, server.requestCount)
     }
 
     @Test

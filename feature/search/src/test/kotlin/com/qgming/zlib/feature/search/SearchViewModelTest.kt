@@ -31,6 +31,7 @@ class SearchViewModelTest {
             MockWebServer().use { server ->
                 val client = EapiClient(
                     OkHttpClient(), { server.url("/").toString() }, { null },
+                    isAllowedUrl = { it.host == server.hostName && it.port == server.port },
                     dispatchers = object : AppDispatchers {
                         override val io = dispatcher; override val default = dispatcher; override val main = dispatcher
                     },
@@ -69,6 +70,7 @@ class SearchViewModelTest {
         try {
             MockWebServer().use { server ->
                 val client = EapiClient(OkHttpClient(), { server.url("/").toString() }, { null },
+                    isAllowedUrl = { it.host == server.hostName && it.port == server.port },
                     dispatchers = object : AppDispatchers {
                         override val io = dispatcher; override val default = dispatcher; override val main = dispatcher
                     }, maxAttempts = 1)
@@ -97,6 +99,7 @@ class SearchViewModelTest {
         try {
             MockWebServer().use { server ->
                 val client = EapiClient(OkHttpClient(), { server.url("/").toString() }, { null },
+                    isAllowedUrl = { it.host == server.hostName && it.port == server.port },
                     dispatchers = object : AppDispatchers {
                         override val io = dispatcher; override val default = dispatcher; override val main = dispatcher
                     }, maxAttempts = 1)
@@ -125,6 +128,7 @@ class SearchViewModelTest {
         try {
             MockWebServer().use { server ->
                 val client = EapiClient(OkHttpClient(), { server.url("/").toString() }, { null },
+                    isAllowedUrl = { it.host == server.hostName && it.port == server.port },
                     dispatchers = object : AppDispatchers {
                         override val io = dispatcher; override val default = dispatcher; override val main = dispatcher
                     }, maxAttempts = 1)
@@ -151,6 +155,7 @@ class SearchViewModelTest {
         try {
             MockWebServer().use { server ->
                 val client = EapiClient(OkHttpClient(), { server.url("/").toString() }, { null },
+                    isAllowedUrl = { it.host == server.hostName && it.port == server.port },
                     dispatchers = object : AppDispatchers {
                         override val io = dispatcher; override val default = dispatcher; override val main = dispatcher
                     }, maxAttempts = 1)
@@ -175,6 +180,7 @@ class SearchViewModelTest {
                     client = OkHttpClient(),
                     baseUrlProvider = { server.url("/").toString() },
                     sessionProvider = { null },
+                    isAllowedUrl = { it.host == server.hostName && it.port == server.port },
                     dispatchers = object : AppDispatchers {
                         override val io = dispatcher
                         override val default = dispatcher
@@ -225,6 +231,7 @@ class SearchViewModelTest {
                     client = OkHttpClient(),
                     baseUrlProvider = { server.url("/").toString() },
                     sessionProvider = { null },
+                    isAllowedUrl = { it.host == server.hostName && it.port == server.port },
                     dispatchers = object : AppDispatchers {
                         override val io = dispatcher
                         override val default = dispatcher

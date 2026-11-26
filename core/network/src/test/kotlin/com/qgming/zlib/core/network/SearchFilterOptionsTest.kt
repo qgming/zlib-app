@@ -16,7 +16,10 @@ class SearchFilterOptionsTest {
         MockWebServer().use { server ->
             server.enqueue(json("""{"success":1,"languages":{"japanese":"日语","chinese":"中文","old english":"古英语"}}"""))
             server.enqueue(json("""{"success":1,"extensions":["epub","TXT","cbz"]}"""))
-            val client = EapiClient(OkHttpClient(), { server.url("/").toString() }, { Session("7", "secret", "z-lib.sk") }, maxAttempts = 1)
+            val client = EapiClient(
+                OkHttpClient(), { server.url("/").toString() }, { Session("7", "secret", "z-lib.sk") }, maxAttempts = 1,
+                isAllowedUrl = { it.host == server.hostName && it.port == server.port },
+            )
             val result = assertIs<AppResult.Success<com.qgming.zlib.core.model.SearchFilterOptions>>(client.searchFilterOptions()).value
             assertEquals(listOf("japanese", "chinese", "old english"), result.languages.map { it.code })
             assertEquals(listOf("epub", "txt", "cbz"), result.extensions)
@@ -31,7 +34,10 @@ class SearchFilterOptionsTest {
 
     @Test fun `malformed and empty candidate lists fail rather than replace fallback`() = runBlocking {
         MockWebServer().use { server ->
-            val client = EapiClient(OkHttpClient(), { server.url("/").toString() }, { null }, maxAttempts = 1)
+            val client = EapiClient(
+                OkHttpClient(), { server.url("/").toString() }, { null }, maxAttempts = 1,
+                isAllowedUrl = { it.host == server.hostName && it.port == server.port },
+            )
             for (body in listOf("""{"success":1,"languages":[]}""", """{"success":1,"languages":{}}""")) {
                 server.enqueue(json(body)); server.enqueue(json("""{"success":1,"extensions":["epub"]}"""))
                 assertIs<AppResult.Failure>(client.searchFilterOptions())

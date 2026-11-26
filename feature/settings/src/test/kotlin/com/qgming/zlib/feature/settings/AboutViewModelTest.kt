@@ -43,17 +43,19 @@ class AboutViewModelTest {
         }
     }
 
-    @Test fun `failure supports retry without claiming success`() = runTest {
+    @Test fun `connection failure emits one toast and a successful retry shows its result`() = runTest {
         var calls = 0
         withModel({ if (++calls == 1) AppResult.Failure(AppError.Network(IOException())) else AppResult.Success(UpdateCheckResult.NoRelease) }) { model ->
             model.checkUpdate("0.1.0")
             advanceUntilIdle()
-            assertEquals(UpdateFailure.Network, model.update.value.failure)
-            assertNull(model.update.value.result)
+            assertEquals(AboutUpdateState(), model.update.value)
+            assertNetworkToast(model)
             model.checkUpdate("0.1.0")
             advanceUntilIdle()
             assertNull(model.update.value.failure)
             assertEquals(UpdateCheckResult.NoRelease, model.update.value.result)
+            assertTrue(model.update.value.visible)
+            assertNull(withTimeoutOrNull(1) { model.events.first() })
         }
     }
 
@@ -69,12 +71,63 @@ class AboutViewModelTest {
         }
     }
 
-    @Test fun `GitHub rate limiting has its own actionable state`() = runTest {
-        withModel({ AppResult.Failure(AppError.Server(403, "Rate limited")) }) { model ->
-            model.checkUpdate("0.1.0")
+    @Test fun `confirmed GitHub rate limiting emits one network toast without a sheet`() = runTest {
+        val failures = listOf(AppError.Server(403, "Rate limited", 1_790_000_000_000L), AppError.Server(429, "Rate limited"))
+        for (failure in failures) {
+            withModel({ AppResult.Failure(failure) }) { model ->
+                model.checkUpdate("0.1.0")
+                advanceUntilIdle()
+                assertEquals(AboutUpdateState(), model.update.value)
+                assertNetworkToast(model)
+            }
+        }
+    }
+
+    @Test fun `cached network failures stay silent on startup and only toast on manual check`() = runTest {
+        val failures = listOf(AppError.Server(429, "Rate limited", 1_790_000_000_000L), AppError.Network(IOException()))
+        for (failure in failures) {
+            val cached = UpdateCheckResult.Cached(AppRelease("v1.2.0", "", ""), failure)
+            withModel({ AppResult.Success(cached) }) { model ->
+                model.checkOnStart("1.1.0")
+                advanceUntilIdle()
+                assertEquals(AboutUpdateState(), model.update.value)
+                assertNull(withTimeoutOrNull(1) { model.events.first() })
+                model.checkUpdate("1.1.0")
+                advanceUntilIdle()
+                assertEquals(AboutUpdateState(), model.update.value)
+                assertNetworkToast(model)
+            }
+        }
+    }
+
+    @Test fun `other forbidden responses keep the retry sheet without a network toast`() = runTest {
+        withModel({ AppResult.Failure(AppError.Server(403, "Forbidden")) }) { model ->
+            model.checkUpdate("1.1.0")
             advanceUntilIdle()
-            assertEquals(UpdateFailure.RateLimit, model.update.value.failure)
-            assertNull(model.update.value.result)
+            assertEquals(AboutUpdateState(visible = true, failure = UpdateFailure.Response), model.update.value)
+            assertNull(withTimeoutOrNull(1) { model.events.first() })
+        }
+    }
+
+    @Test fun `startup network failures do not emit feedback or open a sheet`() = runTest {
+        val failures = listOf(AppError.Network(IOException()), AppError.Server(429, "Rate limited"))
+        for (failure in failures) {
+            withModel({ AppResult.Failure(failure) }) { model ->
+                model.checkOnStart("1.1.0")
+                advanceUntilIdle()
+                assertEquals(AboutUpdateState(), model.update.value)
+                assertNull(withTimeoutOrNull(1) { model.events.first() })
+            }
+        }
+    }
+
+    @Test fun `cached notes from a parse failure remain marked cached in the retry sheet`() = runTest {
+        val cached = UpdateCheckResult.Cached(AppRelease("v1.1.0", "", ""), AppError.Parse("Invalid release"))
+        withModel({ AppResult.Success(cached) }) { model ->
+            model.checkUpdate("1.1.0")
+            advanceUntilIdle()
+            assertEquals(AboutUpdateState(visible = true, result = cached, failure = UpdateFailure.Response), model.update.value)
+            assertNull(withTimeoutOrNull(1) { model.events.first() })
         }
     }
 
@@ -148,6 +201,27 @@ class AboutViewModelTest {
             assertEquals(AboutUpdateEvent.AlreadyCurrent, model.events.first())
             assertNull(withTimeoutOrNull(1) { model.events.first() })
         }
+    }
+
+    @Test fun `manual taps during startup rate limit check share request and receive one toast`() = runTest {
+        val result = CompletableDeferred<AppResult<UpdateCheckResult>>()
+        var calls = 0
+        withModel({ calls++; result.await() }) { model ->
+            model.checkOnStart("1.1.0")
+            advanceUntilIdle()
+            model.checkUpdate("1.1.0")
+            model.checkUpdate("1.1.0")
+            result.complete(AppResult.Failure(AppError.Server(429, "Rate limited")))
+            advanceUntilIdle()
+            assertEquals(1, calls)
+            assertEquals(AboutUpdateState(), model.update.value)
+            assertNetworkToast(model)
+        }
+    }
+
+    private suspend fun assertNetworkToast(model: AboutViewModel) {
+        assertEquals(AboutUpdateEvent.NetworkEnvironment, withTimeoutOrNull(1) { model.events.first() })
+        assertNull(withTimeoutOrNull(1) { model.events.first() })
     }
 
     private suspend fun TestScope.withModel(check: suspend (String) -> AppResult<UpdateCheckResult>, block: suspend (AboutViewModel) -> Unit) {

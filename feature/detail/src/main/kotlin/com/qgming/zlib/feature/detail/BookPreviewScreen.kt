@@ -47,6 +47,7 @@ import com.qgming.zlib.core.designsystem.ZlibStateCard
 import com.qgming.zlib.core.designsystem.ZlibToastHost
 import com.qgming.zlib.core.designsystem.rememberZlibToastHostState
 import com.qgming.zlib.core.model.OnlineBookPreview
+import java.net.URI
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.launch
 
@@ -71,8 +72,9 @@ private fun BookPreviewContent(id: String, hash: String, onBack: () -> Unit, vie
     val refresh = { viewModel.refresh(id, hash) }
 
     LaunchedEffect(id, hash) { viewModel.open(id, hash) }
-    DisposableEffect(Unit) {
+    DisposableEffect(viewModel) {
         onDispose {
+            viewModel.close()
             clearPreviewCookies()
         }
     }
@@ -116,8 +118,13 @@ private fun BookPreviewContent(id: String, hash: String, onBack: () -> Unit, vie
                     TextR.string.text_preview_retry,
                     refresh,
                 )
+                BookPreviewState.SourceChanged -> PreviewMessage(
+                    TextR.string.text_preview_unavailable,
+                    TextR.string.text_preview_source_changed,
+                    refresh,
+                )
                 is BookPreviewState.Ready -> key(current.preview) {
-                    ReaderWebView(current.preview, refresh)
+                    ReaderWebView(current.preview, { viewModel.currentPreview() === current.preview }, refresh)
                 }
             }
         }
@@ -136,7 +143,7 @@ private fun PreviewMessage(title: Int, message: Int, onRefresh: () -> Unit) {
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun ReaderWebView(preview: OnlineBookPreview, onRefresh: () -> Unit) {
+private fun ReaderWebView(preview: OnlineBookPreview, isCurrent: () -> Boolean, onRefresh: () -> Unit) {
     var progress by remember { mutableIntStateOf(0) }
     var failed by remember { mutableStateOf(false) }
     val released = remember { AtomicBoolean(false) }
@@ -169,6 +176,20 @@ private fun ReaderWebView(preview: OnlineBookPreview, onRefresh: () -> Unit) {
                         }
                     }
                     webViewClient = object : WebViewClient() {
+                        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                            if (!request.isForMainFrame) return false
+                            if (isCurrent() && isHttpsPreviewNavigation(request.url.toString())) return false
+                            failed = true
+                            return true
+                        }
+
+                        override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                            if (!isCurrent() || !isHttpsPreviewNavigation(url)) {
+                                view.stopLoading()
+                                failed = true
+                            }
+                        }
+
                         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                             if (request.isForMainFrame) failed = true
                         }
@@ -183,7 +204,7 @@ private fun ReaderWebView(preview: OnlineBookPreview, onRefresh: () -> Unit) {
                         }
                     }
                     clearPreviewCookies {
-                        if (!released.get()) loadUrl(preview.readerUrl)
+                        if (!released.get() && isCurrent()) loadUrl(preview.readerUrl)
                     }
                 }
             },
@@ -199,6 +220,11 @@ private fun ReaderWebView(preview: OnlineBookPreview, onRefresh: () -> Unit) {
         if (progress < 100) ZlibPreviewProgress(progress, Modifier.align(Alignment.TopCenter))
     }
 }
+
+internal fun isHttpsPreviewNavigation(url: String): Boolean = runCatching { URI(url) }.getOrNull()?.let {
+    it.scheme.equals("https", ignoreCase = true) && it.host != null && it.rawUserInfo == null &&
+        (it.port == -1 || it.port in 1..65535)
+} == true
 
 private fun clearPreviewCookies(onCleared: (() -> Unit)? = null) {
     val manager = CookieManager.getInstance()

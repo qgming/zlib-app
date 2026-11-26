@@ -20,9 +20,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -65,6 +65,43 @@ class LocalFilesRepositoryTest {
             runCurrent()
             advanceTimeBy(6_001)
             assertEquals(scans, store.scans)
+        }
+    }
+
+    @Test
+    fun `directory changes are coalesced and a single file does not require another traversal`() = runTest {
+        withFiles { store, _, _, _, repository ->
+            val document = file("known.epub")
+            store.files = listOf(document)
+            backgroundScope.launch { repository.observeFiles().collect() }
+            runCurrent()
+            assertEquals(1, store.scans)
+            assertIs<AppResult.Success<LocalFile>>(repository.readable(document))
+            assertEquals(1, store.scans)
+            repeat(6) { store.invalidated.tryEmit(Unit) }
+            advanceTimeBy(181)
+            runCurrent()
+            assertEquals(2, store.scans)
+        }
+    }
+
+    @Test
+    fun `a pending final file stays hidden without hiding a namesake in a subdirectory`() = runTest {
+        val pending = MutableStateFlow<List<PendingDownloadPublication>>(emptyList())
+        withFiles(pending) { store, _, _, cleared, repository ->
+            val target = file("out.epub")
+            val other = file("nested/out.epub")
+            store.files = listOf(target, other)
+            val publication = PendingDownloadPublication("1:abc", 1L, "tree", "out.epub.part", "out.epub", 128L, "a".repeat(64))
+            pending.value = listOf(publication)
+            assertEquals(listOf(other.uri), repository.observeFiles().first { !it.loading }.files.map { it.uri })
+            pending.value = listOf(publication.copy(targetUri = target.uri))
+            assertIs<AppResult.Failure>(repository.readable(target))
+            assertIs<AppResult.Failure>(repository.deleteLocal(target))
+            assertEquals(0, store.deletes)
+            assertTrue(cleared.isEmpty())
+            pending.value = emptyList()
+            assertEquals(2, repository.observeFiles().first { !it.loading }.files.size)
         }
     }
 
@@ -148,6 +185,7 @@ class LocalFilesRepositoryTest {
     }
 
     private suspend fun TestScope.withFiles(
+        pending: Flow<List<PendingDownloadPublication>> = MutableStateFlow(emptyList()),
         block: suspend TestScope.(FakeStore, MemorySettings, MutableStateFlow<List<Book>>, MutableList<String>, LocalFilesRepository) -> Unit,
     ) {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -160,7 +198,7 @@ class LocalFilesRepositoryTest {
         val settings = MemorySettings()
         val known = MutableStateFlow<List<Book>>(emptyList())
         val cleared = mutableListOf<String>()
-        block(store, settings, known, cleared, LocalFilesRepository(store, settings, known, { cleared += it }, dispatchers))
+        block(store, settings, known, cleared, LocalFilesRepository(store, settings, known, { cleared += it }, dispatchers, pending))
     }
 
     private fun file(uri: String) = LocalFile("tree", uri, uri.substringAfterLast('/'), "epub")
@@ -173,12 +211,18 @@ class LocalFilesRepositoryTest {
         var scans = 0
         var deletes = 0
         var actual: File? = null
+        val invalidated = MutableSharedFlow<Unit>(extraBufferCapacity = 8)
         override suspend fun scan(treeUri: String): List<LocalFile> {
             scans++
             failure?.let { throw it }
             return files
         }
-        override fun changes(treeUri: String): Flow<Unit> = emptyFlow()
+        override suspend fun find(file: LocalFile): LocalFile? {
+            failure?.let { throw it }
+            return files.firstOrNull { it.uri == file.uri }
+        }
+        override suspend fun isDirectChild(file: LocalFile) = '/' !in file.uri
+        override fun changes(treeUri: String): Flow<Unit> = invalidated
         override fun isReadable(file: LocalFile) = files.any { it.uri == file.uri }
         override fun delete(file: LocalFile): Boolean {
             deletes++

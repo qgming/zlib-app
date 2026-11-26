@@ -11,13 +11,21 @@ import com.qgming.zlib.core.data.session.SessionManager
 import com.qgming.zlib.core.database.DownloadEntity
 import com.qgming.zlib.core.database.DownloadStates
 import com.qgming.zlib.core.database.ZlibDatabase
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 @Singleton
@@ -29,14 +37,52 @@ class DownloadRunner @Inject constructor(
     private val dispatchers: AppDispatchers,
     private val sessions: SessionManager,
     private val quotaSwitcher: AccountQuotaSwitcher,
+    private val journal: DownloadJournal,
 ) {
     private val controls = DownloadQueueControl()
+    private val execution = Mutex()
+    private val recovery = CoroutineScope(SupervisorJob() + dispatchers.io)
     @Volatile private var worker: Job? = null
 
     fun cancelActiveTransfer() = engine.cancelActiveTransfer()
 
     internal suspend fun control(id: String, stopActive: suspend () -> Unit, apply: suspend () -> Unit) =
         controls.control(id, stopActive, apply)
+
+    internal suspend fun controlWithoutService(id: String, apply: suspend () -> Unit) =
+        control(id, stopActive = { stopDownloadWorker(worker, ::cancelActiveTransfer) {} }, apply = apply)
+
+    internal fun stopForForegroundLimit(reason: String) {
+        cancelActiveTransfer()
+        recovery.launch {
+            try {
+                execution.withLock { parkQueue(reason) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                SafeLog.w("Download", "foreground queue state unavailable")
+            }
+        }
+    }
+
+    internal suspend fun pauseAfterLaunchRejection(): Boolean {
+        if (!execution.tryLock()) return false
+        try {
+            parkQueue(DownloadCodes.FOREGROUND_UNAVAILABLE)
+            return true
+        } finally {
+            execution.unlock()
+        }
+    }
+
+    internal suspend fun discardPublication(item: DownloadEntity, tree: String): Boolean {
+        val pending = journal.pending(tree, item.id, item.createdAt) ?: return true
+        return engine.abandonPublication(pending)
+    }
+
+    private suspend fun parkQueue(reason: String) {
+        database.downloadDao().pauseAllActive(DownloadStates.PAUSED, reason, now())
+    }
 
     suspend fun <T> withAccountChange(stopIf: () -> Boolean = { true }, change: suspend () -> T): T = controls.accountChange { activeId ->
         val stopping = stopIf()
@@ -103,20 +149,49 @@ class DownloadRunner @Inject constructor(
     }
 
     suspend fun runQueue() = withContext(dispatchers.io) {
-        worker = currentCoroutineContext().job
-        try {
-            val dao = database.downloadDao()
-            dao.resetInterrupted()
-            while (true) {
-                val item = controls.selectNext(DownloadEntity::id) { dao.nextActive() } ?: break
-                try {
-                    if (!runItem(item)) break
-                } finally {
-                    controls.finished()
+        execution.withLock {
+            worker = currentCoroutineContext().job
+            try {
+                val dao = database.downloadDao()
+                dao.resetInterrupted()
+                while (true) {
+                    val item = controls.selectNext(DownloadEntity::id) { dao.nextActive() } ?: break
+                    try {
+                        if (!runItem(item)) break
+                    } finally {
+                        controls.finished()
+                    }
+                }
+            } finally {
+                worker = null
+            }
+        }
+    }
+
+    internal suspend fun reconcilePublishedFiles() = withContext(dispatchers.io) {
+        execution.withLock {
+            controls.exclusive {
+                val treeUri = directoryStore.ensureLoaded()?.toString() ?: return@exclusive
+                val dao = database.downloadDao()
+                journal.publications.first().filter { it.treeUri == treeUri }.forEach { pending ->
+                    try {
+                        val item = dao.byId(pending.taskId)
+                        if (item == null || item.createdAt != pending.taskCreatedAt || item.state == DownloadStates.CANCELLED) {
+                            engine.abandonPublication(pending)
+                        } else if (item.state == DownloadStates.COMPLETED) {
+                            if (pending.step == PublicationStep.Complete) engine.finishPublication(pending)
+                            else engine.abandonPublication(pending)
+                        } else {
+                            val recovered = engine.recover(pending) ?: return@forEach
+                            finishCompletion(item, recovered)
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        SafeLog.w("Download", "pending file reconciliation unavailable")
+                    }
                 }
             }
-        } finally {
-            worker = null
         }
     }
 
@@ -128,6 +203,7 @@ class DownloadRunner @Inject constructor(
         var attempt = 1
         var lastBytes = item.bytesWritten
         var lastTotal = item.totalBytes
+        var retriedSession = false
         val attemptedAccounts = mutableSetOf<String>()
         while (true) {
             val current = dao.byId(item.id) ?: break
@@ -156,7 +232,15 @@ class DownloadRunner @Inject constructor(
 
             when (outcome) {
                 is DownloadOutcome.Completed -> {
-                    recordCompletion(item, outcome)
+                    try {
+                        finishCompletion(item, outcome)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        dao.update(item.id, DownloadStates.FAILED, outcome.totalBytes, outcome.totalBytes, DownloadCodes.STORAGE, now())
+                        notifications.failed(current, DownloadCodes.STORAGE)
+                        break
+                    }
                     lastBytes = outcome.totalBytes
                     lastTotal = outcome.totalBytes
                     SafeLog.d("Download", "completed bytes=${outcome.totalBytes}")
@@ -168,6 +252,11 @@ class DownloadRunner @Inject constructor(
                     val error = outcome.error
                     if (error is AppError.Quota && requestSession != null && quotaSwitcher.switchAfterQuota(requestSession, attemptedAccounts)) {
                         attempt = 1
+                        retriedSession = false
+                        continue
+                    }
+                    if (error is AppError.SessionExpired && requestSession != null && sessions.current() == requestSession && !retriedSession) {
+                        retriedSession = true
                         continue
                     }
                     if (isRetryable(error) && attempt < 4) {
@@ -179,10 +268,11 @@ class DownloadRunner @Inject constructor(
                     dao.update(item.id, DownloadStates.FAILED, lastBytes, lastTotal, outcome.code, now())
                     SafeLog.w("Download", "failed ${item.id} code=${outcome.code}")
                     notifications.failed(current, outcome.code)
-                    if (error is AppError.Quota) {
-                        // Park the remaining queue in one statement; another START must not
-                        // repeatedly hit the same limit.
-                        dao.pauseAllActive(DownloadStates.PAUSED, DownloadCodes.QUOTA, now())
+                    if (error is AppError.SessionExpired && sessions.current() == requestSession && requestSession != null) {
+                        sessions.expire(requestSession)
+                    }
+                    if (error is AppError.Quota || error is AppError.SessionExpired || error is AppError.NotLoggedIn) {
+                        parkQueue(if (error is AppError.Quota) DownloadCodes.QUOTA else DownloadCodes.SESSION)
                         return false
                     }
                     break
@@ -192,10 +282,13 @@ class DownloadRunner @Inject constructor(
         return true
     }
 
-    /** Recording the queue row and the book's file reference as close to atomic as Room allows. */
-    private suspend fun recordCompletion(item: DownloadEntity, outcome: DownloadOutcome.Completed) {
+    private suspend fun finishCompletion(item: DownloadEntity, outcome: DownloadOutcome.Completed) = withContext(NonCancellable) {
         val now = now()
         database.withTransaction {
+            val current = database.downloadDao().byId(item.id)
+                ?.takeIf { it.createdAt == outcome.publication.taskCreatedAt }
+                ?: throw IOException("The download task changed")
+            if (current.state == DownloadStates.COMPLETED) return@withTransaction
             database.downloadDao().update(
                 item.id,
                 DownloadStates.COMPLETED,
@@ -210,6 +303,11 @@ class DownloadRunner @Inject constructor(
             if (book != null && book.hash == item.hash) {
                 database.bookDao().setLocalFile(item.bookId, outcome.uri, now, now)
             }
+        }
+        try {
+            engine.finishPublication(outcome.publication)
+        } catch (_: Exception) {
+            SafeLog.w("Download", "completed file journal cleanup unavailable")
         }
     }
 

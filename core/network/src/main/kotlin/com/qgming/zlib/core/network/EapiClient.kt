@@ -25,14 +25,18 @@ import com.qgming.zlib.core.model.SearchLanguage
 import com.qgming.zlib.core.model.SearchSort
 import com.qgming.zlib.core.model.Session
 import java.io.IOException
-import java.net.URI
+import java.io.InterruptedIOException
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import okhttp3.CacheControl
+import okhttp3.CookieJar
 import okhttp3.FormBody
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -51,28 +55,33 @@ class EapiClient(
     private val baseUrlForHost: (String) -> String = { DomainPolicy.baseUrl(it) },
     private val sleeper: suspend (Long) -> Unit = { delay(it) },
     private val maxAttempts: Int = 4,
+    private val isAllowedUrl: (HttpUrl) -> Boolean = { DomainPolicy.isStandardHttps(it) && DomainPolicy.isAllowed(it.host) },
+    private val verificationCookieProvider: (HttpUrl) -> String? = { null },
 ) {
-    // A destructive GET must not be replayed by either OkHttp or the application retry loop.
-    private val mutationClient = client.newBuilder()
-        .retryOnConnectionFailure(false)
-        .followRedirects(false)
+    private val guard = EapiRedirectGuardInterceptor(isAllowedUrl)
+    private val readClient = client.newBuilder()
+        .cookieJar(CookieJar.NO_COOKIES)
+        .cache(null)
         .followSslRedirects(false)
+        .addNetworkInterceptor(guard)
+        .build()
+    private val mutationClient = client.newBuilder()
+        .oneShotTransport()
+        .addNetworkInterceptor(guard)
         .build()
 
     // ---------------------------------------------------------------- auth
 
     suspend fun login(email: String, password: String): AppResult<Session> {
-        val base = baseUrlProvider() ?: return AppResult.Failure(AppError.NoDomain)
-        val host = hostOf(base) ?: return AppResult.Failure(AppError.NoDomain)
         val form = FormBody.Builder()
             .add("email", email.trim())
             .add("password", password)
             .build()
-        return execute(EapiEndpoints.LOGIN, form, session = null)
+        return execute(EapiEndpoints.LOGIN, form, session = null, allowRetry = false)
             .mapCatching { exchange ->
                 val root = exchange.root
                 val user = root.obj("user")
-                val cookies = parseSetCookies(exchange.setCookies).toMutableMap()
+                val cookies = parseSetCookies(exchange.setCookies)
 
                 val userId = user?.stringOrNull("id")
                     ?: cookies[Session.USER_ID_COOKIE]
@@ -87,21 +96,15 @@ class EapiClient(
                     ?: root.stringOrNull("remix_user_key")
                     ?: ""
 
-                if (userId.isBlank() || userKey.isBlank()) {
+                if (!Session.isCredentialValue(userId) || !Session.isCredentialValue(userKey)) {
                     throw AppErrorException(AppError.Parse(appText(TextR.string.text_signed_in_but_the_response_is_missing_remix_credentials)))
-                }
-
-                if (cookies[Session.USER_ID_COOKIE].isNullOrBlank()) cookies[Session.USER_ID_COOKIE] = userId
-                if (cookies[Session.USER_KEY_COOKIE].isNullOrBlank() && cookies[Session.USER_KEY_COOKIE_ALT].isNullOrBlank()) {
-                    cookies[Session.USER_KEY_COOKIE] = userKey
                 }
 
                 Session(
                     remixUserId = userId,
                     remixUserKey = userKey,
-                    domain = host,
-                    cookies = cookies,
-                )
+                    domain = exchange.responseHost,
+                ).withAuthenticationCookies()
             }
     }
 
@@ -167,50 +170,67 @@ class EapiClient(
     suspend fun isBookSaved(id: String): AppResult<Boolean> {
         if (!NUMERIC_BOOK_ID.matches(id)) return AppResult.Failure(AppError.Parse(appText(TextR.string.text_favorites_require_a_numeric_book_id)))
         val auth = sessionProvider() ?: return AppResult.Failure(AppError.NotLoggedIn)
-        var page = 1
-        while (true) {
-            if (sessionProvider() != auth) return AppResult.Failure(AppError.SessionExpired)
-            val result = execute("${EapiEndpoints.SAVED}?page=$page&limit=50", null, auth, isGet = true)
-            if (result is AppResult.Failure) return result
-            val root = (result as AppResult.Success).value.root
-            val books = root.array("books") ?: return AppResult.Failure(AppError.Parse(appText(TextR.string.text_response_is_missing_the_books_field)))
-            val ids = books.map { (it as? JsonObject)?.stringOrNull("id") }
-            if (ids.any { it == id }) return AppResult.Success(true)
-            if (ids.any { it == null }) return AppResult.Failure(AppError.Parse(appText(TextR.string.text_the_favorites_list_is_missing_book_ids)))
-            val pagination = root.obj("pagination")
-            val current = pagination?.intOrNull("current")
-            val total = pagination?.intOrNull("total_pages")
-            if (page == 1 && books.isEmpty() && total == 0) return AppResult.Success(false)
-            if (current != page || total == null || total < current) {
-                return AppResult.Failure(AppError.Parse(appText(TextR.string.text_cannot_determine_favorites_pagination)))
+        var totalPages: Int? = null
+        for (page in 1..20) {
+            when (val result = favoriteIdPage(page, auth)) {
+                is AppResult.Failure -> return result
+                is AppResult.Success -> {
+                    val slice = result.value
+                    if (totalPages != null && totalPages != slice.totalPages) return invalidFavoritePagination()
+                    if (id in slice.ids) return AppResult.Success(true)
+                    if (page >= slice.totalPages) return AppResult.Success(false)
+                    totalPages = slice.totalPages
+                }
             }
-            if (current == total) return AppResult.Success(false)
-            page++
         }
+        return invalidFavoritePagination()
     }
 
-    suspend fun setBookSaved(id: String, saved: Boolean): AppResult<Unit> {
+    data class FavoriteIdPage(val ids: Set<String>, val totalPages: Int)
+
+    suspend fun favoriteIdPage(page: Int, session: Session): AppResult<FavoriteIdPage> {
+        if (sessionProvider() != session) return AppResult.Failure(AppError.SessionExpired)
+        if (page <= 0) return invalidFavoritePagination()
+        return execute("${EapiEndpoints.SAVED}?page=$page&limit=50", null, session, isGet = true)
+            .mapCatching { exchange ->
+                if (sessionProvider() != session) throw AppErrorException(AppError.SessionExpired)
+                val root = exchange.root
+                val books = root.array("books") ?: throw AppErrorException(AppError.Parse(appText(TextR.string.text_response_is_missing_the_books_field)))
+                val ids = books.map { entry ->
+                    (entry as? JsonObject)?.stringOrNull("id")?.takeIf(NUMERIC_BOOK_ID::matches)
+                        ?: throw AppErrorException(AppError.Parse(appText(TextR.string.text_the_favorites_list_is_missing_book_ids)))
+                }.toSet()
+                val pagination = root.obj("pagination")
+                val current = pagination?.intOrNull("current")
+                val total = pagination?.intOrNull("total_pages")
+                if (page == 1 && ids.isEmpty() && total == 0) return@mapCatching FavoriteIdPage(ids, 0)
+                if (current != page || total == null || total < current || (ids.isEmpty() && current < total)) {
+                    throw AppErrorException(invalidFavoritePagination().error)
+                }
+                FavoriteIdPage(ids, total)
+            }
+    }
+
+    private fun invalidFavoritePagination() = AppResult.Failure(AppError.Parse(appText(TextR.string.text_cannot_determine_favorites_pagination)))
+
+    suspend fun setBookSaved(id: String, saved: Boolean, session: Session? = sessionProvider()): AppResult<Unit> {
         if (!NUMERIC_BOOK_ID.matches(id)) return AppResult.Failure(AppError.Parse(appText(TextR.string.text_favorites_require_a_numeric_book_id)))
-        val auth = sessionProvider() ?: return AppResult.Failure(AppError.NotLoggedIn)
+        val auth = session ?: return AppResult.Failure(AppError.NotLoggedIn)
+        if (sessionProvider() != auth) return AppResult.Failure(AppError.SessionExpired)
         val path = if (saved) EapiEndpoints.saveBook(id) else EapiEndpoints.unsaveBook(id)
-        return execute(path, null, auth, isGet = true).mapCatching { Unit }
+        return execute(path, null, auth, isGet = true, allowRetry = false).mapCatching { Unit }
     }
 
     private suspend fun accountBooks(path: String, page: Int, includeHistoryDate: Boolean): AppResult<BookPage> {
         val auth = sessionProvider() ?: return AppResult.Failure(AppError.NotLoggedIn)
         val requestedPage = page.coerceAtLeast(1)
         return execute("$path?page=$requestedPage&limit=50", form = null, session = auth, isGet = true)
-            .mapCatching { exchange ->
-                if (exchange.root.array("books") == null) {
-                    throw AppErrorException(AppError.Parse(appText(TextR.string.text_response_is_missing_the_books_field)))
-                }
-                exchange.root.toBookPage(requestedPage, includeHistoryDate)
-            }
+            .mapCatching { exchange -> exchange.root.toBookPage(requestedPage, includeHistoryDate) }
     }
 
     private suspend fun bookList(path: String, session: Session?): AppResult<List<Book>> =
         execute(path, form = null, session = session, isGet = true)
-            .mapCatching { exchange -> BookMapper.listFrom(exchange.root) }
+            .mapCatching { exchange -> exchange.root.requireBookList() }
 
     // ---------------------------------------------------------------- domains
 
@@ -268,7 +288,7 @@ class EapiClient(
 
     private fun JsonObject.toBookPage(requestedPage: Int, includeHistoryDate: Boolean = false): BookPage {
         val pagination = obj("pagination")
-        val books = BookMapper.listFrom(this, includeHistoryDate)
+        val books = requireBookList(includeHistoryDate)
         val current = pagination?.intOrNull("current")?.takeIf { it > 0 } ?: requestedPage
         val hasExplicitEnd = pagination?.get("next")?.let { it is kotlinx.serialization.json.JsonPrimitive && it.content == "false" } == true
         return BookPage(
@@ -276,6 +296,11 @@ class EapiClient(
             page = current,
             totalPages = if (books.isEmpty() || hasExplicitEnd) current else pagination?.intOrNull("total_pages")?.coerceAtLeast(current) ?: current,
         )
+    }
+
+    private fun JsonObject.requireBookList(includeHistoryDate: Boolean = false): List<Book> {
+        if (array("books") == null) throw AppErrorException(AppError.Parse(appText(TextR.string.text_response_is_missing_the_books_field)))
+        return BookMapper.listFrom(this, includeHistoryDate)
     }
 
     suspend fun bookDetail(id: String, hash: String): AppResult<Book> =
@@ -347,7 +372,7 @@ class EapiClient(
     fun downloadUrl(id: String, hash: String, session: Session? = sessionProvider()): String? {
         val auth = session ?: return null
         if (!BookMapper.isSafeRef(id, hash)) return null
-        return "${baseUrlForHost(auth.domain).trimEnd('/')}${EapiEndpoints.file(id, hash)}"
+        return endpoint(baseUrlForHost(auth.domain), EapiEndpoints.file(id, hash))?.toString()
     }
 
     // ---------------------------------------------------------------- transport
@@ -360,16 +385,23 @@ class EapiClient(
         allowRetry: Boolean = true,
         cacheControl: CacheControl? = null,
     ): AppResult<Exchange> {
+        if (session != null && !session.isValid) return AppResult.Failure(AppError.NotLoggedIn)
         val base = baseUrlFor(session) ?: return AppResult.Failure(AppError.NoDomain)
-        val url = base.trimEnd('/') + path
+        val url = endpoint(base, path) ?: return AppResult.Failure(AppError.DomainBlocked(DomainStatus.INVALID))
+        val deadline = System.nanoTime() + REQUEST_BUDGET_NANOS
         var attempt = 1
         var lastError: AppError? = null
         var expiredRetried = false
 
         val attemptLimit = if (allowRetry) maxAttempts.coerceAtLeast(1) else 1
         while (attempt <= attemptLimit) {
+            val remaining = deadline - System.nanoTime()
+            if (remaining <= 0) return AppResult.Failure(lastError ?: AppError.Network(InterruptedIOException("EAPI timeout")))
+            if (!isAllowedUrl(url)) return AppResult.Failure(AppError.DomainBlocked(DomainStatus.INVALID))
             val outcome = try {
-                withContext(dispatchers.io) { executeOnce(url, form, session, isGet, allowRetry, cacheControl) }
+                withContext(dispatchers.io) {
+                    executeOnce(url, form, session, isGet, allowRetry, cacheControl, minOf(remaining, CALL_TIMEOUT_NANOS))
+                }
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (blocked: BlockedRedirectException) {
@@ -389,7 +421,9 @@ class EapiClient(
                         continue
                     }
                     if (!outcome.retryable || attempt >= attemptLimit) break
-                    sleeper(1_000L shl (attempt - 1))
+                    val delayMillis = 1_000L shl (attempt - 1)
+                    if (TimeUnit.MILLISECONDS.toNanos(delayMillis) >= deadline - System.nanoTime()) break
+                    sleeper(delayMillis)
                     attempt++
                 }
             }
@@ -398,17 +432,25 @@ class EapiClient(
     }
 
     private fun baseUrlFor(session: Session?): String? =
-        session?.domain?.takeIf { it.isNotBlank() }?.let(baseUrlForHost) ?: baseUrlProvider()
+        if (session == null) baseUrlProvider() else baseUrlForHost(session.domain)
 
-    private fun executeOnce(
-        url: String,
+    private fun endpoint(base: String, path: String): HttpUrl? {
+        val origin = base.toHttpUrlOrNull()?.takeIf {
+            isAllowedUrl(it) && it.encodedPath == "/" && it.encodedQuery == null && it.encodedFragment == null
+        } ?: return null
+        return origin.resolve(path)?.takeIf { it.hasSameOrigin(origin) && isAllowedUrl(it) }
+    }
+
+    private suspend fun executeOnce(
+        url: HttpUrl,
         form: FormBody?,
         session: Session?,
         isGet: Boolean,
         allowRetry: Boolean,
         cacheControl: CacheControl?,
+        timeoutNanos: Long,
     ): Outcome {
-        SafeLog.d(TAG, "request ${SafeLog.redactUrl(url)}")
+        SafeLog.d(TAG, "request ${SafeLog.redactUrl(url.toString())}")
         val builder = Request.Builder().url(url).markEapi()
         if (isGet) {
             builder.get()
@@ -420,45 +462,56 @@ class EapiClient(
         if (cacheControl != null) builder.cacheControl(cacheControl)
         // ADR-076: the search endpoint rejects requests that do not identify the mobile client.
         builder.header(EapiHeaders.SOURCE, EapiHeaders.SOURCE_ANDROID)
+        val verificationCookie = DomainVerificationCookies.sanitizeCookieHeader(verificationCookieProvider(url))
+        val cookies = listOfNotNull(session?.cookieHeader, verificationCookie).filter(String::isNotBlank)
+        if (cookies.isNotEmpty()) builder.header(EapiHeaders.COOKIE, cookies.joinToString("; "))
         if (session != null) {
-            if (session.cookieHeader.isNotBlank()) builder.header("Cookie", session.cookieHeader)
             builder.header(EapiHeaders.REMIX_USER_ID, session.remixUserId)
             builder.header(EapiHeaders.REMIX_USER_KEY, session.remixUserKey)
         }
 
-        val transport = if (allowRetry) client else mutationClient
-        transport.newCall(builder.build()).execute().use { response ->
+        val transport = if (allowRetry) readClient else mutationClient
+        val call = transport.newCall(builder.build())
+        call.timeout().timeout(timeoutNanos, TimeUnit.NANOSECONDS)
+        return call.executeParsedOnIo { response ->
             val code = response.code
-            val body = response.body?.string().orEmpty()
-            if (!allowRetry && response.isRedirect) {
-                return Outcome.Err(AppError.Server(code, appText(TextR.string.text_the_delete_request_was_redirected_refresh_history_and_retry)), retryable = false)
+            if (!response.request.url.hasSameOrigin(url) || !isAllowedUrl(response.request.url)) {
+                return@executeParsedOnIo Outcome.Err(AppError.DomainBlocked(DomainStatus.INVALID), retryable = false)
             }
+            if (!allowRetry && response.isRedirect) {
+                return@executeParsedOnIo Outcome.Err(AppError.DomainBlocked(DomainStatus.INVALID), retryable = false)
+            }
+            val body = response.body.stringUpTo(MAX_RESPONSE_BYTES)
+                ?: return@executeParsedOnIo Outcome.Err(AppError.Parse(appText(TextR.string.text_unexpected_server_response_please_retry_later)), retryable = false)
             val setCookies = response.headers.values("Set-Cookie")
             val root = parseObject(body)
 
             if (root != null) {
                 when (root.intOrNull("success")) {
-                    1 -> return Outcome.Ok(Exchange(root, setCookies, code, response.request.url.host))
-                    0 -> return Outcome.Err(mapEnvelopeError(root, code), retryable = false)
+                    1 -> if (response.isSuccessful) return@executeParsedOnIo Outcome.Ok(Exchange(root, setCookies, response.request.url.host))
+                    0 -> {
+                        val error = mapEnvelopeError(root, code)
+                        return@executeParsedOnIo Outcome.Err(error, retryable = error is AppError.Server && code in RETRYABLE_STATUS)
+                    }
                     else -> if (code in 200..299) {
-                        return Outcome.Err(AppError.Parse(appText(TextR.string.text_response_is_missing_the_success_field)), retryable = false)
+                        return@executeParsedOnIo Outcome.Err(AppError.Parse(appText(TextR.string.text_response_is_missing_the_success_field)), retryable = false)
                     }
                 }
             }
 
             if (code == 513 || code == 517 || body.contains("diamwall", ignoreCase = true)) {
-                return Outcome.Err(AppError.DomainBlocked(DomainStatus.DIAMWALL), retryable = false)
+                return@executeParsedOnIo Outcome.Err(AppError.DomainBlocked(DomainStatus.DIAMWALL), retryable = false)
             }
             if (looksLikeHtml(body)) {
-                return Outcome.Err(AppError.DomainBlocked(DomainStatus.CHALLENGED), retryable = false)
+                return@executeParsedOnIo Outcome.Err(AppError.DomainBlocked(DomainStatus.CHALLENGED), retryable = false)
             }
-            if (code == 502 || code == 503 || code == 504) {
-                return Outcome.Err(AppError.Server(code, appText(TextR.string.text_service_temporarily_unavailable_http, code)), retryable = true)
+            if (code in RETRYABLE_STATUS) {
+                return@executeParsedOnIo Outcome.Err(AppError.Server(code, appText(TextR.string.text_service_temporarily_unavailable_http, code)), retryable = true)
             }
             if (code == 401 || code == 403) {
-                return Outcome.Err(AppError.DomainBlocked(DomainStatus.CHALLENGED), retryable = false)
+                return@executeParsedOnIo Outcome.Err(AppError.DomainBlocked(DomainStatus.CHALLENGED), retryable = false)
             }
-            return Outcome.Err(
+            Outcome.Err(
                 error = if (code in 200..299) {
                     AppError.Parse(appText(TextR.string.text_the_server_returned_a_non_json_response))
                 } else {
@@ -505,8 +558,6 @@ class EapiClient(
         json.parseToJsonElement(body) as? JsonObject
     }.getOrNull()
 
-    private fun hostOf(base: String): String? = runCatching { URI(base).host }.getOrNull()
-
     private fun looksLikeHtml(body: String): Boolean {
         val trimmed = body.trimStart()
         return trimmed.startsWith("<") && (trimmed.contains("<html", true) || trimmed.contains("<!doctype", true))
@@ -515,7 +566,6 @@ class EapiClient(
     private data class Exchange(
         val root: JsonObject,
         val setCookies: List<String>,
-        val code: Int,
         val responseHost: String,
     )
 
@@ -526,6 +576,10 @@ class EapiClient(
 
     companion object {
         private const val TAG = "Eapi"
+        private const val MAX_RESPONSE_BYTES = 4L * 1024 * 1024
+        private val REQUEST_BUDGET_NANOS = TimeUnit.SECONDS.toNanos(45)
+        private val CALL_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(25)
+        private val RETRYABLE_STATUS = setOf(502, 503, 504)
         private val NUMERIC_BOOK_ID = Regex("[0-9]{1,32}")
         private val FILE_EXTENSION = Regex("[a-z0-9]{1,20}")
         private val PREVIEW_CACHE_CONTROL = CacheControl.Builder().noCache().noStore().build()

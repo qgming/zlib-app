@@ -3,6 +3,7 @@ package com.qgming.zlib.core.data.update
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.util.AtomicFile
 import androidx.documentfile.provider.DocumentFile
 import com.qgming.zlib.core.data.download.DownloadDirectoryStore
@@ -10,6 +11,9 @@ import com.qgming.zlib.core.model.AppRelease
 import com.qgming.zlib.core.model.compareReleaseVersions
 import java.io.File
 import java.io.IOException
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -29,7 +33,13 @@ class UpdateApkStore @Inject constructor(
     fun ready(): File = File(context.filesDir, "updates/release.apk")
     private fun receipt() = AtomicFile(File(context.filesDir, "updates/ready.json"))
 
-    fun recordReady(release: AppRelease, saved: Uri) {
+    fun publishReady(source: File, release: AppRelease, saved: Uri) {
+        val target = ready().toPath()
+        try {
+            Files.move(source.toPath(), target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(source.toPath(), target, StandardCopyOption.REPLACE_EXISTING)
+        }
         val text = buildJsonObject {
             put("tag", JsonPrimitive(release.tag))
             put("title", JsonPrimitive(release.title))
@@ -38,14 +48,28 @@ class UpdateApkStore @Inject constructor(
             put("saved", JsonPrimitive(saved.toString()))
         }.toString()
         val atomic = receipt()
-        val stream = atomic.startWrite()
         try {
-            stream.write(text.toByteArray(Charsets.UTF_8))
-            atomic.finishWrite(stream)
+            val stream = atomic.startWrite()
+            try {
+                stream.write(text.toByteArray(Charsets.UTF_8))
+                atomic.finishWrite(stream)
+            } catch (failure: IOException) {
+                atomic.failWrite(stream)
+                throw failure
+            }
         } catch (failure: Exception) {
-            atomic.failWrite(stream)
+            discardReady()
             throw failure
         }
+    }
+
+    fun discardReady() {
+        receipt().delete()
+        ready().delete()
+    }
+
+    fun discardSaved(uri: Uri) {
+        runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }
     }
 
     fun restoreReady(): Pair<AppRelease, String>? {
@@ -57,8 +81,7 @@ class UpdateApkStore @Inject constructor(
             validate(ready(), release)
             release to field("saved")
         } catch (_: Exception) {
-            receipt().delete()
-            ready().delete()
+            discardReady()
             null
         }
     }
@@ -76,9 +99,13 @@ class UpdateApkStore @Inject constructor(
     }
 
     suspend fun save(file: File, release: AppRelease): Uri {
-        directory.ensureLoaded()
-        val selected = directory.currentUri() ?: throw IOException("No download directory")
-        val tree = directory.tree()?.takeIf { it.canWrite() } ?: throw IOException("Download directory unavailable")
+        val selected = directory.ensureLoaded() ?: throw IOException("No download directory")
+        val tree = DocumentFile.fromTreeUri(context, selected)?.takeIf { it.canWrite() } ?: throw IOException("Download directory unavailable")
+        suspend fun ensureDestination() {
+            currentCoroutineContext().ensureActive()
+            if (directory.currentUri() != selected) throw IOException("Download directory changed")
+        }
+        ensureDestination()
         val tag = release.tag.replace(Regex("[^0-9A-Za-z._-]"), "_").take(80)
         val finalName = "zhishi-$tag-${System.currentTimeMillis()}.apk"
         val document = tree.createFile("application/octet-stream", "$finalName.part")
@@ -86,12 +113,11 @@ class UpdateApkStore @Inject constructor(
         var fallback: DocumentFile? = null
         try {
             suspend fun copyTo(destination: DocumentFile) {
-                context.contentResolver.openOutputStream(destination.uri, "w")?.use { output ->
+                context.contentResolver.openOutputStream(destination.uri, "wt")?.use { output ->
                     file.inputStream().buffered().use { input ->
                         val buffer = ByteArray(64 * 1024)
                         while (true) {
-                            currentCoroutineContext().ensureActive()
-                            if (directory.currentUri() != selected) throw IOException("Download directory changed")
+                            ensureDestination()
                             val read = input.read(buffer)
                             if (read == -1) break
                             output.write(buffer, 0, read)
@@ -100,11 +126,13 @@ class UpdateApkStore @Inject constructor(
                 } ?: throw IOException("Cannot write update file")
             }
             copyTo(document)
+            ensureDestination()
             if (document.renameTo(finalName)) return document.uri
             val finalDocument = tree.createFile("application/vnd.android.package-archive", finalName)
                 ?: throw IOException("Cannot finalize update file")
             fallback = finalDocument
             copyTo(finalDocument)
+            ensureDestination()
             document.delete()
             return finalDocument.uri
         } catch (failure: Exception) {

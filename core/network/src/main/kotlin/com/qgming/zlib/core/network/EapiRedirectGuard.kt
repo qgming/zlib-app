@@ -11,23 +11,23 @@ internal object EapiRequestMarker
 
 internal class BlockedRedirectException : IOException("redirect blocked by allowlist")
 
-/**
- * EAPI endpoints must never accept a redirect to a host outside the allowlist: a 307/308 also
- * replays the form body (which may contain the password). Registered as a network interceptor
- * so it sees every hop before OkHttp follows it.
- */
-class EapiRedirectGuardInterceptor(
+internal class EapiRedirectGuardInterceptor(
     private val isAllowedUrl: (HttpUrl) -> Boolean,
 ) : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
-        val response = chain.proceed(chain.request())
-        if (chain.call().request().tag(EapiRequestMarker::class.java) == null) return response
+        val request = chain.request()
+        val initial = chain.call().request()
+        if (initial.tag(EapiRequestMarker::class.java) == null) return chain.proceed(request)
+        if (!request.url.hasSameOrigin(initial.url) || !isAllowedUrl(request.url) || !request.url.encodedPath.startsWith("/eapi/")) {
+            throw BlockedRedirectException()
+        }
+        val response = chain.proceed(request)
         if (!response.isRedirect) return response
 
         val location = response.header("Location") ?: return response
         val target = response.request.url.resolve(location)
-        if (target == null || !target.isHttps || !isAllowedUrl(target)) {
+        if (target == null || !target.hasSameOrigin(initial.url) || !isAllowedUrl(target) || !target.encodedPath.startsWith("/eapi/")) {
             response.close()
             throw BlockedRedirectException()
         }

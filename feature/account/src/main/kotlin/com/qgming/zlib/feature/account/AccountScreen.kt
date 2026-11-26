@@ -1,7 +1,6 @@
 package com.qgming.zlib.feature.account
 
 import androidx.compose.ui.res.stringResource
-import com.qgming.zlib.core.common.appText
 import com.qgming.zlib.core.common.R as TextR
 
 import androidx.compose.foundation.layout.Arrangement
@@ -26,6 +25,9 @@ import com.qgming.zlib.core.designsystem.ZlibAddAccountButton
 import com.qgming.zlib.core.designsystem.ZlibAutoSwitchPreference
 import com.qgming.zlib.core.designsystem.ZlibCardList
 import com.qgming.zlib.core.designsystem.ZlibConfirmDialog
+import com.qgming.zlib.core.designsystem.ZlibCommunityMirrorConfirmation
+import com.qgming.zlib.core.designsystem.ZlibCurrentDomainCard
+import com.qgming.zlib.core.designsystem.ZlibDomainPicker
 import com.qgming.zlib.core.designsystem.ZlibGlassBottomSheet
 import com.qgming.zlib.core.designsystem.ZlibLoginForm
 import com.qgming.zlib.core.designsystem.ZlibMenuAction
@@ -35,24 +37,35 @@ import com.qgming.zlib.core.designsystem.ZlibStateCard
 import com.qgming.zlib.core.designsystem.rememberZlibToastHostState
 
 @Composable
-fun AccountScreen(onBack: (() -> Unit)?, viewModel: AccountViewModel = hiltViewModel()) {
+fun AccountScreen(
+    onBack: (() -> Unit)?,
+    viewModel: AccountViewModel = hiltViewModel(),
+    onVerifyDomain: (String) -> Unit = {},
+) {
+    val domainViewModel: LoginViewModel = hiltViewModel(key = "account-domains")
     val state by viewModel.state.collectAsStateWithLifecycle()
     val form by viewModel.form.collectAsStateWithLifecycle()
     val busy by viewModel.busyId.collectAsStateWithLifecycle()
+    val domainState by domainViewModel.state.collectAsStateWithLifecycle()
+    val domainControlsEnabled = busy == null && !form.busy && !domainState.switchingDomain
     var actionId by remember { mutableStateOf<String?>(null) }
     var logoutId by remember { mutableStateOf<String?>(null) }
     var confirmAutoSwitch by remember { mutableStateOf(false) }
     val toast = rememberZlibToastHostState()
     LaunchedEffect(viewModel, toast) { viewModel.events.collect { toast.showMessage(it) } }
+    LaunchedEffect(domainViewModel, onVerifyDomain) { domainViewModel.verificationRequests.collect(onVerifyDomain) }
     ZlibToastHost(toast)
 
     ZlibPage(title = stringResource(TextR.string.text_account), onBack = onBack, actions = { ZlibAddAccountButton(viewModel::showAdd) }) { padding ->
         ZlibCardList(padding) {
+            item("domain") {
+                ZlibCurrentDomainCard(domainState.domain, enabled = domainControlsEnabled, onChange = domainViewModel::showDomains)
+            }
             if (state.accounts.isEmpty()) item("empty") {
                 ZlibStateCard(stringResource(TextR.string.text_no_signed_in_accounts), stringResource(TextR.string.text_tap_the_button_at_the_top_right_to_add_an_account), stringResource(TextR.string.text_add_account), viewModel::showAdd)
             }
             items(state.accounts, key = { it.id }) { entry ->
-                ZlibAccountCard(entry, busy != null,
+                ZlibAccountCard(entry, busy != null || domainState.switchingDomain,
                     onClick = { if (!entry.current || entry.expired) viewModel.switch(entry.id) },
                     onLongClick = { actionId = entry.id },
                 )
@@ -81,17 +94,38 @@ fun AccountScreen(onBack: (() -> Unit)?, viewModel: AccountViewModel = hiltViewM
             confirmLabel = stringResource(TextR.string.text_enable), onDismiss = { confirmAutoSwitch = false },
             onConfirm = { viewModel.setAutoSwitch(true); confirmAutoSwitch = false },
         )
-        ZlibGlassBottomSheet(show = form.visible, title = stringResource(TextR.string.text_add_account), onDismiss = viewModel::dismissAdd) {
+        ZlibGlassBottomSheet(
+            show = form.visible && !domainState.showDomainPicker && domainState.pendingMirrorHost == null,
+            title = stringResource(TextR.string.text_add_account),
+            onDismiss = viewModel::dismissAdd,
+        ) {
             Column(Modifier.fillMaxWidth().heightIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                ZlibCurrentDomainCard(domainState.domain, enabled = domainControlsEnabled, onChange = domainViewModel::showDomains)
                 ZlibLoginForm(
                     useCookie = form.useCookie, email = form.email, password = form.password,
                     cookie = form.cookie, busy = form.busy, error = form.error,
-                    enabled = busy == null, addingAccount = true,
+                    enabled = busy == null && !domainState.switchingDomain, addingAccount = true,
                     onEmailChange = viewModel::email, onPasswordChange = viewModel::password,
                     onCookieChange = viewModel::cookie, onSubmit = viewModel::add,
                     onToggleCookie = viewModel::toggleCookie,
                 )
             }
         }
+        ZlibDomainPicker(
+            show = domainState.showDomainPicker && domainState.pendingMirrorHost == null,
+            checks = domainState.checks,
+            currentHost = domainState.domain,
+            busy = domainState.switchingDomain || form.busy || busy != null,
+            error = domainState.domainError,
+            onSelect = domainViewModel::selectDomain,
+            onDismiss = domainViewModel::dismissDomains,
+            onProbe = domainViewModel::probeDomain,
+            onVerify = domainViewModel::selectDomain,
+        )
+        ZlibCommunityMirrorConfirmation(
+            host = domainState.pendingMirrorHost,
+            onConfirm = domainViewModel::confirmCommunityMirror,
+            onDismiss = domainViewModel::dismissCommunityMirror,
+        )
     }
 }

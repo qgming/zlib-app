@@ -40,7 +40,8 @@ class SimilarBooksViewModelTest {
                 }, dispatchers)
                 sessions.save(Session("1", "key", "z-lib.sk"))
                 val api = EapiClient(OkHttpClient(), { server.url("/").toString() }, sessions::current,
-                    dispatchers = dispatchers, baseUrlForHost = { server.url("/").toString() }, maxAttempts = 1)
+                    dispatchers = dispatchers, baseUrlForHost = { server.url("/").toString() }, maxAttempts = 1,
+                    isAllowedUrl = { it.host == server.hostName && it.port == server.port })
                 val viewModel = SimilarBooksViewModel(BookRepository(api, sessions), sessions)
                 server.enqueue(MockResponse().setBody("""{"success":0,"error":"Unavailable"}"""))
                 viewModel.load("7", "abc"); viewModel.load("7", "abc"); advanceUntilIdle()

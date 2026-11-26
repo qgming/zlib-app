@@ -34,7 +34,7 @@ class EapiClientTest {
         server.shutdown()
     }
 
-    private fun client(session: Session? = null, maxAttempts: Int = 4): EapiClient {
+    private fun client(session: Session? = null, maxAttempts: Int = 4, verificationCookie: String? = null): EapiClient {
         val base = server.url("/").toString().trimEnd('/')
         return EapiClient(
             client = OkHttpClient.Builder().build(),
@@ -43,6 +43,8 @@ class EapiClientTest {
             baseUrlForHost = { base },
             sleeper = {},
             maxAttempts = maxAttempts,
+            isAllowedUrl = { it.host == server.hostName && it.port == server.port },
+            verificationCookieProvider = { verificationCookie },
         )
     }
 
@@ -96,6 +98,84 @@ class EapiClientTest {
         server.enqueue(enqueueJson("""{"success":0,"error":"Incorrect email or password"}"""))
         val result = kotlinx.coroutines.runBlocking { client().login("a@b.c", "bad") }
         assertIs<AppError.AuthFailed>(assertIs<AppResult.Failure>(result).error)
+    }
+
+    @Test
+    fun `default transport policy rejects an unapproved origin before creating a request`() {
+        val api = EapiClient(OkHttpClient(), { "https://mirror.example.test" }, { null })
+        val result = kotlinx.coroutines.runBlocking { api.login("a@b.c", "unit-test-password") }
+        assertIs<AppError.DomainBlocked>(assertIs<AppResult.Failure>(result).error)
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun `login reports redirect without submitting again`() {
+        server.enqueue(MockResponse().setResponseCode(307).setHeader("Location", "/eapi/user/login"))
+        val result = kotlinx.coroutines.runBlocking { client().login("a@b.c", "unit-test-password") }
+        assertIs<AppError.DomainBlocked>(assertIs<AppResult.Failure>(result).error)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun `verified EAPI request combines only the challenge cookie and account credentials`() {
+        server.enqueue(enqueueJson("""{"success":1,"user":{"id":7}}"""))
+
+        assertIs<AppResult.Success<*>>(kotlinx.coroutines.runBlocking {
+            client(session(), verificationCookie = "preferences=unused; __diamwall=challenge-token; remix_userkey=foreign")
+                .profile()
+        })
+
+        val request = server.takeRequest()
+        assertEquals("remix_userid=7; remix_userkey=key; __diamwall=challenge-token", request.getHeader("Cookie"))
+        assertEquals("7", request.getHeader(EapiHeaders.REMIX_USER_ID))
+        assertEquals("key", request.getHeader(EapiHeaders.REMIX_USER_KEY))
+    }
+
+    @Test
+    fun `login can use a manual challenge without importing browser account cookies`() {
+        server.enqueue(enqueueJson("""{"success":1,"user":{"id":7,"remix_userkey":"key"}}"""))
+
+        val result = kotlinx.coroutines.runBlocking {
+            client(verificationCookie = "__diamwall=challenge-token; remix_userid=other; remix_userkey=foreign")
+                .login("a@b.c", "unit-test-password")
+        }
+
+        val authenticated = assertIs<AppResult.Success<Session>>(result).value
+        assertEquals(mapOf("remix_userid" to "7", "remix_userkey" to "key"), authenticated.cookies)
+        val request = server.takeRequest()
+        assertEquals("__diamwall=challenge-token", request.getHeader("Cookie"))
+        assertNull(request.getHeader(EapiHeaders.REMIX_USER_ID))
+        assertNull(request.getHeader(EapiHeaders.REMIX_USER_KEY))
+    }
+
+    @Test
+    fun `verification and account cookies cannot follow a foreign origin`() {
+        val destination = MockWebServer().apply { start() }
+        try {
+            server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", destination.url("/eapi/user/profile")))
+
+            val result = kotlinx.coroutines.runBlocking {
+                client(session(), verificationCookie = "__diamwall=challenge-token").profile()
+            }
+
+            assertIs<AppError.DomainBlocked>(assertIs<AppResult.Failure>(result).error)
+            assertEquals(1, server.requestCount)
+            assertEquals(0, destination.requestCount)
+        } finally {
+            destination.shutdown()
+        }
+    }
+
+    @Test
+    fun `EAPI cookies do not follow same origin redirects outside EAPI`() {
+        server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", "/login"))
+
+        val result = kotlinx.coroutines.runBlocking {
+            client(session(), verificationCookie = "__diamwall=challenge-token").profile()
+        }
+
+        assertIs<AppError.DomainBlocked>(assertIs<AppResult.Failure>(result).error)
+        assertEquals(1, server.requestCount)
     }
 
     @Test
@@ -453,6 +533,16 @@ class EapiClientTest {
         server.enqueue(MockResponse().setResponseCode(200).setBody("not json"))
         val result = kotlinx.coroutines.runBlocking { client(session()).profile() }
         assertIs<AppError.Parse>(assertIs<AppResult.Failure>(result).error)
+    }
+
+    @Test
+    fun `search and discovery require a book array but accept an empty array`() = kotlinx.coroutines.runBlocking {
+        server.enqueue(enqueueJson("""{"success":1}"""))
+        assertIs<AppError.Parse>(assertIs<AppResult.Failure>(client().search(SearchQuery("book"))).error)
+        server.enqueue(enqueueJson("""{"success":1,"books":{}}"""))
+        assertIs<AppError.Parse>(assertIs<AppResult.Failure>(client().mostPopular()).error)
+        server.enqueue(enqueueJson("""{"success":1,"books":[]}"""))
+        assertTrue(assertIs<AppResult.Success<BookPage>>(client().search(SearchQuery("book"))).value.books.isEmpty())
     }
 
     @Test

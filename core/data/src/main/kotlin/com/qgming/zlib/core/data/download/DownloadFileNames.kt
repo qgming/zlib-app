@@ -37,7 +37,14 @@ internal object DownloadFileNames {
             ?.let { FileNames.sanitize(it, fallback = "") }
             ?.takeIf { it.isNotBlank() && it != "." && it != ".." }
         val base = fromHeader ?: fromUrl ?: safeFallback
-        val withExtension = FileNames.withExtension(base, extension)
+        val selectedExtension = extension?.trim()?.lowercase()?.takeIf { it.matches(Regex("[a-z0-9]{1,20}")) }
+        val withExtension = if (selectedExtension != null) {
+            val suffix = base.substringAfterLast('.', "")
+            val stem = if (base.indexOf('.') > 0 && suffix.matches(Regex("[a-zA-Z0-9]{1,12}")) &&
+                (fromHeader == null && fromUrl != null || suffix.lowercase() in BOOK_EXTENSIONS)
+            ) base.substringBeforeLast('.') else base
+            if (base.endsWith(".$selectedExtension", ignoreCase = true)) base else "$stem.$selectedExtension"
+        } else base
         return FileNames.sanitize(withExtension, fallback = safeFallback)
     }
 
@@ -69,4 +76,6 @@ internal object DownloadFileNames {
         MessageDigest.getInstance("SHA-256")
             .digest(value.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
+    private val BOOK_EXTENSIONS = setOf("epub", "pdf", "fb2", "mobi", "azw", "azw3", "djvu", "doc", "docx", "rtf", "txt", "cbz", "cbr", "lit", "chm", "html", "htm", "odt")
 }

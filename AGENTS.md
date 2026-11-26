@@ -82,9 +82,11 @@
 
 ### 3.1 EAPI 为主，书单和评论使用限定的 PAPI
 
-只允许 `docs/EAPI.md` 和 `docs/PAPI.md` 已记录的端点。EAPI 处理登录和图书主业务；ADR-084/093/094 只允许通过 PAPI 浏览自己的书单、在详情加入或新建书单、只读查看本书评论，不抓取网页、不执行脚本、不使用 WebView 或绕过验证。ADR-099 已取消书页 HTML 解析与公开书单读取，不保留例外或备用接口。ADR-055/056 允许冷启动及用户手动通过独立无凭据客户端读取 GitHub Releases JSON，并按明确操作下载本项目 APK；不得复用 EAPI 会话／Cookie 或将 GitHub 加入图书域名 allowlist。
+只允许 `docs/EAPI.md` 和 `docs/PAPI.md` 已记录的端点。EAPI 处理登录和图书主业务；ADR-084/093/094 只允许通过 PAPI 浏览自己的书单、在详情加入或新建书单、只读查看本书评论，不抓取网页、不执行脚本、不使用 WebView 或绕过验证。ADR-099 已取消书页 HTML 解析与公开书单读取。独立预览与用户手动人机验证仅限以下明确的 WebView 例外，不作为其它数据接口或网页登录的备用通道。ADR-055/056 允许冷启动及用户手动通过独立无凭据客户端读取 GitHub Releases JSON，并按明确操作下载本项目 APK；不得复用 EAPI 会话／Cookie 或将 GitHub 加入图书域名 allowlist。
 
 ADR-088/091 仅允许独立预览页用 WebView 渲染原站阅读页。进入或刷新时从当前镜像的 EAPI 详情实时取链接，不改写签名或主机；不注入 `remix_userid` / `remix_userkey` 或任何账号 Cookie，不限制阅读器页面及其资源 CDN 域名，预览退出清空 Cookie。预览页不参与玻璃背景采样，避免 WebView 被 `layerBackdrop` 反复捕获造成闪烁。不抓网页提取数据，不恢复网页登录。
+
+ADR-108 另允许已授权且被标记为人机验证的域名打开非导出的独立进程验证页。仅访问所选精确主机的标准 HTTPS，由用户手动完成挑战；不注入、读取或回传账号 Cookie，不自动求解。完成后仅将有界 `__diamwall` 验证 Cookie 交回主进程，按精确主机和当前网络在内存保存最多 15 分钟，只用于同域 EAPI／匿名体检；不流向 PAPI、图片、预览、下载 CDN 或 GitHub。重新体检原主机成功才切换，退出清理隔离网页 Cookie。
 
 ### 3.2 域名 allowlist
 
@@ -92,30 +94,32 @@ ADR-088/091 仅允许独立预览页用 WebView 渲染原站阅读页。进入�
 
 ```
 1lib.sk, article.sk, articles.sk, z-lib.by, z-lib.fm, z-lib.gd, z-lib.gl,
-z-lib.sk, z-library.ec, z-library.im, z-library.qa, z-library.sk,
+z-lib.sk, z-library.ec, z-library.gy, z-library.im, z-library.qa, z-library.sk,
 z-library.website, z101.by, zlib.bz, zlib.re
 ```
 
 - 禁止 `http://`、端口、路径、查询串、userinfo、IP、单标签主机。
 - 用户镜像只信任精确 host，不扩展到子域。
-- 默认首次启动探测 16 个域名，顺序即切换优先级：直连返回 EAPI JSON 的域名在前（`zlib.bz`、`zlib.re`、`z101.by`、`z-lib.by`、`z-lib.gd`、`z-lib.gl`、`z-library.ec`、`z-library.qa`、`z-library.website`、`article.sk`、`articles.sk`），DiamWall 人机验证域名（`z-library.im`、`z-lib.sk`、`z-library.sk`、`1lib.sk`）与证书过期的 `z-lib.fm` 在后；超时 10s；**不做后台常驻探测**。
-- 内置域名可 301/302/307 到 allowlist 之外的 host（如 `zlib.re → z-lib.by`、`z-lib.by → zh.z101.by`）。ADR-065 允许跟随该跳转，但必须先无凭据探测目标的 `/eapi/info/domains`：只有 `success:1` 且 `domains` 含已知域名家族时才把**精确 host** 加入会话内运行时 allowlist 并作为当前域名使用；未通过校验的跳转目标永远不接收 Cookie／remix 凭据，重启后必须重新校验。
-- DiamWall 域名首次命中返回 `307` 自重定向 + `Server: DiamWall` + `Set-Cookie: __diamwall=…`；浏览器靠 JS 挑战通过，本客户端不做绕过，体检按 `DIAMWALL` 呈现，不自动切换为当前域名。
+- 默认首次启动探测 17 个官方域名，顺序即切换优先级：能返回 EAPI JSON 的域名在前（`zlib.bz`、`zlib.re`、`z101.by`、`z-lib.by`、`z-lib.gd`、`z-lib.gl`、`z-library.ec`、`z-library.gy`、`z-library.qa`、`z-library.website`、`article.sk`、`articles.sk`），DiamWall 人机验证域名（`z-library.im`、`z-lib.sk`、`z-library.sk`、`1lib.sk`）与证书异常的 `z-lib.fm` 在后；超时 10s；**不做后台常驻探测**。
+- ADR-102：体检可以匿名探测跳转目标的标准 HTTPS `/eapi/info/domains`，但域名家族的自报结果只说明接口兼容。已允许的目标可作为切换候选；其它发现域必须经用户明确添加，不能因体检通过或旧版曾锁定就接收 Cookie／remix 凭据或密码。
+- ADR-107 取代 ADR-106 的候选界面：直接内置 17 个官方与 34 个社区镜像，两组卡片均可体检、选择。社区首次选择只需确认精确主机授权，不必输入添加；撤销授权保留卡片。用户手动全部体检覆盖完整目录；启动／自动恢复仅探测官方与已批准镜像。社区目录不扩充可信后缀，匿名成功不授信，来源及双线路复测见 `docs/MIRROR_AUDIT.md`。
+- DiamWall 域名首次命中返回 `307` 自重定向 + `Server: DiamWall` + `Set-Cookie: __diamwall=…`，体检按 `DIAMWALL` 呈现。用户可点击进入 ADR-108 的隔离网页验证；验证失败不改变当前选择，不自动切换为当前域名。
 
 ### 3.3 凭据
 
 - 只持久化 `remix_userid` / `remix_userkey`（以及必要的 Cookie），用 Android Keystore 加密；**密码绝不落盘**。
 - EAPI 请求同时带 Cookie 与 `remix-userid` / `remix-userkey` 头。
 - PAPI 只把当前会话的 `remix_userid` / `remix_userkey` 作为 Cookie 发送给当前受信任 HTTPS 主机，不跟随重定向、不接受验证 Cookie，不因书单或评论请求拒绝而使 EAPI 会话失效；图片请求不带凭据。仅 ADR-096 限定的读取允许暂时性失败后自动重试，写入绝不自动重发。
-- **绝不**把凭据发给 allowlist 之外的 host。下载 302 到 CDN 时，必须剥离 `Cookie`、`remix-userid`、`remix-userkey`；跨 host 重定向同样剥离。
+- **绝不**把凭据发给 allowlist 之外的 host 或转发到另一个来源。发送前校验 HTTPS 协议、主机、标准端口且无 userinfo；密码请求不跟随跳转。下载转入 CDN 或跟随 JSON 文件链接时切至无凭据通道，跳转不恢复 `Cookie`、`remix-userid`、`remix-userkey`。
 - 日志、崩溃信息、Analytics 中不得出现 Cookie、密码、remix key、完整下载 URL 的签名参数。禁止接入任何统计 SDK。
 - 登录只保留邮箱密码和 Cookie 导入；不向 WebView 写入或从中导入账号 Cookie（ADR-052/088）。
+- ADR-105：手动检查更新与日志的连接失败／明确限流使用短 Toast「网络环境异常，请关闭或开启 VPN 后重试。」；启动失败静默。更新客户端只读取系统默认网络标识来区分限流等待，服务端等待时间在同一网络继续有效；网络变化不自动请求，缓存不能作为最新或可下载的依据。
 
 ### 3.4 会话
 
 - 多账号保存加密会话，只激活一个当前账号，密码不落盘。退出指定账号清理其内存/加密会话，不清除其它账号；切换前暂停并等待当前写入停止。旧版单会话不兼容、不迁移，见 ADR-051/052。
 - 额度耗尽自动切换默认关闭；显式开启后，仅明确额度错误且 profile 确认已耗尽时检查其它账号，只选择有效且剩余额度已知大于 0 的会话，每任务每账号至多一次。认证、网络及风控错误不轮换，无可用账号时暂停剩余队列；不承诺平台不会限制多账号。
-- 400 `Invalid credentials` / `Please login` 视为会话过期：当前域自动重试一次，再提示重新登录。
+- 400 `Invalid credentials` / `Please login` 视为会话过期：允许重试的读取在当前域重试一次，再提示重新登录；单次写入不重发。CDN 的通用 401/403 不能判定账号过期。
 - 登录端点对部分账号会返回 `Authorization failed`；必须保留 Cookie 导入通道。
 
 ---
@@ -136,10 +140,10 @@ z-library.website, z101.by, zlib.bz, zlib.re
 
 ## 5. 下载与存储
 
-- 只写用户通过 SAF 选择的目录树；持久化 URI 权限。`.part` 与最终文件同目录，完成后原子 rename；Provider 不支持 rename 时 copy+delete。
+- 只写用户通过 SAF 选择的目录树；持久化 URI 权限。`.part` 与最终文件同目录；先记录待交付文件及完整性证据，再 rename 或 copy+delete。进程恢复先核对交付记录；未确认完成的目标不进书架（ADR-103）。
 - 队列顺序执行，并发固定 **1**；暂停/取消/恢复必须跨进程存活（Room 持久化）。
-- 前台 `Service`（`dataSync`）+ 通知；Android 13+ 处理 `POST_NOTIFICATIONS`，Android 14+ 声明前台服务类型。
-- 续传：`Range: bytes=<written>-`；服务端返回 206 才继续，200 则重新开始；不支持 Range 时清空 `.part` 重下。
+- 前台 `Service`（`dataSync`）+ 通知；Android 13+ 处理 `POST_NOTIFICATIONS`，Android 14+ 声明前台服务类型；受限或超时时停止并保留用户可恢复的任务状态。
+- 续传：仅对确认是同一资源的强验证器使用 `Range` 与 `If-Range`；206 须校验来源、验证器、范围及长度，200 从零写入。没有验证器或无法确认资源同一时不得拼接。
 - 配额：从 `/eapi/user/profile` 读 `daily_amount` / `daily_allowed` / `daily_remaining`；配额错误不自动重试，显示重置提示。
 - 重试：仅网络错误、502/503/504，指数退避（1s/2s/4s），最多 3 次；其它 4xx 不重试。
 - 下载完成后写入 Room，并触发媒体扫描/分享 URI（`FileProvider`）。不要用 MediaStore 双写。
@@ -183,7 +187,7 @@ z-library.website, z101.by, zlib.bz, zlib.re
 ### 6.3 DI 与持久化
 
 - 使用 Hilt + Room + KSP；工具链 spike 已通过并在当前代码落地，不再保留手写 `AppContainer` 回退计划，不混用第二套 DI。
-- Z-Library 服务端是“我的图书馆”（云端已下载、收藏、书单）的数据真相；Room 保存下载队列、续传进度及已知文件元信息。本机文件列表以 SAF 当前下载目录及子目录扫描为准，按 URI 关联 Room 元信息；可见期间监听变化并每 3 秒核对，离开停止，外部删除后移除，拒绝旧目录选择操作。云端数据如需缓存，必须按账号隔离并可重新拉取，不建立独立本地书单或收藏标记；DataStore 存设置与会话；Keystore 存凭据。
+- Z-Library 服务端是“我的图书馆”（云端已下载、收藏、书单）的数据真相；Room 保存下载队列、续传进度及已知文件元信息。本机文件列表以 SAF 当前下载目录及子目录扫描为准，按 URI 关联 Room 元信息；仅可见期间监听变化与定时核对，排除未交付文件，按精确 URI 重验操作对象，拒绝旧目录选择。云端数据如需缓存，必须按账号隔离并可重新拉取，不建立独立本地书单或收藏标记；DataStore 存设置与会话；Keystore 存凭据。
 - 迁移必须写 `Migration` + 测试；禁止 `fallbackToDestructiveMigration` 进 release。
 - 所有 IO 在 `Dispatchers.IO`；下载在 Service 的独立 scope；UI 只收集 Flow。
 

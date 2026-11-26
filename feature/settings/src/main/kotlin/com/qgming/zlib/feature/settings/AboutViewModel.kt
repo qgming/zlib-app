@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qgming.zlib.core.common.AppError
 import com.qgming.zlib.core.common.AppResult
+import com.qgming.zlib.core.common.errorOrNull
+import com.qgming.zlib.core.common.getOrNull
 import com.qgming.zlib.core.data.update.AppUpdateRepository
 import com.qgming.zlib.core.data.update.UpdateDownloadManager
 import com.qgming.zlib.core.data.update.UpdateDownloadPhase
@@ -19,8 +21,18 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
-enum class UpdateFailure { Network, RateLimit, Response }
-enum class AboutUpdateEvent { AlreadyCurrent }
+enum class UpdateFailure { NetworkEnvironment, Response }
+enum class AboutUpdateEvent { AlreadyCurrent, NetworkEnvironment }
+
+internal fun AppError.updateFailure(): UpdateFailure = when (this) {
+    is AppError.Network -> UpdateFailure.NetworkEnvironment
+    is AppError.Server -> if (code == 429 || (code == 403 && retryAtEpochMillis != null)) {
+        UpdateFailure.NetworkEnvironment
+    } else {
+        UpdateFailure.Response
+    }
+    else -> UpdateFailure.Response
+}
 
 data class AboutUpdateState(
     val visible: Boolean = false,
@@ -78,19 +90,20 @@ class AboutViewModel internal constructor(
         _update.value = AboutUpdateState(checking = true)
         request = viewModelScope.launch {
             try {
-                _update.value = when (val result = check(version)) {
-                    is AppResult.Success -> AboutUpdateState(
-                        visible = result.value !is UpdateCheckResult.Current &&
-                            (manualCheckRequested || result.value is UpdateCheckResult.Available),
-                        result = result.value,
-                    )
-                    is AppResult.Failure -> AboutUpdateState(visible = manualCheckRequested, failure = when (val error = result.error) {
-                        is AppError.Network -> UpdateFailure.Network
-                        is AppError.Server -> if (error.code == 403 || error.code == 429) UpdateFailure.RateLimit else UpdateFailure.Response
-                        else -> UpdateFailure.Response
-                    })
+                val response = check(version)
+                val result = response.getOrNull()
+                val failure = (response.errorOrNull() ?: (result as? UpdateCheckResult.Cached)?.failure)?.updateFailure()
+                if (failure == UpdateFailure.NetworkEnvironment) {
+                    _update.value = AboutUpdateState()
+                    if (manualCheckRequested) _events.send(AboutUpdateEvent.NetworkEnvironment)
+                    return@launch
                 }
-                if (manualCheckRequested && _update.value.result is UpdateCheckResult.Current) {
+                _update.value = AboutUpdateState(
+                    visible = result is UpdateCheckResult.Available || (manualCheckRequested && result !is UpdateCheckResult.Current),
+                    result = result,
+                    failure = failure,
+                )
+                if (manualCheckRequested && result is UpdateCheckResult.Current) {
                     _events.send(AboutUpdateEvent.AlreadyCurrent)
                 }
             } catch (cancellation: CancellationException) {

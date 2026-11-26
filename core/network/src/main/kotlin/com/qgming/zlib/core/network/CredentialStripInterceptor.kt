@@ -6,7 +6,7 @@ import okhttp3.Response
 
 /**
  * Strips credentials on every network hop that either leaves the allowlist or crosses to a
- * different host (including CDN redirects). Registered as a *network* interceptor so it also
+ * different origin (including CDN redirects). Registered as a *network* interceptor so it also
  * sees redirect follow-ups, which application interceptors do not.
  *
  * See AGENTS.md §3.3 and docs/TESTING.md §2.1.
@@ -18,9 +18,8 @@ class CredentialStripInterceptor(
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        val originHost = chain.call().request().url.host
-        val targetHost = request.url.host
-        if ((!requireHttps || request.url.isHttps) && targetHost == originHost && isAllowedUrl(request.url)) {
+        val initial = chain.call().request().url
+        if ((!requireHttps || DomainPolicy.isStandardHttps(request.url)) && request.url.hasSameOrigin(initial) && isAllowedUrl(request.url)) {
             return chain.proceed(request)
         }
         val clean = request.newBuilder()

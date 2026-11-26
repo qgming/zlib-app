@@ -1,7 +1,6 @@
 package com.qgming.zlib.core.designsystem
 
 import androidx.compose.ui.res.stringResource
-import com.qgming.zlib.core.common.appText
 import com.qgming.zlib.core.common.R as TextR
 
 import androidx.compose.foundation.combinedClickable
@@ -13,8 +12,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -27,6 +26,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.qgming.zlib.core.common.DomainStatus
 import com.qgming.zlib.core.model.DomainCheck
+import com.qgming.zlib.core.model.DomainGroup
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -82,17 +82,22 @@ fun ZlibDomainCard(
     onSelect: () -> Unit,
     onProbe: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
+    onVerify: (() -> Unit)? = null,
 ) {
     val colors = MiuixTheme.colorScheme
+    val needsVerification = check.status == DomainStatus.DIAMWALL || check.status == DomainStatus.CHALLENGED
+    val action = if (needsVerification && onVerify != null) onVerify else onSelect
+    val actionDescription = if (needsVerification) stringResource(TextR.string.text_verify_domain, check.host)
+        else stringResource(TextR.string.text_switch_to, check.host)
     val interaction = if (onLongClick != null) Modifier.combinedClickable(
         enabled = enabled, role = Role.Button,
-        onClickLabel = stringResource(TextR.string.text_switch_to, check.host), onLongClickLabel = stringResource(TextR.string.text_domain_actions),
-        onClick = onSelect, onLongClick = onLongClick,
+        onClickLabel = actionDescription, onLongClickLabel = stringResource(TextR.string.text_domain_actions),
+        onClick = action, onLongClick = onLongClick,
     ) else Modifier
     ZlibCard(
         modifier = interaction.semantics { selected = current },
         cornerRadius = 24.dp,
-        onClick = if (onLongClick == null && enabled) onSelect else null,
+        onClick = if (onLongClick == null && enabled) action else null,
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -108,9 +113,9 @@ fun ZlibDomainCard(
                 }
             }
             DomainIconButton(
-                icon = if (current) MiuixIcons.Glass.Normal.Ok else MiuixIcons.Glass.Normal.Replace,
-                description = if (current) stringResource(TextR.string.text_current_domain_2, check.host) else stringResource(TextR.string.text_switch_to, check.host),
-                enabled = enabled && !current, onClick = onSelect,
+                icon = if (current && !needsVerification) MiuixIcons.Glass.Normal.Ok else MiuixIcons.Glass.Normal.Replace,
+                description = if (current && !needsVerification) stringResource(TextR.string.text_current_domain_2, check.host) else actionDescription,
+                enabled = enabled && (!current || needsVerification), onClick = action,
             )
             if (onProbe != null) {
                 if (check.status == DomainStatus.PROBING) {
@@ -132,38 +137,94 @@ fun ZlibDomainPicker(
     error: String?,
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit,
+    onProbe: ((String) -> Unit)? = null,
+    onVerify: ((String) -> Unit)? = null,
 ) {
     ZlibGlassBottomSheet(show = show, title = stringResource(TextR.string.text_switch_domain), onDismiss = onDismiss) {
-        Column(
-            Modifier.fillMaxWidth().heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
+        LazyColumn(
+            Modifier.fillMaxWidth().heightIn(max = 480.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            error?.let { Text(it, style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.error) }
-            if (busy) ZlibLoadingStatus(stringResource(TextR.string.text_switching_domain))
-            checks.forEach { check ->
-                ZlibDomainCard(check, check.host == currentHost, enabled = !busy, onSelect = { onSelect(check.host) })
+            if (error != null) {
+                item("error") { Text(error, style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.error) }
+            }
+            if (busy) {
+                item("loading") { ZlibLoadingStatus(stringResource(TextR.string.text_switching_domain)) }
+            }
+            DomainGroup.entries.forEach { group ->
+                val groupChecks = checks.filter { it.group == group }
+                if (groupChecks.isNotEmpty()) {
+                    item("group:$group") { ZlibDomainGroupHeading(group) }
+                    items(groupChecks, key = { it.host }) { check ->
+                        ZlibDomainCard(
+                            check = check, current = check.host == currentHost, enabled = !busy,
+                            onSelect = { onSelect(check.host) },
+                            onProbe = onProbe?.let { probe -> { probe(check.host) } },
+                            onVerify = onVerify?.let { verify -> { verify(check.host) } },
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-fun ZlibAddDomainForm(host: String, busy: Boolean, error: String?, onHostChange: (String) -> Unit, onSubmit: () -> Unit) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        TextField(
-            value = host, onValueChange = onHostChange, label = stringResource(TextR.string.text_domain_e_g_mirror_example_org),
-            singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(),
-        )
-        Text(
-            stringResource(TextR.string.text_enter_a_trusted_https_hostname_without_a_path_port_or_ip_address),
-            style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-        )
-        error?.let { Text(it, style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.error) }
-        if (busy) ZlibLoadingStatus(stringResource(TextR.string.text_adding_and_checking))
+fun ZlibAddDomainForm(
+    host: String,
+    busy: Boolean,
+    error: String?,
+    onHostChange: (String) -> Unit,
+    onSubmit: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().heightIn(max = 480.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        LazyColumn(
+            modifier = Modifier.weight(1f, fill = false).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item("form") {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    TextField(
+                        value = host, onValueChange = onHostChange, label = stringResource(TextR.string.text_domain_e_g_mirror_example_org),
+                        singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        stringResource(TextR.string.text_enter_a_trusted_https_hostname_without_a_path_port_or_ip_address),
+                        style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
+                    Text(
+                        stringResource(TextR.string.text_optional_mirror_credential_warning),
+                        style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
+                    error?.let { Text(it, style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.error) }
+                    if (busy) ZlibLoadingStatus(stringResource(TextR.string.text_adding_and_checking))
+                }
+            }
+        }
         Button(onClick = onSubmit, enabled = !busy && host.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(TextR.string.text_add_domain))
         }
     }
+}
+
+@Composable
+fun ZlibDomainGroupHeading(group: DomainGroup) {
+    ZlibSectionTitle(stringResource(when (group) {
+        DomainGroup.OFFICIAL -> TextR.string.text_official_mirrors
+        DomainGroup.COMMUNITY -> TextR.string.text_community_mirrors
+    }))
+}
+
+@Composable
+fun ZlibCommunityMirrorConfirmation(host: String?, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    ZlibConfirmDialog(
+        show = host != null,
+        title = stringResource(TextR.string.text_trust_community_mirror),
+        summary = stringResource(TextR.string.text_confirm_community_mirror, host.orEmpty()),
+        confirmLabel = stringResource(TextR.string.text_trust_and_switch_domain),
+        onDismiss = onDismiss,
+        onConfirm = onConfirm,
+    )
 }
 
 @Composable

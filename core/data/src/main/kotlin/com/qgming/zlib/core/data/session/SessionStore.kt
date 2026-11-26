@@ -11,11 +11,11 @@ import com.qgming.zlib.core.common.AppDispatchers
 import com.qgming.zlib.core.data.crypto.SecretCipher
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
+import java.security.GeneralSecurityException
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
 private val Context.sessionDataStore: DataStore<Preferences> by preferencesDataStore(name = "zlib_session")
@@ -34,10 +34,21 @@ class DataStoreSessionStore @Inject constructor(
 ) : SessionStore {
     private val dataStore = context.sessionDataStore
     private val codec = SessionVaultCodec(cipher)
-    private val vault = dataStore.data
-        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
-        .map { prefs -> codec.decode(prefs[VAULT_BLOB]) }
-    override suspend fun readVault(): SessionVault = withContext(dispatchers.io) { vault.first() }
+    override suspend fun readVault(): SessionVault = withContext(dispatchers.io) {
+        val encoded = dataStore.data.catch { if (it is IOException) emit(emptyPreferences()) else throw it }.first()[VAULT_BLOB]
+        val decoded = codec.decodeForMigration(encoded)
+        if (decoded.needsRewrite) {
+            try {
+                val replacement = codec.encode(decoded.vault)
+                dataStore.edit { if (it[VAULT_BLOB] == encoded) it[VAULT_BLOB] = replacement }
+            } catch (_: IOException) {
+                Unit
+            } catch (_: GeneralSecurityException) {
+                Unit
+            }
+        }
+        decoded.vault
+    }
     override suspend fun saveVault(vault: SessionVault) = withContext(dispatchers.io) {
         val encoded = codec.encode(vault)
         dataStore.edit { it[VAULT_BLOB] = encoded; it.remove(SESSION_BLOB) }

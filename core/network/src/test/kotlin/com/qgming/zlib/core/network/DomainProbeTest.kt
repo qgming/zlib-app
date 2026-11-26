@@ -9,6 +9,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
+import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
@@ -22,6 +23,7 @@ class DomainProbeTest {
         allowed: (String) -> Boolean = { it == "probe.test" },
         trusted: (String) -> Boolean = allowed,
         followForeignRedirects: Boolean = true,
+        verificationCookieProvider: (HttpUrl) -> String? = { null },
     ): DomainProbe {
         val base = server.url("/").toString().trimEnd('/')
         return DomainProbe(
@@ -32,6 +34,7 @@ class DomainProbeTest {
             requireHttps = false,
             timeoutMillis = 5_000,
             followForeignRedirects = followForeignRedirects,
+            verificationCookieProvider = verificationCookieProvider,
         )
     }
 
@@ -56,6 +59,48 @@ class DomainProbeTest {
             assertEquals(DomainStatus.HEALTHY, check.status)
             assertEquals("probe.test", check.host)
             assertEquals("/eapi/info/domains", server.takeRequest().path)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `catalog hosts accept valid empty domain arrays without granting unknown hosts the same trust`() {
+        val server = MockWebServer().apply {
+            repeat(2) { enqueue(MockResponse().setBody("""{"success":1,"domains":[]}""")) }
+            start()
+        }
+        try {
+            assertEquals(DomainStatus.HEALTHY, runProbe(server).status)
+            assertEquals(DomainStatus.INVALID, runProbe(server, trusted = { false }).status)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `manual challenge cookie is anonymous and never restored after a foreign redirect`() {
+        val server = MockWebServer().apply {
+            enqueue(MockResponse().setResponseCode(302).setHeader("Location", "https://other.test/"))
+            enqueue(MockResponse().setBody("""{"success":1,"domains":["z-lib.gd"]}"""))
+            start()
+        }
+        try {
+            var cookieRequests = 0
+            val probe = probeOn(server, verificationCookieProvider = {
+                cookieRequests++
+                "remix_userid=foreign; __diamwall=challenge-token; preferences=unused"
+            })
+            assertEquals(DomainStatus.HEALTHY, runBlocking { probe.probe("probe.test") }.status)
+            val initial = server.takeRequest()
+            assertEquals("__diamwall=challenge-token", initial.getHeader("Cookie"))
+            assertNull(initial.getHeader(EapiHeaders.REMIX_USER_ID))
+            assertNull(initial.getHeader(EapiHeaders.REMIX_USER_KEY))
+            val redirected = server.takeRequest()
+            assertNull(redirected.getHeader("Cookie"))
+            assertNull(redirected.getHeader(EapiHeaders.REMIX_USER_ID))
+            assertNull(redirected.getHeader(EapiHeaders.REMIX_USER_KEY))
+            assertEquals(1, cookieRequests)
         } finally {
             server.shutdown()
         }
@@ -158,7 +203,7 @@ class DomainProbeTest {
     fun `verified foreign redirect target is reported on the redirector`() {
         val server = MockWebServer().apply {
             dispatcher = scriptedDispatcher(
-                MockResponse().setResponseCode(302).setHeader("Location", "https://other.test/"),
+                MockResponse().setResponseCode(302).setHeader("Location", "https://other.test/welcome"),
                 MockResponse().setHeader("Content-Type", "application/json").setBody(
                     """{"success":1,"domains":[{"domain":"z-library.sk"},{"domain":"1lib.sk"}]}""",
                 ),
@@ -170,7 +215,10 @@ class DomainProbeTest {
             assertEquals(DomainStatus.HEALTHY, check.status)
             assertEquals("probe.test", check.host)
             assertEquals("other.test", check.redirectTarget)
+            assertEquals("other.test", check.finalHost)
             assertTrue(check.detail.contains("other.test"))
+            assertEquals("/eapi/info/domains", server.takeRequest().path)
+            assertEquals("/eapi/info/domains", server.takeRequest().path)
         } finally {
             server.shutdown()
         }
@@ -318,5 +366,34 @@ class DomainProbeTest {
 
         val missing = CookieImporter.parse("""{"remix_userid":"1"}""")
         assertIs<AppError.Parse>(assertIs<AppResult.Failure>(missing).error)
+    }
+
+    @Test
+    fun `cookie importer reads HttpOnly rows and retains only one required pair`() {
+        val netscape = listOf(
+            "#HttpOnly_.z-lib.gd\tTRUE\t/\tTRUE\t0\tremix_userid\t7",
+            "#HttpOnly_.z-lib.gd\tTRUE\t/\tTRUE\t0\tremix_user_key\tunit-key",
+            ".z-lib.gd\tTRUE\t/\tTRUE\t0\tpreferences\tunused",
+        ).joinToString("\n")
+        val imported = assertIs<AppResult.Success<CookieImporter.ImportedCookies>>(
+            CookieImporter.parse(netscape, expectedHost = "zh.z-lib.gd"),
+        ).value
+        assertEquals(mapOf("remix_userid" to "7", "remix_userkey" to "unit-key"), imported.cookies)
+    }
+
+    @Test
+    fun `cookie importer honors domain scope in browser exports`() {
+        val exported = """{"cookies":[
+            {"name":"remix_userid","value":"8","domain":".z-lib.gd"},
+            {"name":"remix_userkey","value":"unit-key","domain":".z-lib.gd"},
+            {"name":"remix_userid","value":"12","domain":"other.test"},
+            {"name":"preferences","value":"unused","domain":".z-lib.gd"}
+        ]}"""
+        val imported = assertIs<AppResult.Success<CookieImporter.ImportedCookies>>(
+            CookieImporter.parse(exported, expectedHost = "zh.z-lib.gd"),
+        ).value
+        assertEquals(mapOf("remix_userid" to "8", "remix_userkey" to "unit-key"), imported.cookies)
+        assertIs<AppResult.Failure>(CookieImporter.parse(exported, expectedHost = "other.test"))
+        assertIs<AppResult.Failure>(CookieImporter.parse(exported, expectedHost = "zlib.bz"))
     }
 }

@@ -17,12 +17,17 @@ import kotlin.test.assertNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class BookPreviewViewModelTest {
@@ -35,7 +40,7 @@ class BookPreviewViewModelTest {
             requested += domain
             AppResult.Success(preview(domain, requested.size))
         }
-        val viewModel = BookPreviewViewModel(sessions, resolve)
+        val viewModel = BookPreviewViewModel(sessions, resolve = resolve)
         try {
             viewModel.open("7", "abc")
             viewModel.open("7", "abc")
@@ -51,12 +56,14 @@ class BookPreviewViewModelTest {
             assertEquals(preview("zlib.bz", 2).readerUrl, viewModel.currentPreview()?.readerUrl)
 
             sessions.updateDomain(assertNotNull(sessions.current()), "zh.z-lib.by")
-            assertEquals(preview("zlib.bz", 2).readerUrl, viewModel.currentPreview()?.readerUrl)
+            assertNull(viewModel.currentPreview())
+            runCurrent()
+            assertEquals(BookPreviewState.SourceChanged, viewModel.state.value)
             viewModel.refresh("7", "abc")
             advanceUntilIdle()
             assertEquals(preview("zh.z-lib.by", 3).readerUrl, viewModel.currentPreview()?.readerUrl)
 
-            val reopened = BookPreviewViewModel(sessions, resolve)
+            val reopened = BookPreviewViewModel(sessions, resolve = resolve)
             try {
                 reopened.open("7", "abc")
                 advanceUntilIdle()
@@ -66,6 +73,29 @@ class BookPreviewViewModelTest {
                 reopened.viewModelScope.cancel()
             }
         } finally {
+            viewModel.viewModelScope.cancel()
+        }
+    }
+
+    @Test
+    fun `late response is discarded even when cancellation cannot stop it immediately`() = withSessions { sessions ->
+        val response = CompletableDeferred<Unit>()
+        val hosts = MutableStateFlow<String?>("zlib.bz")
+        val viewModel = BookPreviewViewModel(sessions, hosts) { _, _, _ ->
+            withContext(NonCancellable) { response.await() }
+            AppResult.Success(preview("zlib.bz", 1))
+        }
+        try {
+            viewModel.open("7", "abc")
+            runCurrent()
+            hosts.value = "zh.z-lib.by"
+            runCurrent()
+            response.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(BookPreviewState.SourceChanged, viewModel.state.value)
+            assertNull(viewModel.currentPreview())
+        } finally {
+            response.complete(Unit)
             viewModel.viewModelScope.cancel()
         }
     }

@@ -1,8 +1,11 @@
 package com.qgming.zlib.core.network
 
+import com.qgming.zlib.core.common.AppError
 import com.qgming.zlib.core.common.AppResult
 import com.qgming.zlib.core.model.OnlineBookPreview
 import com.qgming.zlib.core.model.Session
+import java.net.InetAddress
+import java.net.Proxy
 import java.util.Collections
 import java.util.concurrent.TimeUnit
 import kotlin.test.Test
@@ -76,17 +79,22 @@ class OnlineBookPreviewTest {
     }
 
     @Test
-    fun `the response host does not restrict the signed reader link`() {
+    fun `unexpected detail response origin cannot supply a preview link`() {
         withServer(listOf("z-lib.gd"), responseHost = "z-library.ec") { server, eapi ->
             server.enqueue(json(detailBody()))
 
-            val preview = assertNotNull(resolved(eapi, "z-lib.gd"))
-            assertEquals(
-                "https://reader.z-lib.gd/read/123/abcd12?expires=1764000000&sign=default%2Fsign",
-                preview.readerUrl,
-            )
-            assertEquals("https://z-library.ec/book/123/abcd12", preview.publicBookUrl)
+            val result = eapi.resolveOnlinePreview("123", "abcd12", session("z-lib.gd"))
+            assertIs<AppError.DomainBlocked>(assertIs<AppResult.Failure>(result).error)
             assertEquals("/eapi/book/123/abcd12", assertNotNull(server.takeRequest(2, TimeUnit.SECONDS)).path)
+        }
+    }
+
+    @Test
+    fun `approved mirror detail can link to another HTTPS reader service`() {
+        withServer(listOf("z-lib.gd")) { server, eapi ->
+            val reader = "https://books.reader.test/read/123/abcd12"
+            server.enqueue(json(detailBody(readerUrl = reader)))
+            assertEquals(reader, assertNotNull(resolved(eapi, "z-lib.gd")).readerUrl)
         }
     }
 
@@ -119,23 +127,22 @@ class OnlineBookPreviewTest {
     ) = runBlocking {
         MockWebServer().use { server ->
             val requestedHosts = Collections.synchronizedList(mutableListOf<String>())
-            val http = OkHttpClient.Builder().addInterceptor { chain ->
+            val loopback = InetAddress.getByName(server.hostName)
+            val http = OkHttpClient.Builder().proxy(Proxy.NO_PROXY).dns { listOf(loopback) }.addInterceptor { chain ->
                 val original = chain.request()
-                assertTrue(original.url.isHttps)
                 requestedHosts.add(original.url.host)
-                val path = original.url.encodedPath + (original.url.encodedQuery?.let { "?$it" } ?: "")
-                val response = chain.proceed(original.newBuilder().url(server.url(path)).build())
-                val restored = responseHost?.let { host ->
-                    original.newBuilder().url(original.url.newBuilder().host(host).build()).build()
-                } ?: original
-                response.newBuilder().request(restored).build()
+                val response = chain.proceed(original)
+                if (responseHost == null) response else response.newBuilder()
+                    .request(original.newBuilder().url(original.url.newBuilder().host(responseHost).build()).build()).build()
             }.build()
             val eapi = EapiClient(
                 client = http,
-                baseUrlProvider = { "https://z-library.qa" },
+                baseUrlProvider = { server.url("/").newBuilder().host("z-library.qa").build().toString() },
                 sessionProvider = { null },
+                baseUrlForHost = { server.url("/").newBuilder().host(it).build().toString() },
                 sleeper = {},
                 maxAttempts = 1,
+                isAllowedUrl = { it.port == server.port && (it.host in expectedHosts || it.host == "z-library.qa") },
             )
             block(server, eapi)
             assertEquals(expectedHosts, requestedHosts)

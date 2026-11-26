@@ -41,6 +41,14 @@
             android:exported="false"
             android:theme="@style/Theme.Zlib" />
 
+        <activity
+            android:name=".domain.DomainVerificationActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden"
+            android:exported="false"
+            android:process=":domain_verification"
+            android:theme="@style/Theme.Zlib"
+            android:windowSoftInputMode="adjustResize" />
+
         <provider
             android:name=".share.ShareImageProvider"
             android:authorities="${applicationId}.share-images"

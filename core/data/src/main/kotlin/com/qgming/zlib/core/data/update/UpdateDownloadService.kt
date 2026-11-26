@@ -12,6 +12,7 @@ import androidx.core.app.NotificationCompat
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -23,7 +24,10 @@ class UpdateDownloadService : Service() {
     @Inject lateinit var downloads: UpdateDownloadManager
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var job: Job? = null
+    private var activeAttempt = 0L
+    private var pendingAttempt = 0L
     private var latestStartId = 0
+    private var stopping = false
     private val notifications get() = getSystemService(NotificationManager::class.java)
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -31,31 +35,79 @@ class UpdateDownloadService : Service() {
     override fun onCreate() {
         super.onCreate()
         notifications.createNotificationChannel(NotificationChannel(CHANNEL, getString(com.qgming.zlib.core.data.R.string.update_notification_channel), NotificationManager.IMPORTANCE_LOW))
+        scope.launch {
+            downloads.state.collect { state ->
+                if (!stopping && downloads.isBusy(activeAttempt)) {
+                    runCatching { notifications.notify(ID, notification(state)) }
+                }
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         latestStartId = startId
-        startForeground(ID, notification(downloads.state.value), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        if (job?.isActive != true) startTransfer()
+        val requested = intent?.getLongExtra(EXTRA_ATTEMPT, 0L) ?: 0L
+        if (stopping) {
+            downloads.interrupted(requested)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        try {
+            startForeground(ID, notification(downloads.state.value), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } catch (_: IllegalStateException) {
+            stopInterrupted(requested)
+            return START_NOT_STICKY
+        } catch (_: SecurityException) {
+            stopInterrupted(requested)
+            return START_NOT_STICKY
+        }
+        if (downloads.isQueued(requested)) pendingAttempt = requested
+        startTransfer()
         return START_NOT_STICKY
     }
 
     private fun startTransfer() {
-        val transfer = scope.launch {
-            downloads.run { notifications.notify(ID, notification(it)) }
-            if (downloads.state.value.phase == UpdateDownloadPhase.Ready) notifications.notify(READY_ID, notification(downloads.state.value))
+        if (stopping || job != null) return
+        val attempt = pendingAttempt
+        pendingAttempt = 0L
+        if (!downloads.isQueued(attempt)) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf(latestStartId)
+            return
+        }
+        activeAttempt = attempt
+        val transfer = scope.launch(start = CoroutineStart.LAZY) {
+            downloads.run(attempt)
+            if (!stopping && downloads.isReady(attempt)) {
+                runCatching { notifications.notify(READY_ID, notification(downloads.state.value)) }
+            }
         }
         job = transfer
         transfer.invokeOnCompletion {
             scope.launch {
                 if (job !== transfer) return@launch
                 job = null
-                if (downloads.state.value.phase == UpdateDownloadPhase.Queued) startTransfer()
-                else {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                    stopSelf(latestStartId)
-                }
+                activeAttempt = 0L
+                startTransfer()
             }
+        }
+        transfer.start()
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        if (fgsType and ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC != 0) stopInterrupted()
+    }
+
+    private fun stopInterrupted(requested: Long = 0L) {
+        stopping = true
+        stopSelf()
+        try {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } finally {
+            downloads.interrupted(activeAttempt)
+            downloads.interrupted(pendingAttempt)
+            downloads.interrupted(requested)
+            job?.cancel()
         }
     }
 
@@ -74,6 +126,18 @@ class UpdateDownloadService : Service() {
         return builder.build()
     }
 
-    override fun onDestroy() { scope.cancel(); super.onDestroy() }
-    companion object { private const val CHANNEL = "zlib_updates"; private const val ID = 1201; private const val READY_ID = 1202 }
+    override fun onDestroy() {
+        stopping = true
+        downloads.interrupted(activeAttempt)
+        downloads.interrupted(pendingAttempt)
+        scope.cancel()
+        super.onDestroy()
+    }
+
+    companion object {
+        internal const val EXTRA_ATTEMPT = "update_attempt"
+        private const val CHANNEL = "zlib_updates"
+        private const val ID = 1201
+        private const val READY_ID = 1202
+    }
 }

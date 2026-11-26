@@ -89,6 +89,21 @@ class MultiAccountTest {
         assertEquals(SessionVault(), codec.decode(null))
     }
 
+    @Test fun `legacy cookie data is discarded while retaining the active account`() {
+        val cipher = object : SecretCipher {
+            override fun encrypt(plaintext: ByteArray) = plaintext
+            override fun decrypt(ciphertext: ByteArray) = ciphertext
+        }
+        val codec = SessionVaultCodec(cipher)
+        val existing = """{"activeId":"4","entries":[{"user_id":"4","user_key":"unit-key","domain":"z-lib.gd","cookies":{"other":"unused"}}]}"""
+        val decoded = codec.decodeForMigration(java.util.Base64.getEncoder().encodeToString(existing.encodeToByteArray()))
+        assertTrue(decoded.needsRewrite)
+        assertEquals("4", decoded.vault.current?.remixUserId)
+        assertEquals("remix_userid=4; remix_userkey=unit-key", decoded.vault.current?.cookieHeader)
+        assertFalse(decoded.vault.current?.cookies.orEmpty().containsKey("other"))
+        assertFalse(codec.decodeForMigration(codec.encode(decoded.vault)).needsRewrite)
+    }
+
     @Test fun `auto switch defaults off and performs no profile requests`() = runTest {
         val manager = manager(); manager.add(session("1")); manager.add(session("2")); manager.activate("1")
         var calls = 0

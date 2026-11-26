@@ -55,6 +55,9 @@ class SimilarBooksTest {
         }
     }
 
-    private fun client(server: MockWebServer) = EapiClient(OkHttpClient(), { server.url("/").toString() }, { null }, maxAttempts = 1)
+    private fun client(server: MockWebServer) = EapiClient(
+        OkHttpClient(), { server.url("/").toString() }, { null }, maxAttempts = 1,
+        isAllowedUrl = { it.host == server.hostName && it.port == server.port },
+    )
     private fun json(body: String) = MockResponse().setHeader("Content-Type", "application/json").setBody(body)
 }

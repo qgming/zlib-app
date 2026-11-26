@@ -13,6 +13,12 @@ import kotlinx.serialization.json.JsonPrimitive
  */
 internal object DownloadLinkParser {
 
+    fun failureMessage(body: String): String? {
+        val root = runCatching { Json.parseToJsonElement(body) as? JsonObject }.getOrNull() ?: return null
+        if ((root["success"] as? JsonPrimitive)?.content != "0") return null
+        return (root["error"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+    }
+
     fun extract(body: String): String? {
         val root = runCatching { Json.parseToJsonElement(body) as? JsonObject }.getOrNull() ?: return null
         if ((root["success"] as? JsonPrimitive)?.content == "0") return null

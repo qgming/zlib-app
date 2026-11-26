@@ -1,5 +1,7 @@
 package com.qgming.zlib.core.model
 
+import com.qgming.zlib.core.common.AppError
+
 data class ReleaseApk(val name: String, val url: String, val size: Long, val sha256: String? = null)
 
 data class AppRelease(
@@ -23,6 +25,7 @@ sealed interface UpdateCheckResult {
     data class Current(val release: AppRelease) : UpdateCheckResult
     data class Available(val release: AppRelease) : UpdateCheckResult
     data class Uncomparable(val release: AppRelease) : UpdateCheckResult
+    data class Cached(val release: AppRelease, val failure: AppError) : UpdateCheckResult
 }
 
 /** SemVer precedence; an optional v prefix and build metadata do not affect comparison. */

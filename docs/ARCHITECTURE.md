@@ -32,7 +32,7 @@
 
 | 模块 | 职责 |
 |---|---|
-| `:app` | `ZlibApplication`、`MainActivity`、`BookDetailActivity`、`ShareImageActivity` 与分享图生成／导出、SharedView Kit 适配、根导航、Hilt 入口、全局错误宿主 |
+| `:app` | `ZlibApplication`、`MainActivity`、`BookDetailActivity`、`ShareImageActivity` 与分享图生成／导出、隔离进程的 `DomainVerificationActivity`、SharedView Kit 适配、根导航、Hilt 入口、全局错误宿主 |
 | `:core:common` | `AppError`、`Result`、`DispatcherProvider`、文本/ISBN/文件名工具 |
 | `:core:model` | 领域模型与 UI 共享模型，不依赖 Android 框架（除可空注解） |
 | `:core:designsystem` | Miuix 深浅色主题、玻璃导航壳 `ZlibAppShell` / `ZlibPage`、统一弹层、图书网格、设置分组 |
@@ -95,16 +95,16 @@ ADR-063：`SimilarBooksViewModel` 独立读取已核实的 `/similar`，结果�
   → Room: download_queue(QUEUED)
   → DownloadService.start()
   → RESOLVING: GET /eapi/book/{id}/{hash}/file
-    → 若 302：跟随 CDN，剥离凭据
+    → 若 302：切到无凭据通道跟随文件跳转
     → 若 200 JSON：解析 file.downloadLink，再 GET CDN（Range 续传）
   → DOWNLOADING: 写入 SAF .part，Range 续传，进度写 Room + 通知
-  → COMPLETED: rename → 入库 books → 通知 → 可选分享
+  → COMPLETED: 记录交付 → rename 或 copy → Room 确认完成 → 通知
   → FAILED/PAUSED/CANCELLED: 保留 .part，等待恢复/重试
 ```
 
-队列串行，同一时刻只有一个 `DOWNLOADING`。进程被杀后，`DownloadService` 从 Room 恢复 `QUEUED/PAUSED` 项；`DOWNLOADING` 项重置为 `QUEUED` 并重新校验 `.part`。
+队列串行，同一时刻只有一个 `DOWNLOADING`。进程重启从 Room 恢复未完成任务，用户暂停的任务不自动启动；按 ADR-103 在继续传输前核对私有下载交付记录和临时文件。图书和 APK 的 `dataSync` 服务在系统超时后及时停止；启动受限或超时保留可恢复状态。
 
-ADR-060：临时文件按完整引用派生，与显示名解耦；206校验 Content-Range 和写入量，不依赖元数据大小作完整性承诺。目录切换通过 DownloadRunner 与队列选择互斥，先停止写入再保存授权，旧目录文件不迁移或删除。已有精确引用且在当前目录可读时，详情提供打开/显式重新下载，后者保留已有文件并另取空闲文件名。
+ADR-060/103：临时文件按完整引用派生，与显示名解耦；确认同一资源且强验证器匹配才拼接，206 校验 Content-Range 和实际写入量，旧版无验证信息的片段从零重写。签名链接不保存；数据完整后记录待交付目标及 SHA-256，应用重启可在同一目录核对文件身份与内容后补记完成，无需重新下载。无法核对时不覆盖现有文件或误记完成。目录切换通过 DownloadRunner 与队列选择互斥，先停止写入再保存授权，旧目录文件不迁移或删除。已有精确引用且在当前目录可读时，详情提供打开/显式重新下载，后者保留已有文件并另取空闲文件名。
 
 ADR-050：卡片右侧 X 移除任务记录，失败／取消任务的 X 位于重试右侧。Service 串行处理控制指令，`DownloadQueueControl` 将下一项选择与指定记录操作互斥；仅当目标正由当前写入任务处理时取消网络调用和协程、等待其完全退出，再删除记录与临时文件。操作其它记录不打断当前传输，已完成文件和 Book URI 关联保留；暂停／取消／删除不递归发送 Service 意图。服务生命周期和指令状态在 Main 管理，网络、文件和 Room IO 仍在 IO dispatcher 执行。
 
@@ -118,7 +118,7 @@ ADR-045/048/092：上述“用户点下载”指在格式菜单中点选具体�
 
 ADR-101：图书详情与自有书单详情通过 app 回调创建有界的 `ShareImageContent` 显示快照，交非导出的 `ShareImageActivity`。`ShareImagePayload` 仅传递上限 24 KiB 的严格 JSON，不序列化完整 Book／会话；`ShareImageViewModel` 在 IO 通过无 Cookie、无会话、无重定向的图片客户端读取已有封面，在 Default 用 `ShareImageRenderer`／`StaticLayout` 绘制固定 1080px 宽、最高 3000px 的图片，并于 IO 编码 PNG 到专用私有缓存。缺图绘本地经典书封，底部固定原图标和本地化软件名称。预览直接显示同一导出 Bitmap。书单仅展示前六本已加载图书，标明已知总数和部分预览，不为分享分页或改变公开状态。
 
-「保存到本地」使用 `CreateDocument(image/png)`，由用户选择 SAF 文档位置；「分享」通过专用 `share-images` FileProvider、`EXTRA_STREAM`、`ClipData` 和临时只读授权发送单张 PNG。Provider 只暴露分享缓存目录，不暴露其它私有文件；缓存生成时清理过期图片，失败不保留半文件。此图片导出与本机电子书、云端书单真相及下载队列分离，不加入存储或相册权限。
+「保存到本地」使用 `CreateDocument(image/png)`，由用户选择 SAF 文档位置；失败时尝试仅清理本次创建的目标，无法清理则提示。封面加载以整张图为单位限时，未取得的封面退回本地占位（ADR-104）。「分享」通过专用 `share-images` FileProvider、`EXTRA_STREAM`、`ClipData` 和临时只读授权发送单张 PNG。Provider 只暴露分享缓存目录，不暴露其它私有文件；缓存生成时清理过期图片。此图片导出与本机电子书、云端书单真相及下载队列分离，不加入存储或相册权限。
 
 ### 4.6 我的图书馆
 
@@ -131,11 +131,11 @@ ADR-101：图书详情与自有书单详情通过 app 回调创建有界的 `Sha
 - 详情「加入书单」也使用 `BooklistRepository`，读取本书在当前账号各书单的归属。已加入项只读；添加成功或核对新书单确实包含本书后，使「我的书单」列表、预览及当前单内页失效重读，不让旧分页游标续读。面板按会话隔离，不持久化输入或归属。
 - 书单卡片有四个封面位，优先使用响应内的预览图。缺少时对可见自有书单惰性读取图书第一页，最多两个并发，使用登录态 PAPI。封面失败或书单不足四本时保留空位，图片请求不带账号凭据。
 - 刷新以云端结果更新视图。列表及补取的封面仅保存在当前 ViewModel 内存，随会话变更清空，取消旧请求并拒绝旧结果回写。
-- 收藏确认通过会话内查询锁合并相同查询，服务端成功结果最多复用30秒；列表刷新、收藏写入和会话变更失效，不将未知缓存为未收藏，不写独立本地标记（ADR-063）。
+- 收藏确认在同一会话内复用服务端收藏 ID 分页，读写互不阻塞；每次查询限定页数和等待时间，成功结果最多复用 30 秒。列表刷新、收藏写入和会话变更使索引失效，未扫完不能判未收藏，不写独立本地标记（ADR-063）。
 - 可见卡片封面缺失或地址无效时，使用详情 EAPI 补取，最多 3 并发、同一会话内每本一次；仅更新封面，失败保留占位图与记录。图片加载不带账号凭据，来源与限制见 `EAPI.md` §2.7。
 - 云端下载记录删除：长按封面打开更多菜单，经确认框调用 `/eapi/user/book/{numericId}/delete`。成功才移除并从第一页刷新，避免旧分页偏移漏项；失败保留条目。该写入 GET 不自动重试或重定向，防重复确认并隔离会话，见 ADR-046。
-- 本机文件：书架 `LocalFilesContent` → `LocalFilesViewModel` → `LocalFilesRepository` → `SafLocalFileStore` 扫描设置中的 SAF 树及子目录，过滤支持扩展名、排除 `.part` 和 Provider 未完成文件。`LocalFile` 以文档 URI 为身份，真实目录决定存在性，Room 精确 URI 匹配只补全元信息，未知文件保留文件名与占位封面，不伪造 EAPI 引用。单击用外部阅读器打开，长按分享／二次确认真实删除，只授予单个 URI 的临时读权限；操作前重新扫描当前树，目录已变时拒绝。删除返回成功并确认目录不再包含该 URI 后，才清除 Room 对该 URI 的关联；云端记录、收藏和已完成任务互不联动。
-- 本机列表仅可见且 lifecycle STARTED 时收集，`WhileSubscribed(0, replayExpiration=0)` 在离开停止扫描；返回重新扫描，Provider `ContentObserver`、Room 下载完成变更、手动刷新和每 3 秒兜底触发核对，按目录 `flatMapLatest` 隔离旧扫描。错误清除陈旧文件并提示重新授权，不能把权限错误视为空目录。
+- 本机文件：书架 `LocalFilesContent` → `LocalFilesViewModel` → `LocalFilesRepository` → `SafLocalFileStore` 扫描设置中的 SAF 树及子目录，过滤支持扩展名、排除 `.part`、Provider 未完成及待交付文件。`LocalFile` 以文档 URI 为身份，真实目录决定存在性，Room 精确 URI 匹配只补全元信息。打开、分享、删除前重验当前授权树下的精确文档；目录已变时拒绝。删除返回成功并确认该 URI 不再可见后，才清除 Room 对该 URI 的关联。
+- 本机列表仅可见且 lifecycle STARTED 时收集，离开停止扫描；Provider 变动信号合并，Room 下载完成、交付记录变动、手动刷新即时触发核对，缺通知时以 3 至 15 秒的退避间隔兜底。按目录隔离旧扫描，并向 Provider 传递取消信号。权限错误清除陈旧文件并提示重新授权。
 
 下载管理右上角云图标进入记录页，“已完成”是任务记录，移除不删除实际文件。本机没有独立路由，长按菜单两项相隔 12dp。
 
@@ -143,7 +143,9 @@ ADR-101：图书详情与自有书单详情通过 app 回调创建有界的 `Sha
 
 ### 5.1 allowlist
 
-内置后缀 + 用户镜像，规则见 `AGENTS.md` §3.2。`DomainPolicy` 是纯 Kotlin，可单测。
+内置后缀 + 用户明确添加的精确镜像，规则见 `AGENTS.md` §3.2 和 ADR-102。发现域是无凭据探测候选，不能因兼容的探测结果或旧版锁定而获得凭据。
+
+ADR-107：设置、登录与启动失败恢复直接展示 17 个官方、34 个社区镜像，来源与双线路复测见 `MIRROR_AUDIT.md`。社区镜像首次选择通过统一确认面板授予精确主机权限；无需输入添加。撤销权限保留内置卡片，用户手动输入的新主机归社区组。目录归属与账号凭据权限分别判断，匿名体检不授信。
 
 ### 5.2 探测
 
@@ -151,22 +153,26 @@ ADR-101：图书详情与自有书单详情通过 app 回调创建有界的 `Sha
 
 - 8 个并发，10s 超时，最多 3 次重定向；
 - 分类：`HEALTHY`（JSON `success:1` + domains）、`CHALLENGED`（HTML challenge）、`DIAMWALL`（513/517 或标题）、`REDIRECT_LOOP`、`HTTP_ERROR`、`NETWORK_ERROR`、`INVALID`；
-- 结果带 `finalUrl`；若重定向到 allowlist 内新域，记录为候选；
+- 结果区分跳转发起域与实际应答域；只让实际应答且已授权的域成为可自动切换候选；
 - 不做后台常驻；启动、登录失败、下载失败、用户手动触发时探测。
 
+手动全部体检覆盖整个目录；启动与故障恢复默认只检查官方、已经批准及当前使用的主机。局部体检合并原结果，未检查社区卡片保持可见。目录内精确主机可接受 `success:1` 与空 `domains` 数组；未知重定向目标仍须返回已知家族，再由用户单独批准。
+
 ADR-052：域名列表在初始化时即列出内置、用户添加及当前域名，未检测显示未知。单独／批量体检发布 `PROBING` 并阻止重复操作，单独体检只更新目标结果。域名管理最顶部为自动切换开关，顶栏右侧依次为全部体检和添加域名图标，添加使用玻璃底部面板；列表使用统一 24dp 卡片，右侧切换／体检纯图标有 48dp 触摸区，自定义域名长按可删除。开关复用 `lockedHost` 持久化：为空代表开启，关闭时锁定当前域名，之后手动选择同步更新锁定目标；全部体检与重启遵守锁定。添加失败保留输入与错误，操作成功用短提示反馈。
+
+ADR-108：已授权主机被标记为 `DIAMWALL`／`CHALLENGED` 时，选择操作发出导航事件，由 app 打开非导出 `:domain_verification` 进程的验证 Activity。其 WebView 数据目录与图书预览隔离，匿名传输逐跳只允许该精确 HTTPS 主机的 GET／HEAD，限制五次跳转、25 秒请求链和 8 MiB 单资源；保留原站 CSP 并叠加同源限制，不支持表单、跨域、worker 或网页登录。用户手动完成后返回筛选后的 `__diamwall` 和验证网络身份；`DomainVerificationCookies` 根据主机授权、网络一致性和 15 分钟有效期决定是否提供，EAPI 与初始匿名体检显式读取。网络未知、改变、过期或撤销授权后丢弃，默认网络回调仅清理验证状态；不安装全局 CookieJar。根 ViewModel 调用仓库的原子复检／选择，在同一个锁内确认原主机 EAPI 成功后才选择，不将跳转目标的成功当作原主机验证完成。网页退出清理 Cookie，不向预览、PAPI、封面、CDN 或更新客户端共享。
 
 ### 5.3 请求管线
 
 `EapiClient` 每次请求：
 
-1. 用当前 `domain` 拼 URL；
+1. 用当前 `domain` 拼 URL，发出前校验受信任的标准 HTTPS 来源；
 2. 加 `Accept: application/json`、UA、Cookie、`remix-userid/remix-userkey`；
 3. POST 用 form body；
-4. 先读 body，解析 envelope；HTTP 非 2xx 但 envelope 有 `success:0` 时保留服务端 error；
+4. 有界读取且可取消，解析 envelope；HTTP 非 2xx 但 envelope 有 `success:0` 时保留服务端 error；搜索等列表缺少有效书目数组时报错；
 5. 识别 `Invalid credentials`/`Please login` → `SessionExpired`；
 6. 识别 513/517/HTML DiamWall → `DomainBlocked`；
-7. EAPI 重定向：网络拦截器在跟随前拒绝离开 allowlist（或非 HTTPS）的重定向，避免 307/308 把登录表单体重放到别的 host；下载请求不加此限制，按目标 host 剥离凭据。
+7. 密码登录和修改云端记录等单次写入不跟随或重发；EAPI 其他请求不跨来源重定向。需要识别新来源时走独立匿名体检；下载文件跳转走独立无凭据通道（ADR-102）。
 
 书单和评论客户端共用 `PapiTransport`，只实现 [PAPI.md](PAPI.md) 记录的端点。请求固定在会话的当前受信任 HTTPS 主机，读取／写入仅使用同一对 `remix` Cookie；不跟随重定向、不刷新登录、不切域。ADR-096 在仓库层为限定的读取处理 1/2/4 秒退避，重试前后检查会话；写入不重试，不接受验证 Cookie、不进入 HTTP 缓存。失败在当前功能内处理，不改变 EAPI 登录态。
 
@@ -266,7 +272,9 @@ ADR-047：`ZlibGlassBottomSheet` 统一为所有面板内容增加横向系统�
 
 ADR-053/055：中文显示名“芝士读书”由 `core:common` 共享字符串资源提供，桌面、启动、登录和通知一致；英语用 Zlib，不改包名和签名。设置末尾的“关于”不显示副标题，经 app 导航进入 `feature:settings`，app 将自己的图标 Painter 和 `BuildConfig` 版本信息传入，feature 不依赖 app。关于页复用设计系统的居中标识、24dp 无图标分组和原生入口；ADR-057 保留 Miuix 原生 56dp 最小行高，不设最大高度，随内容自然伸展，保留实时发布日志、协议与隐私和许可原生文档，最后的“关于作者”交系统打开 `https://github.com/qgming`；不再有反馈模板或项目与开发者页面。`AboutDocumentsViewModel` 仅在进入许可页后于 IO 读取 APK 内文本，错误可重试；构建任务将根 LICENSE 与依赖许可全文同步为 assets，防止维护副本漂移。按 ADR-072，根 NOTICE 只在仓库维护，不再加载为独立许可条目。
 
-ADR-055/056：`AboutViewModel` 在根页面共享，冷启动检查一次／用户手动检查 → `AppUpdateRepository` → `GitHubReleaseClient` 读取固定公开仓库的 `/repos/qgming/zlib-app/releases/latest`；日志页独立读取 `/releases?per_page=20` 的正式发布标题、tag 与真实正文，无预写假日志。更新客户端独立构建，无会话、Cookie、EAPI 拦截器或自动重试；最新 tag 按 SemVer 比较，404／未知版本／限流／网络错误分别显示。启动检查只在新版时自动弹面板，不阻塞登录／首页；日志可滚动，底部取消／更新保持可见。
+ADR-055/056/104/105：`AboutViewModel` 在根页面共享，冷启动检查一次／用户手动检查 → `AppUpdateRepository` → `GitHubReleaseClient` 读取固定公开仓库的 `/repos/qgming/zlib-app/releases/latest`；日志页独立读取 `/releases?per_page=20` 的正式发布标题、tag 与真实正文，无预写假日志。更新客户端独立构建，无会话、Cookie、EAPI 拦截器或自动重试；最新 tag 按 SemVer 比较。手动操作的连接失败及明确限流使用「网络环境异常，请关闭或开启 VPN 后重试。」短 Toast，检查更新不弹失败面板；其他响应错误保留相应状态。日志保留中性失败／重试与 Releases 入口；缓存标明来源且不可触发 APK 下载。启动检查只在新版时自动弹面板，失败静默；手动检查加入正在进行的启动检查时，仍只反馈一次。
+
+更新客户端按 Android 当前默认网络标识保存限流截止时间，latest 和 history 共用。切网后丢弃空闲旧连接并允许用户手动查询新网络，切回受限网络继续等待；未知或在请求过程中变化的网络遵从保守等待。`ACCESS_NETWORK_STATE` 仅用于请求时读取网络标识，不读取公网 IP、不判定 VPN、不注册常驻监听、不随网络变化自动查询。
 
 点击更新由 `UpdateDownloadManager` 启动独立 `UpdateDownloadService(dataSync)`，`ReleaseApkDownloader` 用匿名客户端下载匹配 ABI／通用 APK，逐跳只允许 GitHub 与发布资产 CDN HTTPS，限制跳数、长度及摘要。取消等待真实写入线程结束后再清理临时文件。`UpdateApkStore` 检查包名、相同签名、tag 与递增 versionCode，保存到用户授权的下载目录，保留私有验证副本用于安装。完成自动弹出同一面板的安装状态；用户点击后经 FileProvider 只授予私有 updates 单文件读取权限，必要时引导未知来源授权，再打开系统安装器。图书队列不参与更新下载，不自动安装、不定时检查。
 

@@ -22,6 +22,7 @@ import com.qgming.zlib.core.model.DownloadItem
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -45,6 +46,7 @@ class DownloadRepository @Inject constructor(
     private val directoryStore: DownloadDirectoryStore,
     private val runner: DownloadRunner,
     private val dispatchers: AppDispatchers,
+    private val journal: DownloadJournal,
 ) {
     private val downloads = database.downloadDao()
     private val books = database.bookDao()
@@ -60,8 +62,8 @@ class DownloadRepository @Inject constructor(
      * discarded, but an existing readable file is never overwritten or deleted.
      */
     suspend fun enqueue(book: Book, forceRedownload: Boolean): AppResult<Unit> = withContext(dispatchers.io) {
-        directoryStore.ensureLoaded()
-        if (directoryStore.currentUri() == null) {
+        val tree = directoryStore.ensureLoaded()?.toString()
+        if (tree == null) {
             return@withContext AppResult.Failure(AppError.Parse(appText(TextR.string.text_choose_a_download_folder_in_settings_first)))
         }
         val existingRecord = downloads.byId(book.ref)
@@ -73,9 +75,12 @@ class DownloadRepository @Inject constructor(
                 AppError.Parse(appText(TextR.string.text_this_file_already_exists_open_it_or_confirm_another_download)),
             )
         }
+        if (existingRecord != null && journal.pending(tree, existingRecord.id, existingRecord.createdAt) != null) {
+            return@withContext AppResult.Failure(AppError.Parse(appText(TextR.string.text_this_book_is_already_in_the_download_queue)))
+        }
         if (forceRedownload) {
-            runCatching { directoryStore.deletePart(book.ref) }
-                .onFailure { SafeLog.w("Download", "cannot reset temporary file") }
+            journal.setContinuation(tree, book.ref, null)
+            directoryStore.deletePart(book.ref)
         }
 
         val now = System.currentTimeMillis()
@@ -123,8 +128,7 @@ class DownloadRepository @Inject constructor(
                 },
             )
         }
-        startService(DownloadServiceActions.START)
-        AppResult.Success(Unit)
+        startQueueService()
     }
 
     /**
@@ -165,8 +169,7 @@ class DownloadRepository @Inject constructor(
             return@withContext AppResult.Failure(AppError.Parse(appText(TextR.string.text_choose_a_download_folder_in_settings_first)))
         }
         downloads.updateState(id, DownloadStates.QUEUED, null, System.currentTimeMillis())
-        startService(DownloadServiceActions.START)
-        AppResult.Success(Unit)
+        startQueueService()
     }
 
     suspend fun cancel(id: String) = withContext(dispatchers.io) {
@@ -181,14 +184,12 @@ class DownloadRepository @Inject constructor(
         val item = downloads.byId(id)
             ?: return@withContext AppResult.Failure(AppError.Parse(appText(TextR.string.text_download_record_not_found)))
         if (item.error == DownloadCodes.RANGE || item.error == DownloadCodes.INVALID) {
-            // A stale/invalid part cannot be resumed; a user-initiated retry starts from zero.
-            runCatching { directoryStore.deletePart(item.id) }
-                .onFailure { SafeLog.w("Download", "cannot reset temporary file") }
+            directoryStore.currentUri()?.toString()?.let { journal.setContinuation(it, item.id, null) }
+            directoryStore.deletePart(item.id)
         }
         downloads.resetProgress(id)
         downloads.updateState(id, DownloadStates.QUEUED, null, System.currentTimeMillis())
-        startService(DownloadServiceActions.START)
-        AppResult.Success(Unit)
+        startQueueService()
     }
 
     suspend fun remove(id: String) = withContext(dispatchers.io) {
@@ -206,11 +207,16 @@ class DownloadRepository @Inject constructor(
                 downloads.updateState(id, DownloadStates.CANCELLED, null, System.currentTimeMillis())
             }
             DownloadServiceActions.REMOVE -> {
-                // An unavailable provider must not prevent clearing an already stopped record.
                 if (item.state != DownloadStates.COMPLETED) {
-                    directoryStore.ensureLoaded()
-                    runCatching { directoryStore.deletePart(item.id) }
-                        .onFailure { SafeLog.w("Download", "temporary file cleanup unavailable") }
+                    val tree = directoryStore.ensureLoaded()?.toString()
+                    if (tree != null) try {
+                        if (runner.discardPublication(item, tree)) directoryStore.deletePart(item.id)
+                        journal.setContinuation(tree, item.id, null)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        SafeLog.w("Download", "temporary file cleanup unavailable")
+                    }
                 }
                 downloads.delete(id)
             }
@@ -239,19 +245,36 @@ class DownloadRepository @Inject constructor(
     }
 
     suspend fun resumePendingIfAny() = withContext(dispatchers.io) {
-        if (downloads.nextActive() != null) startService(DownloadServiceActions.START)
+        if (downloads.nextActive() != null) startQueueService()
+        Unit
     }
 
-    private fun startService(action: String) {
-        val intent = Intent(context, DownloadService::class.java).setAction(action)
-        ContextCompat.startForegroundService(context, intent)
+    suspend fun reconcilePublishedIfAny() = runner.reconcilePublishedFiles()
+
+    private suspend fun startQueueService(): AppResult<Unit> {
+        val intent = Intent(context, DownloadService::class.java).setAction(DownloadServiceActions.START)
+        try {
+            ContextCompat.startForegroundService(context, intent)
+            return AppResult.Success(Unit)
+        } catch (_: IllegalStateException) {
+            // A running worker can still accept this item; otherwise keep it paused for retry.
+        } catch (_: SecurityException) {
+        }
+        if (!runner.pauseAfterLaunchRejection()) return AppResult.Success(Unit)
+        return AppResult.Failure(AppError.Parse(appText(TextR.string.text_download_foreground_unavailable)))
     }
 
-    private fun sendAction(action: String, id: String) {
+    private suspend fun sendAction(action: String, id: String) {
         val intent = Intent(context, DownloadService::class.java)
             .setAction(action)
             .putExtra(DownloadServiceActions.EXTRA_ID, id)
-        context.startService(intent)
+        try {
+            context.startService(intent)
+            return
+        } catch (_: IllegalStateException) {
+        } catch (_: SecurityException) {
+        }
+        runner.controlWithoutService(id) { finishControl(action, id) }
     }
 
     companion object {

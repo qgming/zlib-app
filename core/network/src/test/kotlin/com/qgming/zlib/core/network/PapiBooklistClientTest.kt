@@ -29,10 +29,13 @@ class PapiBooklistClientTest {
             .setHeader("Set-Cookie", "other=not-sent; Path=/"))
         server.enqueue(json(fixture("booklists.json")))
         server.enqueue(json(fixture("booklist_books.json")))
-        val eapi = EapiClient(OkHttpClient(), { server.url("/").toString() }, { null }, maxAttempts = 1)
+        val eapi = EapiClient(
+            OkHttpClient(), { server.url("/").toString() }, { null }, maxAttempts = 1,
+            isAllowedUrl = { it.host == server.hostName && it.port == server.port },
+        )
         val signedIn = assertNotNull(eapi.login("account@example.test", "synthetic-password").getOrNull()).withDomain(session.domain)
         assertEquals("/eapi/user/login", assertNotNull(server.takeRequest(2, TimeUnit.SECONDS)).path)
-        assertEquals("not-sent", signedIn.cookies["other"])
+        assertNull(signedIn.cookies["other"])
         val booklists = assertNotNull(client.myBooklists(signedIn).getOrNull())
         assertEquals(listOf("42", "57"), booklists.map { it.id })
         assertEquals(2, booklists.first().bookCount)

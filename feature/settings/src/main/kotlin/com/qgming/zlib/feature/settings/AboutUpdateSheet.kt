@@ -14,6 +14,7 @@ import com.qgming.zlib.core.data.update.UpdateDownloadFailure
 import com.qgming.zlib.core.data.update.UpdateDownloadPhase
 import com.qgming.zlib.core.data.update.UpdateDownloadState
 import com.qgming.zlib.core.designsystem.ZlibAboutText
+import com.qgming.zlib.core.designsystem.ZlibAboutLink
 import com.qgming.zlib.core.designsystem.ZlibGlassBottomSheet
 import com.qgming.zlib.core.designsystem.ZlibLoadingStatus
 import com.qgming.zlib.core.designsystem.ZlibUpdateActions
@@ -31,30 +32,32 @@ internal fun AboutUpdateSheet(
     onDownload: () -> Unit,
     onDirectory: () -> Unit,
     onInstall: () -> Unit,
+    onOpenReleases: () -> Unit,
 ) {
     ZlibGlassBottomSheet(state.visible, stringResource(R.string.about_check_update), onDismiss) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Column(Modifier.fillMaxWidth().heightIn(max = 340.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (state.checking) ZlibLoadingStatus(stringResource(R.string.about_update_checking))
-                state.failure?.let { failure ->
-                    ZlibAboutText(stringResource(R.string.about_update_failed), stringResource(when (failure) {
-                        UpdateFailure.Network -> R.string.about_update_network_error
-                        UpdateFailure.RateLimit -> R.string.about_update_rate_limit
-                        UpdateFailure.Response -> R.string.about_update_response_error
-                    }))
+                if (state.failure != null) {
+                    ZlibAboutText(stringResource(R.string.about_update_failed), stringResource(R.string.about_update_response_error))
                 }
                 when (val result = state.result) {
                     UpdateCheckResult.NoRelease -> ZlibAboutText(stringResource(R.string.about_update_no_release), stringResource(R.string.about_update_no_release_body))
                     is UpdateCheckResult.Current -> ZlibAboutText(stringResource(R.string.about_update_current), stringResource(R.string.about_update_installed, installed, result.release.tag))
                     is UpdateCheckResult.Uncomparable -> ZlibAboutText(stringResource(R.string.about_update_uncomparable), stringResource(R.string.about_update_installed, installed, result.release.tag))
                     is UpdateCheckResult.Available -> ZlibAboutText(stringResource(R.string.about_update_available, result.release.tag), result.release.notes.ifBlank { stringResource(R.string.about_update_no_notes) })
+                    is UpdateCheckResult.Cached -> ZlibAboutText(stringResource(R.string.about_update_cached_release, result.release.tag), result.release.notes.ifBlank { stringResource(R.string.about_update_no_notes) })
                     null -> Unit
+                }
+                if (state.failure != null || state.result is UpdateCheckResult.Uncomparable) {
+                    ZlibAboutLink(stringResource(R.string.about_open_github_releases), onOpenReleases)
                 }
                 transfer.failure?.let { failure ->
                     ZlibAboutText(stringResource(R.string.about_download_failed), stringResource(when (failure) {
                         UpdateDownloadFailure.Directory -> R.string.about_update_choose_directory
                         UpdateDownloadFailure.Asset -> R.string.about_update_no_apk
                         UpdateDownloadFailure.Transfer -> R.string.about_update_transfer_error
+                        UpdateDownloadFailure.Interrupted -> R.string.about_update_interrupted
                         UpdateDownloadFailure.Verification -> R.string.about_update_verification_error
                         UpdateDownloadFailure.Storage -> R.string.about_update_storage_error
                     }))
@@ -72,6 +75,7 @@ internal fun AboutUpdateSheet(
                 transfer.failure == UpdateDownloadFailure.Directory -> stringResource(R.string.about_update_select_directory)
                 transfer.busy -> stringResource(R.string.about_update_downloading)
                 state.failure != null -> stringResource(R.string.about_retry)
+                transfer.failure != null -> stringResource(R.string.about_retry)
                 available -> stringResource(R.string.about_update_now)
                 else -> null
             }

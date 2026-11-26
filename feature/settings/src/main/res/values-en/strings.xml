@@ -12,6 +12,7 @@
     <string name="about_update_select_directory">Choose folder</string>
     <string name="about_update_no_apk">This release has no compatible APK. Wait for the author to upload one.</string>
     <string name="about_update_transfer_error">The download failed or is incomplete. Check your connection and retry.</string>
+    <string name="about_update_interrupted">Android interrupted the background update. Retry from the app.</string>
     <string name="about_update_verification_error">The APK version, package or signature could not be verified. Wait for a corrected release.</string>
     <string name="about_update_storage_error">Cannot save the APK. Check your download folder and available space, then retry.</string>
     <string name="about_update_downloaded">Download complete</string>
@@ -22,8 +23,11 @@
     <string name="about_link_failed">Cannot open the link. Please install a browser.</string>
     <string name="about_update_checking">Checking for updates…</string>
     <string name="about_update_failed">Update check failed</string>
-    <string name="about_update_network_error">Cannot connect to GitHub. Check your connection and retry.</string>
-    <string name="about_update_rate_limit">GitHub has temporarily limited requests. Retry later.</string>
+    <string name="about_update_network_error">Network issue. Turn your VPN off or on and try again.</string>
+    <string name="about_open_github_releases">Open GitHub Releases</string>
+    <string name="about_update_cached_release">Last checked release: %1$s</string>
+    <string name="about_update_cached_history">Cached release notes</string>
+    <string name="about_update_cached_history_body">Unable to refresh. These are the last release notes retrieved.</string>
     <string name="about_update_response_error">Cannot read GitHub release information. Please retry.</string>
     <string name="about_update_no_release">No releases yet</string>
     <string name="about_update_no_release_body">The project has not published a stable release on GitHub.</string>
@@ -33,6 +37,8 @@
     <string name="about_update_no_notes">No release notes were provided. View the release page for more information.</string>
     <string name="about_update_uncomparable">Review versions on GitHub</string>
     <string name="about_changelog">Changelog</string>
+    <string name="about_changelog_failed">Could not load release notes</string>
+    <string name="about_changelog_unavailable">Release information is temporarily unavailable.</string>
     <string name="about_privacy">Terms and privacy policy</string>
     <string name="about_licenses">Open source licenses</string>
     <string name="about_version">v%1$s</string>

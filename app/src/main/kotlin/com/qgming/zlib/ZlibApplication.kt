@@ -1,6 +1,7 @@
 package com.qgming.zlib
 
 import android.app.Application
+import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.webkit.WebView
 import com.qgming.zlib.BuildConfig
@@ -11,6 +12,7 @@ import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
 import com.qgming.zlib.core.common.SafeLog
 import com.qgming.zlib.core.common.AppText
+import dagger.Lazy
 import dagger.hilt.android.HiltAndroidApp
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -21,7 +23,7 @@ import okhttp3.OkHttpClient
 class ZlibApplication : Application(), SingletonImageLoader.Factory {
 
     @Inject
-    lateinit var okHttpClient: OkHttpClient
+    lateinit var okHttpClient: Lazy<OkHttpClient>
 
     /** Comment image URLs are not PAPI requests and must never use the session client. */
     internal val commentAvatarLoader: ImageLoader by lazy {
@@ -36,6 +38,13 @@ class ZlibApplication : Application(), SingletonImageLoader.Factory {
             .components { add(OkHttpNetworkFetcherFactory(callFactory = { anonymous })) }
             .crossfade(true)
             .build()
+    }
+
+    override fun attachBaseContext(base: Context) {
+        if (getProcessName() == "${base.packageName}:domain_verification") {
+            WebView.setDataDirectorySuffix("domain_verification")
+        }
+        super.attachBaseContext(base)
     }
 
     override fun onCreate() {
@@ -55,7 +64,7 @@ class ZlibApplication : Application(), SingletonImageLoader.Factory {
     override fun newImageLoader(context: PlatformContext): ImageLoader =
         ImageLoader.Builder(context)
             .components {
-                add(OkHttpNetworkFetcherFactory(callFactory = { okHttpClient }))
+                add(OkHttpNetworkFetcherFactory(callFactory = { okHttpClient.get() }))
             }
             .crossfade(true)
             .build()

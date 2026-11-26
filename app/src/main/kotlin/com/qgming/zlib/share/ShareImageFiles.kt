@@ -2,9 +2,18 @@ package com.qgming.zlib.share
 
 import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
 import java.io.File
 import java.io.IOException
+import java.io.OutputStream
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
+
+internal enum class ShareImageSaveOutcome { Saved, Failed, Incomplete }
 
 /** Private PNG files. Only this directory is exposed by the dedicated sharing provider. */
 internal class ShareImageFiles(private val directory: File) {
@@ -27,13 +36,46 @@ internal class ShareImageFiles(private val directory: File) {
     fun contains(file: File): Boolean = file.parentFile?.canonicalFile == directory.canonicalFile &&
         FILE_NAME.matches(file.name) && file.isFile && file.length() > 0
 
-    fun copyTo(context: Context, file: File, destination: Uri) {
-        if (!contains(file) || destination.scheme != "content") throw IOException("Unavailable image destination")
-        // A document-provider URI is chosen explicitly by the user, never a raw filesystem path.
-        context.contentResolver.openOutputStream(destination, "wt")?.use { output ->
-            file.inputStream().use { input -> input.copyTo(output) }
-            output.flush()
-        } ?: throw IOException("Cannot open image destination")
+    suspend fun save(context: Context, file: File?, destination: Uri): ShareImageSaveOutcome {
+        if (destination.scheme != "content" || !DocumentsContract.isDocumentUri(context, destination)) {
+            return ShareImageSaveOutcome.Failed
+        }
+        val resolver = context.contentResolver
+        return saveCreatedDocument(
+            file,
+            open = { resolver.openOutputStream(destination, "wt") },
+            remove = { DocumentsContract.deleteDocument(resolver, destination) },
+        )
+    }
+
+    internal suspend fun saveCreatedDocument(
+        file: File?,
+        open: () -> OutputStream?,
+        remove: () -> Boolean,
+    ): ShareImageSaveOutcome = try {
+        if (file == null || !contains(file)) throw IOException("Unavailable image")
+        val coroutine = currentCoroutineContext()
+        coroutine.ensureActive()
+        val output = open() ?: throw IOException("Cannot open image destination")
+        output.use { sink ->
+            file.inputStream().use { input ->
+                val buffer = ByteArray(32 * 1024)
+                while (true) {
+                    coroutine.ensureActive()
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    sink.write(buffer, 0, count)
+                }
+                coroutine.ensureActive()
+                sink.flush()
+            }
+        }
+        ShareImageSaveOutcome.Saved
+    } catch (cancelled: CancellationException) {
+        withContext(NonCancellable) { runCatching { remove() } }
+        throw cancelled
+    } catch (_: Exception) {
+        if (runCatching { remove() }.getOrDefault(false)) ShareImageSaveOutcome.Failed else ShareImageSaveOutcome.Incomplete
     }
 
     companion object {

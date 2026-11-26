@@ -1,23 +1,28 @@
 package com.qgming.zlib.feature.account
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.qgming.zlib.core.common.R as TextR
 import com.qgming.zlib.core.designsystem.ZlibCard
 import com.qgming.zlib.core.designsystem.ZlibCardList
+import com.qgming.zlib.core.designsystem.ZlibCommunityMirrorConfirmation
 import com.qgming.zlib.core.designsystem.ZlibCurrentDomainCard
 import com.qgming.zlib.core.designsystem.ZlibDomainPicker
 import com.qgming.zlib.core.designsystem.ZlibLoginForm
 import com.qgming.zlib.core.designsystem.ZlibPage
 
 @Composable
-fun LoginScreen(viewModel: LoginViewModel = hiltViewModel()) {
+fun LoginScreen(viewModel: LoginViewModel = hiltViewModel(), onVerifyDomain: (String) -> Unit = {}) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
-    ZlibPage(title = stringResource(com.qgming.zlib.core.common.R.string.zlib_login_title)) { padding ->
+    LaunchedEffect(viewModel, onVerifyDomain) { viewModel.verificationRequests.collect(onVerifyDomain) }
+
+    ZlibPage(title = stringResource(TextR.string.zlib_login_title)) { padding ->
         ZlibCardList(padding) {
             item("domain") {
                 ZlibCurrentDomainCard(state.domain, enabled = !state.loading, onChange = viewModel::showDomains)
@@ -37,9 +42,15 @@ fun LoginScreen(viewModel: LoginViewModel = hiltViewModel()) {
             }
         }
         ZlibDomainPicker(
-            show = state.showDomainPicker, checks = state.checks, currentHost = state.domain,
+            show = state.showDomainPicker && state.pendingMirrorHost == null,
+            checks = state.checks, currentHost = state.domain,
             busy = state.switchingDomain, error = state.domainError,
             onSelect = viewModel::selectDomain, onDismiss = viewModel::dismissDomains,
+            onProbe = viewModel::probeDomain, onVerify = viewModel::selectDomain,
+        )
+        ZlibCommunityMirrorConfirmation(
+            host = state.pendingMirrorHost,
+            onDismiss = viewModel::dismissCommunityMirror, onConfirm = viewModel::confirmCommunityMirror,
         )
     }
 }

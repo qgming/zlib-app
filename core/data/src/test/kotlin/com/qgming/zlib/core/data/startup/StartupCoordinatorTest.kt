@@ -70,7 +70,8 @@ class StartupCoordinatorTest {
         val registry = AllowedHostRegistry()
         val domains = DomainRepository(DomainProbe(OkHttpClient(), dispatchers), store, sessions, registry, dispatchers)
         val api = EapiClient(OkHttpClient(), { server.url("/").toString() }, sessions::current,
-            dispatchers = dispatchers, baseUrlForHost = { server.url("/").toString() }, maxAttempts = 1)
+            dispatchers = dispatchers, baseUrlForHost = { server.url("/").toString() }, maxAttempts = 1,
+            isAllowedUrl = { it.host == server.hostName && it.port == server.port })
         return StartupCoordinator(sessions, domains, AccountRepository(api, sessions, domains, dispatchers), dispatchers, store)
     }
 }

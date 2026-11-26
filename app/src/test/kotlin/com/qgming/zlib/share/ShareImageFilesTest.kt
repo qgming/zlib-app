@@ -2,14 +2,38 @@ package com.qgming.zlib.share
 
 import java.io.File
 import java.io.IOException
+import java.io.OutputStream
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.runBlocking
 
 class ShareImageFilesTest {
+    @Test
+    fun `a failed provider write cleans only the created export or identifies a partial file`() = withCache { directory ->
+        runBlocking {
+            val files = ShareImageFiles(directory)
+            val image = files.write { it.writeBytes(byteArrayOf(1, 2, 3)) }
+            val destination = File(directory, "selected.png")
+            val unrelated = File(directory, "keep.png").apply { writeText("keep") }
+            fun interruptingOutput() = object : OutputStream() {
+                override fun write(value: Int) {
+                    destination.writeBytes(byteArrayOf(value.toByte()))
+                    throw IOException("Synthetic provider write error")
+                }
+            }
+            assertEquals(ShareImageSaveOutcome.Failed, files.saveCreatedDocument(image, ::interruptingOutput, destination::delete))
+            assertFalse(destination.exists())
+            assertEquals(ShareImageSaveOutcome.Incomplete, files.saveCreatedDocument(image, ::interruptingOutput) { false })
+            assertTrue(destination.exists())
+            assertEquals("keep", unrelated.readText())
+            assertTrue(files.contains(image))
+        }
+    }
+
     @Test
     fun `a failed or empty PNG never remains shareable`() = withCache { directory ->
         val files = ShareImageFiles(directory)

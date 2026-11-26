@@ -13,12 +13,17 @@ internal object DownloadCodes {
     const val RANGE = "range"
     const val INCOMPLETE = "incomplete"
     const val INVALID = "invalid"
+    const val FOREGROUND_UNAVAILABLE = "foreground_unavailable"
+    const val FOREGROUND_TIMEOUT = "foreground_timeout"
     const val UNKNOWN = "unknown"
 
     fun http(code: Int): String = "http_$code"
 }
 
 internal sealed interface DownloadOutcome {
-    data class Completed(val uri: String, val totalBytes: Long) : DownloadOutcome
+    data class Completed(val publication: PendingDownloadPublication) : DownloadOutcome {
+        val uri: String get() = requireNotNull(publication.targetUri)
+        val totalBytes: Long get() = publication.totalBytes
+    }
     data class Failed(val error: AppError, val code: String) : DownloadOutcome
 }

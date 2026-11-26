@@ -86,7 +86,7 @@ class CredentialStripInterceptorTest {
     }
 
     @Test
-    fun `same-host redirect keeps credentials when the host is allowed`() {
+    fun `a different port is another origin even if both targets are allowed`() {
         server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", cdn.url("/x").toString()))
         cdn.enqueue(MockResponse().setBody("{}"))
         val client = OkHttpClient.Builder()
@@ -97,6 +97,20 @@ class CredentialStripInterceptorTest {
 
         server.takeRequest()
         val second = cdn.takeRequest()
-        assertEquals("remix_userid=1; remix_userkey=k", second.getHeader("Cookie"))
+        assertNull(second.getHeader("Cookie"))
+    }
+
+    @Test
+    fun `same-origin redirect keeps allowed credentials`() {
+        server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", "/next"))
+        server.enqueue(MockResponse().setBody("{}"))
+        val client = OkHttpClient.Builder()
+            .addNetworkInterceptor(CredentialStripInterceptor(isAllowedUrl = { true }, requireHttps = false))
+            .build()
+
+        client.newCall(requestWithCredentials(server.url("/start").toString())).execute().close()
+
+        server.takeRequest()
+        assertEquals("remix_userid=1; remix_userkey=k", server.takeRequest().getHeader("Cookie"))
     }
 }

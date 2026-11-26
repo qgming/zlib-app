@@ -11,16 +11,17 @@ import com.qgming.zlib.core.data.session.SessionManager
 import com.qgming.zlib.core.data.settings.AppSettings
 import com.qgming.zlib.core.data.settings.SettingsStore
 import com.qgming.zlib.core.model.DomainCheck
+import com.qgming.zlib.core.model.DomainGroup
 import com.qgming.zlib.core.model.ThemeMode
 import com.qgming.zlib.core.model.BookGridColumns
 import com.qgming.zlib.core.network.DomainPolicy
 import com.qgming.zlib.core.network.DomainProbe
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -54,10 +55,17 @@ class DomainRepository @Inject constructor(
     @Volatile
     private var initialized = false
 
-    fun currentHostOrNull(): String? = _currentHost.value
+    fun currentHostOrNull(): String? = _currentHost.value?.takeIf(registry::isAllowed)
 
     fun isHealthy(host: String): Boolean =
         _checks.value.any { it.host == host && it.status == DomainStatus.HEALTHY }
+
+    fun isApprovedHost(host: String): Boolean =
+        DomainPolicy.normalizeHostInput(host) == host && registry.isAllowed(host)
+
+    fun requiresApproval(host: String): Boolean = DomainPolicy.normalizeHostInput(host)?.let { normalized ->
+        DomainPolicy.isCommunityMirror(normalized) && !registry.isAllowed(normalized)
+    } == true
 
     suspend fun initialize() {
         if (initialized) return
@@ -73,9 +81,9 @@ class DomainRepository @Inject constructor(
 
                 val normalized = remembered?.let(DomainPolicy::normalizeHostInput)
                 if (normalized != null && registry.isAllowed(normalized)) {
-                    _currentHost.value = normalized
+                    applyHost(normalized, lockHost = _settings.value.lockedHost)
                 }
-                populateChecks()
+                publishChecks()
                 if (_currentHost.value == null) {
                     probeInternal(switchToBest = true)
                 }
@@ -84,24 +92,19 @@ class DomainRepository @Inject constructor(
         }
     }
 
-    suspend fun probeAll(switchToBest: Boolean = true): List<DomainCheck> {
+    suspend fun probeAll(switchToBest: Boolean = true, includeCommunity: Boolean = false): List<DomainCheck> {
         mutex.withLock {
-            val settings = currentSettings()
-            return withContext(dispatchers.io) { probeInternal(switchToBest, settings) }
+            return withContext(dispatchers.io) { probeInternal(switchToBest, includeCommunity) }
         }
     }
 
     suspend fun probeHost(host: String): DomainCheck = mutex.withLock {
         val normalized = DomainPolicy.normalizeHostInput(host)
             ?: return@withLock DomainCheck(host = host, status = DomainStatus.INVALID, detail = appText(TextR.string.text_invalid_domain_format))
-        if (!registry.isAllowed(normalized)) {
+        if (!registry.isProbeAllowed(normalized)) {
             return@withLock DomainCheck(normalized, DomainStatus.INVALID, appText(TextR.string.text_domain_is_not_on_the_allowed_list))
         }
-        val check = checkHost(normalized)
-        check.redirectTarget?.let { adoptDiscovered(it) }
-        val updated = _checks.value.filterNot { it.host == normalized } + check
-        _checks.value = updated.sortedBy { hostOrder(it.host) }
-        check
+        probeHostLocked(normalized)
     }
 
     suspend fun setCurrentHost(host: String): AppResult<String> = mutex.withLock {
@@ -110,31 +113,49 @@ class DomainRepository @Inject constructor(
         if (!registry.isAllowed(normalized)) {
             return@withLock AppResult.Failure(AppError.Parse(appText(TextR.string.text_domain_is_not_on_the_allowed_list)))
         }
-        val resolved = resolveUsable(normalized)
-        applyHost(resolved, lockHost = normalized)
-        AppResult.Success(resolved)
+        selectApprovedHost(normalized)
     }
 
-    suspend fun addCustomHost(raw: String): AppResult<String> = mutex.withLock {
+    suspend fun selectVerifiedHost(host: String): AppResult<String> = mutex.withLock {
+        if (!isApprovedHost(host)) {
+            return@withLock AppResult.Failure(AppError.Parse(appText(TextR.string.text_domain_is_not_on_the_allowed_list)))
+        }
+        val check = probeHostLocked(host)
+        if (!check.healthy || (check.finalHost ?: check.host) != host) {
+            return@withLock AppResult.Failure(AppError.Parse(appText(TextR.string.text_domain_verification_unavailable)))
+        }
+        applyHost(host, lockHost = host)
+        AppResult.Success(host)
+    }
+
+    suspend fun approveCommunityHost(host: String): AppResult<String> = mutex.withLock {
+        approveCommunityHostLocked(host)
+    }
+
+    suspend fun approveAndSelectHost(host: String): AppResult<String> = mutex.withLock {
+        when (val approval = approveCommunityHostLocked(host)) {
+            is AppResult.Failure -> approval
+            is AppResult.Success -> {
+                probeHostLocked(approval.value)
+                selectApprovedHost(approval.value)
+            }
+        }
+    }
+
+    suspend fun addCustomHost(raw: String, select: Boolean = false): AppResult<String> = mutex.withLock {
         val host = when (val validation = DomainPolicy.validateCustomHost(raw)) {
             is AppResult.Failure -> return@withLock validation
             is AppResult.Success -> validation.value
         }
-        val hosts = currentSettings().customHosts + host
-        settingsStore.setCustomHosts(hosts)
-        registry.updateCustomHosts(hosts)
-        _settings.value = currentSettings().copy(customHosts = hosts)
-        syncProbeCandidates()
+        persistCustomHosts(currentSettings().customHosts + host)
+        val check = probeHostLocked(host)
 
-        val check = checkHost(host)
-        check.redirectTarget?.let { adoptDiscovered(it) }
-        _checks.value = (_checks.value.filterNot { it.host == host } + check).sortedBy { hostOrder(it.host) }
-
-        if (check.healthy &&
-            _settings.value.lockedHost == null &&
-            !isCurrentlyUsable()
-        ) {
-            applyHost(resolveUsable(host))
+        if (select) {
+            return@withLock selectApprovedHost(host)
+        }
+        val locked = _settings.value.lockedHost
+        if ((locked == null && !isCurrentlyUsable()) || locked == host && currentHostOrNull() == null) {
+            usableHostOf(check)?.let { applyHost(it, lockHost = locked) }
         }
         AppResult.Success(host)
     }
@@ -142,19 +163,21 @@ class DomainRepository @Inject constructor(
     suspend fun removeCustomHost(host: String): AppResult<Unit> = mutex.withLock {
         val normalized = DomainPolicy.normalizeHostInput(host)
             ?: return@withLock AppResult.Failure(AppError.Parse(appText(TextR.string.text_invalid_domain_format)))
-        val hosts = currentSettings().customHosts - normalized
-        settingsStore.setCustomHosts(hosts)
-        registry.updateCustomHosts(hosts)
-        _settings.value = currentSettings().copy(customHosts = hosts)
-        syncProbeCandidates()
-        _checks.value = _checks.value.filterNot { it.host == normalized }
+        if (normalized !in currentSettings().customHosts) return@withLock AppResult.Success(Unit)
+        persistCustomHosts(currentSettings().customHosts - normalized)
         if (_settings.value.lockedHost == normalized) {
             settingsStore.setLockedHost(null)
             _settings.value = currentSettings().copy(lockedHost = null)
         }
+        syncProbeCandidates()
         if (_currentHost.value == normalized) {
             _currentHost.value = null
+            settingsStore.setCurrentHost(null)
+            _settings.value = currentSettings().copy(currentHost = null)
+            publishChecks()
             probeInternal(switchToBest = true)
+        } else {
+            publishChecks()
         }
         AppResult.Success(Unit)
     }
@@ -165,6 +188,7 @@ class DomainRepository @Inject constructor(
         )
         settingsStore.setLockedHost(lockedHost)
         _settings.value = currentSettings().copy(lockedHost = lockedHost)
+        syncProbeCandidates()
         AppResult.Success(Unit)
     }
 
@@ -187,14 +211,27 @@ class DomainRepository @Inject constructor(
 
     private suspend fun probeInternal(
         switchToBest: Boolean,
-        settings: AppSettings = currentSettings(),
+        includeCommunity: Boolean = false,
     ): List<DomainCheck> {
-        val hosts = probeHosts(settings)
+        val settings = currentSettings()
+        val hosts = probeHosts(settings, includeCommunity)
         val previous = _checks.value
-        _checks.value = hosts.map { DomainCheck(it, DomainStatus.PROBING) }
+        publishChecks(hosts.map { DomainCheck(it, DomainStatus.PROBING) }, previous)
         _probing.value = true
-        val results = try {
-            probe.probeAll(hosts, concurrency = 8)
+        try {
+            val results = probe.probeAll(hosts, concurrency = 8)
+            val discovered = discoveryTargets(results)
+            val responders = results.filter { it.healthy }.map { it.finalHost ?: it.host }.toSet()
+            val retained = settings.discoveredHosts.filter { host ->
+                host !in hosts || host in responders || host == settings.lockedHost || host == settings.currentHost
+            }
+            persistDiscovered((retained + discovered).toSet())
+
+            val annotated = annotate(results, results.mapNotNull { it.redirectTarget }.toSet())
+            publishChecks(annotated, previous)
+
+            if (switchToBest) applyBestHost(annotated)
+            return annotated
         } catch (failure: Exception) {
             _checks.value = previous
             throw failure
@@ -202,50 +239,34 @@ class DomainRepository @Inject constructor(
             _probing.value = false
         }
 
-        // A redirector is usable only through the target that passed the credential-free handshake.
-        val redirectTargets = results.mapNotNull { it.redirectTarget }.distinct()
-        // Stored targets are probed credential-free first; only a healthy answer re-trusts them.
-        val revalidated = results.filter { it.healthy && it.host in settings.discoveredHosts }.map { it.host }
-        (redirectTargets + revalidated).distinct().forEach(registry::addDiscoveredHost)
-        persistDiscovered(results, redirectTargets)
+    }
 
-        val annotated = results + redirectTargets
-            .filterNot { target -> results.any { it.host == target } }
-            .map { target -> DomainCheck(target, DomainStatus.HEALTHY, appText(TextR.string.text_discovered_through_a_redirect)) }
-        _checks.value = annotated.sortedBy { hostOrder(it.host) }
-
-        if (switchToBest) {
-            val usable = annotated.mapNotNull(::usableHostOf).distinct()
-            val locked = _settings.value.lockedHost
-            if (locked != null) {
-                // An explicit lock wins over automatic failover (ADR-013). The lock stays on the host
-                // the user picked; a redirector resolves to its verified target (ADR-065).
-                val target = annotated.firstOrNull { it.host == locked }?.let(::usableHostOf)
-                val next = target ?: if (_currentHost.value == null) locked else null
-                if (next != null && next != _currentHost.value) applyHost(next, lockHost = locked)
-                return annotated
-            }
-
-            val current = _currentHost.value
-            val best = when {
-                current != null && usable.contains(current) -> current
-                else -> usable.firstOrNull()
-            }
-            if (best != null) applyHost(best)
+    private suspend fun applyBestHost(checks: List<DomainCheck>) {
+        val locked = currentSettings().lockedHost
+        if (locked != null) {
+            val target = checks.firstOrNull { it.host == locked }?.let(::usableHostOf)
+            if (target != null && registry.isAllowed(locked)) applyHost(target, lockHost = locked)
+            return
         }
-        return annotated
+
+        val usable = checks.mapNotNull(::usableHostOf)
+        val current = currentHostOrNull()
+        if (current != null && current in usable) return
+        usable.firstOrNull()?.let { applyHost(it) }
     }
 
-    /** Host that can actually serve EAPI: the verified redirect target, else the host itself. */
-    private fun usableHostOf(check: DomainCheck): String? = when {
-        !check.healthy -> null
-        check.redirectTarget != null -> check.redirectTarget
-        else -> check.host
-    }
+    private fun usableHostOf(check: DomainCheck): String? = check.takeIf { it.healthy }
+        ?.let { it.finalHost ?: it.host }?.takeIf(registry::isAllowed)
 
-    private fun resolveUsable(host: String): String {
-        val check = _checks.value.firstOrNull { it.host == host && it.healthy } ?: return host
-        return check.redirectTarget ?: host
+    private suspend fun selectApprovedHost(host: String): AppResult<String> {
+        val check = _checks.value.firstOrNull { it.host == host }
+        val status = check?.status
+        if (status == DomainStatus.DIAMWALL || status == DomainStatus.CHALLENGED) {
+            return AppResult.Failure(AppError.DomainBlocked(status))
+        }
+        val resolved = check?.let(::usableHostOf) ?: host
+        applyHost(resolved, lockHost = host)
+        return AppResult.Success(resolved)
     }
 
     private fun isCurrentlyUsable(): Boolean {
@@ -253,39 +274,44 @@ class DomainRepository @Inject constructor(
         return _checks.value.any { usableHostOf(it) == current }
     }
 
-    private suspend fun adoptDiscovered(host: String) {
-        registry.addDiscoveredHost(host)
-        val stored = currentSettings().discoveredHosts
-        if (host in stored) return
-        val merged = stored + host
-        settingsStore.setDiscoveredHosts(merged)
-        _settings.value = currentSettings().copy(discoveredHosts = merged)
-        syncProbeCandidates()
+    private fun discoveryTargets(checks: List<DomainCheck>): Set<String> = checks
+        .mapNotNull { it.redirectTarget }.filterNot(registry::isAllowed).toSet()
+
+    private fun annotate(checks: List<DomainCheck>, targets: Set<String>): List<DomainCheck> =
+        (checks + targets.filterNot { target -> checks.any { it.host == target } }.map { target ->
+            DomainCheck(target, DomainStatus.HEALTHY, appText(TextR.string.text_discovered_through_a_redirect), finalHost = target)
+        }).map(::groupCheck)
+
+    private suspend fun approveCommunityHostLocked(raw: String): AppResult<String> {
+        val host = DomainPolicy.normalizeHostInput(raw)
+            ?: return AppResult.Failure(AppError.Parse(appText(TextR.string.text_invalid_domain_format)))
+        if (!DomainPolicy.isCommunityMirror(host)) {
+            return AppResult.Failure(AppError.Parse(appText(TextR.string.text_domain_is_not_on_the_allowed_list)))
+        }
+        if (!registry.isAllowed(host)) persistCustomHosts(currentSettings().customHosts + host)
+        publishChecks()
+        return AppResult.Success(host)
     }
 
-    /**
-     * Keeps the verified targets for the next probe round; targets that stop answering are dropped
-     * unless they are the current or the locked host (so the user keeps seeing the failure).
-     */
-    private suspend fun persistDiscovered(results: List<DomainCheck>, redirectTargets: List<String>) {
-        val stored = currentSettings().discoveredHosts
-        if (stored.isEmpty() && redirectTargets.isEmpty()) return
-        val healthyNow = results.filter { it.healthy }
-            .flatMap { listOfNotNull(it.host, it.redirectTarget) }
-            .toSet()
-        val keep = stored.filter {
-            it in healthyNow || it == _settings.value.lockedHost || it == _currentHost.value
+    private suspend fun persistCustomHosts(hosts: Set<String>) {
+        if (hosts == currentSettings().customHosts) return
+        withContext(NonCancellable) {
+            settingsStore.setCustomHosts(hosts)
+            registry.updateCustomHosts(hosts)
+            _settings.value = currentSettings().copy(customHosts = hosts)
         }
-        val merged = (keep + redirectTargets).toSet()
-        registry.removeDiscoveredHosts(stored - keep)
-        if (merged != stored) {
-            settingsStore.setDiscoveredHosts(merged)
-            _settings.value = currentSettings().copy(discoveredHosts = merged)
+    }
+
+    private suspend fun persistDiscovered(hosts: Set<String>) {
+        if (hosts != currentSettings().discoveredHosts) {
+            settingsStore.setDiscoveredHosts(hosts)
+            _settings.value = currentSettings().copy(discoveredHosts = hosts)
             syncProbeCandidates()
         }
     }
 
     private suspend fun applyHost(host: String, lockHost: String? = host) {
+        if (!registry.isAllowed(host)) return
         val session = sessionManager.current()
         val lockNeedsUpdate = _settings.value.lockedHost != null && _settings.value.lockedHost != lockHost
         if (_currentHost.value == host &&
@@ -297,9 +323,7 @@ class DomainRepository @Inject constructor(
         }
 
         if (_currentHost.value != host) _currentHost.value = host
-        if (_checks.value.none { it.host == host }) {
-            _checks.update { (it + DomainCheck.unknown(host)).sortedBy { check -> hostOrder(check.host) } }
-        }
+        if (_checks.value.none { it.host == host }) publishChecks(listOf(DomainCheck.unknown(host)))
         settingsStore.setCurrentHost(host)
         _settings.value = currentSettings().copy(currentHost = host)
         // Manual selection follows the lock so a later probe cannot undo it. A redirect target keeps
@@ -307,6 +331,7 @@ class DomainRepository @Inject constructor(
         if (lockNeedsUpdate && lockHost != null) {
             settingsStore.setLockedHost(lockHost)
             _settings.value = currentSettings().copy(lockedHost = lockHost)
+            syncProbeCandidates()
         }
         if (session != null && session.domain != host) {
             sessionManager.updateDomain(session, host)
@@ -316,42 +341,57 @@ class DomainRepository @Inject constructor(
     private fun currentSettings(): AppSettings = _settings.value
 
     private fun applySettings(settings: AppSettings) {
-        _settings.value = settings
-        registry.updateCustomHosts(settings.customHosts)
+        val normalizedHosts = settings.customHosts.mapNotNull(DomainPolicy::normalizeHostInput).toSet()
+        registry.updateCustomHosts(normalizedHosts)
+        _settings.value = settings.copy(
+            customHosts = normalizedHosts,
+            discoveredHosts = settings.discoveredHosts.mapNotNull(DomainPolicy::normalizeHostInput).toSet(),
+            currentHost = DomainPolicy.normalizeHostInput(settings.currentHost) ?: settings.currentHost,
+            lockedHost = DomainPolicy.normalizeHostInput(settings.lockedHost) ?: settings.lockedHost,
+        )
         syncProbeCandidates()
     }
 
     private fun syncProbeCandidates() {
         val settings = currentSettings()
-        registry.updateProbeCandidates(settings.customHosts + settings.discoveredHosts)
+        registry.updateProbeCandidates(settings.discoveredHosts + listOfNotNull(settings.lockedHost))
     }
 
-    private fun probeHosts(settings: AppSettings): List<String> {
-        val remembered = _settings.value.currentHost
+    private fun probeHosts(settings: AppSettings, includeCommunity: Boolean): List<String> {
         val candidates = (
             DomainPolicy.DEFAULT_PROBE_HOSTS +
+                DomainPolicy.COMMUNITY_MIRROR_HOSTS +
                 settings.customHosts +
                 settings.discoveredHosts +
-                listOfNotNull(_currentHost.value, remembered, sessionManager.current()?.domain)
+                listOfNotNull(_currentHost.value, settings.currentHost, settings.lockedHost, sessionManager.current()?.domain)
             )
             .mapNotNull(DomainPolicy::normalizeHostInput)
             .distinct()
-        // Stored redirect targets stay probeable before they are trusted again in this session.
-        return candidates.filter { registry.isAllowed(it) || it in settings.discoveredHosts }
+        return candidates.filter(if (includeCommunity) registry::isProbeAllowed else registry::isAllowed)
     }
 
-    private fun populateChecks() {
-        val known = _checks.value.associateBy { it.host }
-        _checks.value = probeHosts(currentSettings()).map { known[it] ?: DomainCheck.unknown(it) }
+    private fun publishChecks(updated: List<DomainCheck> = emptyList(), previous: List<DomainCheck> = _checks.value) {
+        val known = (previous + updated).associateBy { it.host }
+        val hosts = probeHosts(currentSettings(), includeCommunity = true) + updated.map { it.host }
+        _checks.value = hosts.distinct().sortedBy(::hostOrder).map { host ->
+            groupCheck(known[host] ?: DomainCheck.unknown(host))
+        }
     }
 
-    private suspend fun checkHost(host: String): DomainCheck {
+    private fun groupCheck(check: DomainCheck): DomainCheck = check.copy(
+        group = if (DomainPolicy.isBuiltIn(check.host)) DomainGroup.OFFICIAL else DomainGroup.COMMUNITY,
+    )
+
+    private suspend fun probeHostLocked(host: String): DomainCheck {
         val previous = _checks.value
-        _checks.value = (previous.filterNot { it.host == host } + DomainCheck(host, DomainStatus.PROBING))
-            .sortedBy { hostOrder(it.host) }
+        publishChecks(listOf(DomainCheck(host, DomainStatus.PROBING)), previous)
         _probing.value = true
         return try {
-            withContext(dispatchers.io) { probe.probe(host) }
+            val check = groupCheck(withContext(dispatchers.io) { probe.probe(host) })
+            val targets = discoveryTargets(listOf(check))
+            if (targets.isNotEmpty()) persistDiscovered(currentSettings().discoveredHosts + targets)
+            publishChecks(annotate(listOf(check), setOfNotNull(check.redirectTarget)), previous)
+            check
         } catch (failure: Exception) {
             _checks.value = previous
             throw failure
@@ -364,9 +404,12 @@ class DomainRepository @Inject constructor(
         val defaults = DomainPolicy.DEFAULT_PROBE_HOSTS
         val index = defaults.indexOf(host)
         if (index >= 0) return index
-        // User mirrors and auto-discovered targets follow the built-in order.
+        val community = DomainPolicy.COMMUNITY_MIRROR_HOSTS
+        val communityIndex = community.indexOf(host)
+        if (communityIndex >= 0) return defaults.size + communityIndex
+        val customOffset = defaults.size + community.size
         val customIndex = registry.customHosts().sorted().indexOf(host)
-        if (customIndex >= 0) return defaults.size + customIndex
-        return defaults.size + 100
+        if (customIndex >= 0) return customOffset + customIndex
+        return Int.MAX_VALUE
     }
 }

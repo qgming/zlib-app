@@ -26,7 +26,7 @@ sealed interface AppError {
     data class Quota(val remaining: Int?, val resetHint: String? = null) : AppError
     data class DomainBlocked(val status: DomainStatus) : AppError
     data class Network(val cause: Throwable) : AppError
-    data class Server(val code: Int, val message: String) : AppError
+    data class Server(val code: Int, val message: String, val retryAtEpochMillis: Long? = null) : AppError
     data class Storage(val cause: Throwable) : AppError
     data class Parse(val message: String) : AppError
     data class Unsupported(val message: String) : AppError

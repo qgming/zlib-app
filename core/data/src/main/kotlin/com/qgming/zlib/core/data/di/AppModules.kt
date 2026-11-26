@@ -15,9 +15,9 @@ import com.qgming.zlib.core.database.ZlibDatabase
 import com.qgming.zlib.core.network.CredentialStripInterceptor
 import com.qgming.zlib.core.network.DomainPolicy
 import com.qgming.zlib.core.network.DomainProbe
+import com.qgming.zlib.core.network.DomainVerificationCookies
 import com.qgming.zlib.core.network.EapiClient
 import com.qgming.zlib.core.network.EapiJson
-import com.qgming.zlib.core.network.EapiRedirectGuardInterceptor
 import com.qgming.zlib.core.network.GitHubReleaseClient
 import com.qgming.zlib.core.network.PapiBooklistClient
 import com.qgming.zlib.core.network.PapiCommentsClient
@@ -28,9 +28,12 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Singleton
 import kotlinx.serialization.json.Json
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
 import androidx.room.Room
 import okhttp3.OkHttpClient
 
@@ -40,7 +43,31 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun gitHubReleaseClient(): GitHubReleaseClient = GitHubReleaseClient()
+    fun domainVerificationCookies(@ApplicationContext context: Context, registry: AllowedHostRegistry): DomainVerificationCookies {
+        val connectivity = context.getSystemService(ConnectivityManager::class.java)
+        val monitoring = AtomicBoolean(false)
+        val cookies = DomainVerificationCookies(registry::isAllowed, {
+            if (monitoring.get()) connectivity?.activeNetwork?.networkHandle else null
+        })
+        if (connectivity != null) {
+            monitoring.set(runCatching {
+                connectivity.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(network: Network) = cookies.clear()
+
+                    override fun onLost(network: Network) = cookies.clear()
+                })
+                true
+            }.getOrDefault(false))
+        }
+        return cookies
+    }
+
+    @Provides
+    @Singleton
+    fun gitHubReleaseClient(@ApplicationContext context: Context): GitHubReleaseClient {
+        val connectivity = context.getSystemService(ConnectivityManager::class.java)
+        return GitHubReleaseClient { connectivity?.activeNetwork?.networkHandle }
+    }
 
     @Provides
     @Singleton
@@ -82,8 +109,7 @@ object AppModule {
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true)
-        .followSslRedirects(true)
-        .addNetworkInterceptor(EapiRedirectGuardInterceptor(isAllowedUrl = { url -> url.isHttps && registry.isAllowed(url.host) }))
+        .followSslRedirects(false)
         .addNetworkInterceptor(CredentialStripInterceptor(isAllowedUrl = { url -> registry.isAllowed(url.host) }))
         .build()
 
@@ -93,11 +119,13 @@ object AppModule {
         client: OkHttpClient,
         registry: AllowedHostRegistry,
         dispatchers: AppDispatchers,
+        verificationCookies: DomainVerificationCookies,
     ): DomainProbe = DomainProbe(
         client = client,
         dispatchers = dispatchers,
         isAllowedHost = registry::isProbeAllowed,
-        isTrustedHost = registry::isAllowed,
+        isTrustedHost = { registry.isAllowed(it) || DomainPolicy.isCatalogHost(it) },
+        verificationCookieProvider = verificationCookies::cookieHeaderFor,
     )
 
     @Provides
@@ -106,14 +134,18 @@ object AppModule {
         client: OkHttpClient,
         json: Json,
         domainRepository: DomainRepository,
+        registry: AllowedHostRegistry,
         sessionManager: SessionManager,
         dispatchers: AppDispatchers,
+        verificationCookies: DomainVerificationCookies,
     ): EapiClient = EapiClient(
         client = client,
         json = json,
         baseUrlProvider = { domainRepository.currentHostOrNull()?.let(DomainPolicy::baseUrl) },
         sessionProvider = { sessionManager.current() },
         dispatchers = dispatchers,
+        isAllowedUrl = { url -> DomainPolicy.isStandardHttps(url) && registry.isAllowed(url.host) },
+        verificationCookieProvider = verificationCookies::cookieHeaderFor,
     )
 }
 

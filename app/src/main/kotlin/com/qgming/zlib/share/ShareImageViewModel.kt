@@ -21,8 +21,6 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
@@ -33,6 +31,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Authenticator
 import okhttp3.CookieJar
 import okhttp3.OkHttpClient
@@ -62,6 +61,7 @@ internal class ShareImageViewModel(application: Application, savedState: SavedSt
         _state.value = ShareImageUiState(content = content)
         if (content == null) {
             _state.value = _state.value.copy(error = appText(TextR.string.text_share_image_unavailable))
+            saveWhenReady()
         } else {
             generate(content)
         }
@@ -97,6 +97,7 @@ internal class ShareImageViewModel(application: Application, savedState: SavedSt
                 throw cancelled
             } catch (_: Exception) {
                 _state.value = ShareImageUiState(content = content, error = appText(TextR.string.text_share_image_failed))
+                saveWhenReady()
             }
         }
     }
@@ -116,25 +117,30 @@ internal class ShareImageViewModel(application: Application, savedState: SavedSt
             .diskCache(null)
             .build()
         try {
+            val covers = arrayOfNulls<Bitmap>(content.books.size)
             val permits = Semaphore(2)
-            coroutineScope {
-                content.books.map { book -> async {
-                    if (book.coverUrl.isEmpty()) return@async null
-                    permits.withPermit {
-                        try {
-                            val request = ImageRequest.Builder(context).data(book.coverUrl)
-                                .size(600, 900).allowHardware(false)
-                                .diskCachePolicy(CachePolicy.DISABLED)
-                                .build()
-                            loader.execute(request).image?.toBitmap()
-                        } catch (cancelled: CancellationException) {
-                            throw cancelled
-                        } catch (_: Exception) {
-                            null
+            withTimeoutOrNull(COVER_BUDGET_MILLIS) {
+                coroutineScope {
+                    content.books.forEachIndexed { index, book ->
+                        if (book.coverUrl.isNotEmpty()) launch {
+                            permits.withPermit {
+                                try {
+                                    val request = ImageRequest.Builder(context).data(book.coverUrl)
+                                        .size(600, 900).allowHardware(false)
+                                        .diskCachePolicy(CachePolicy.DISABLED)
+                                        .build()
+                                    covers[index] = loader.execute(request).image?.toBitmap()
+                                } catch (cancelled: CancellationException) {
+                                    throw cancelled
+                                } catch (_: Exception) {
+                                    Unit
+                                }
+                            }
                         }
                     }
-                } }.awaitAll()
+                }
             }
+            covers.toList()
         } finally {
             loader.shutdown()
             anonymous.connectionPool.evictAll()
@@ -152,13 +158,17 @@ internal class ShareImageViewModel(application: Application, savedState: SavedSt
 
     private fun saveWhenReady() {
         val current = state.value
-        val file = current.file ?: return
-        val destination = pendingSave.takeWhenReady(!current.generating && !current.working) ?: return
+        val ready = !current.generating && !current.working && (current.file != null || current.error != null)
+        val destination = pendingSave.takeWhenReady(ready) ?: return
         _state.value = current.copy(working = true)
         viewModelScope.launch {
             val message = try {
-                withContext(Dispatchers.IO) { files.copyTo(context, file, destination.toUri()) }
-                appText(TextR.string.text_share_image_saved)
+                val outcome = withContext(Dispatchers.IO) { files.save(context, current.file, destination.toUri()) }
+                appText(when (outcome) {
+                    ShareImageSaveOutcome.Saved -> TextR.string.text_share_image_saved
+                    ShareImageSaveOutcome.Failed -> TextR.string.text_share_image_save_failed
+                    ShareImageSaveOutcome.Incomplete -> TextR.string.text_share_image_save_partial
+                })
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
@@ -173,5 +183,6 @@ internal class ShareImageViewModel(application: Application, savedState: SavedSt
 
     private companion object {
         const val PENDING_DESTINATION = "share-image-destination"
+        const val COVER_BUDGET_MILLIS = 5_000L
     }
 }

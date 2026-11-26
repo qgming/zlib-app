@@ -44,7 +44,8 @@ class DetailViewModelTest {
                 val sessions = SessionManager(MemorySessionStore(), dispatchers)
                 sessions.save(Session("7", "key", "z-lib.sk"))
                 val api = EapiClient(OkHttpClient(), { server.url("/").toString() }, sessions::current,
-                    baseUrlForHost = { server.url("/").toString() }, dispatchers = dispatchers, maxAttempts = 1)
+                    baseUrlForHost = { server.url("/").toString() }, dispatchers = dispatchers, maxAttempts = 1,
+                    isAllowedUrl = { it.host == server.hostName && it.port == server.port })
                 val queued = mutableListOf<Book>()
                 val forced = mutableListOf<Book>()
                 val checked = mutableListOf<String>()
@@ -210,6 +211,7 @@ class DetailViewModelTest {
                     client = OkHttpClient(), baseUrlProvider = { server.url("/").toString() },
                     baseUrlForHost = { server.url("/").toString() }, sessionProvider = sessions::current,
                     dispatchers = dispatchers, maxAttempts = 1,
+                    isAllowedUrl = { it.host == server.hostName && it.port == server.port },
                 )
                 val queued = mutableListOf<Book>()
                 val viewModel = DetailViewModel(BookRepository(api), sessions, enqueue = { book ->

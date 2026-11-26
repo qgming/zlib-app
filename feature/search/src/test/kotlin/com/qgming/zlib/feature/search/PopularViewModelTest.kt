@@ -192,6 +192,7 @@ class PopularViewModelTest {
             sessionProvider = sessions::current,
             dispatchers = dispatchers,
             maxAttempts = 1,
+            isAllowedUrl = { it.host == server.hostName && it.port == server.port },
         )
 
         fun viewModel() = PopularViewModel(BookRepository(api, sessions))

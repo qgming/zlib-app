@@ -1,0 +1,11 @@
+<resources>
+    <string name="domain_verification_title">域名人机验证</string>
+    <string name="domain_verification_description">%1$s\n请完成网页中的人机验证后点击“完成并重检”。此页不提供账号登录；部分验证可能不兼容。</string>
+    <string name="domain_verification_close">关闭</string>
+    <string name="domain_verification_refresh">刷新</string>
+    <string name="domain_verification_done">完成并重检</string>
+    <string name="domain_verification_loading">正在加载验证页面…</string>
+    <string name="domain_verification_loaded">完成网页验证后，请点击“完成并重检”。</string>
+    <string name="domain_verification_failed">验证页面加载失败或不兼容，请刷新重试或更换域名。</string>
+    <string name="domain_verification_blocked">验证页不支持此操作。</string>
+</resources>
