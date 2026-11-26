@@ -372,3 +372,12 @@ APK 为 `app/build/release/zhishi-1.4.0-universal.apk`，5,202,010 字节，SHA-
 本地生成唯一正式通用包 `app/build/release/zhishi-1.4.0-universal.apk`，大小 5,350,954 字节，SHA-256 `b42ccd8c3e6cc47f9e0ffb8a2e9e9a6cad628379e6faa3afa8cddda45390e044`，与 `SHA256SUMS.txt` 一致。SDK 工具确认包名 `com.qgming.zlib`、`1.4.0`／`versionCode=7`、minSdk 33、targetSdk 37；`apksigner` 验证成功，原签名证书 SHA-256 为 `d964fb1414f44fc8eb0f4a3c4835a5c8fb70e4527e3f039bc70b0e1ccaca032e`。ZIP 含四种 ABI 的两份原生库，16 KB 对齐通过；APK 内六份离线许可与源文件逐字节一致。
 
 本轮未发布、未更改版本号、未安装或操作真机。VPN 双路线兼容性只是当次匿名 EAPI 检查；实际账号登录／搜索、每个镜像长期可用性、VPN 网络下应用内更新提示，以及 DiamWall 能否由 WebView 用户完成验证，均需用户真机验收。
+
+## 23. 1.5.0 正式发布、Markdown 日志渲染与真机安装（2026-11-27）
+
+- 本轮包含 ADR-109–118：PAPI JSON 优先解析、隔离进程原生 WebView 人机验证、内置社区镜像直接可用与按延迟排序、搜索单列图文列表、书单快捷移除与评论子回复去左缩进、分享图浅/深色切换与缓存封面复用、启动首可用即进入与后台全量测速、Miuix `0.9.5-rc01` Glass 升级与首次引导重构、玻璃底部面板顶栏重叠修复与顶栏操作位、空心云图标与长按直接确认，以及检查更新／更新日志 Markdown 渲染。
+- 顺序执行 `./gradlew.bat test lint --console=plain` 与 `./gradlew.bat :app:prepareReleaseAssets --console=plain` 均通过：69 个测试套件、460 项单测全部通过（0 失败 / 0 错误 / 0 跳过），lint 无新增 error。
+- 唯一正式通用包 `app/build/release/zhishi-1.5.0-universal.apk` 大小 5,634,806 字节，SHA-256 `3ad28039fafe55219f3c56a7e98e9e2b8f01ae17176254ec00de6aab77ff5562`，与 `SHA256SUMS.txt` 一致；核对原签名证书（SHA-256 `d964fb1414f44fc8eb0f4a3c4835a5c8fb70e4527e3f039bc70b0e1ccaca032e`）、包名 `com.qgming.zlib`、`1.5.0`／`versionCode=8`、minSdk 33、targetSdk 37、非 debuggable、四种 ABI 原生库与 16 KB ZIP 对齐均通过。
+- 已覆盖安装至连接真机 `4993375f`（`M332BF`），系统复核 `1.5.0` / `versionCode=8`；未自动操作应用内旧版到新版下载安装链路，线上更新下载与安装仍保留为后续用户实测项。
+- 源码提交 `6d6df48` 与标签 `v1.5.0` 已推送 `origin/main`；`v1.5.0` 正式 Release 于 2026-11-26 16:21:42 UTC（北京时间 2026-11-27 00:21:42）公开并设为 Latest，历史 Release `v1.0.0`–`v1.4.0` 正文同步替换为对应 Markdown；发布后匿名重新下载全部 3 份附件并比对 SHA-256 均与本地一致，无凭据 `releases/latest` API 返回 HTTP 200 且确认为 `v1.5.0`。
+

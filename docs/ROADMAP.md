@@ -1,8 +1,8 @@
 # 维护计划
 
-当前发布基线为 **v1.4.0**。已发布功能与用户说明见 [README](../README.md)，每版变化见 [发布日志](https://github.com/qgming/zlib-app/releases)。本文件只保留后续工作，移除已经失效的 v0.x 分期与占位功能安排。
+当前发布基线为 **v1.5.0**。已发布功能与用户说明见 [README](../README.md)，每版变化见 [发布日志](https://github.com/qgming/zlib-app/releases)。本文件只保留后续工作，移除已经失效的 v0.x 分期与占位功能安排。
 
-**1.4.0 / versionCode 7** 已正式发布，含下述书单、评论、在线预览与图片分享；变化见[完整更新日志](releases/v1.4.0.md)。当前开发版已推进至 **1.5.0 / versionCode 8**（草案见 [v1.5.0 更新日志](releases/v1.5.0.md)）。真实交互验证边界继续保留，发布结果见 [RELEASING.md](RELEASING.md)。
+**1.5.0 / versionCode 8** 已正式发布；完整变化见 [v1.5.0 更新日志](releases/v1.5.0.md)，真实交互验证边界继续保留，发布结果见 [RELEASING.md](RELEASING.md)。
 
 ## 已交付范围
 

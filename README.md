@@ -51,12 +51,12 @@
 
 1.2.0 及更早版本的独立架构包保留在历史 Release 中。每次发布都附有 `SHA256SUMS.txt`，可核对文件完整性。
 
-当前正式版为 **[v1.4.0](https://github.com/qgming/zlib-app/releases/tag/v1.4.0)**，可直接下载 **[通用 APK](https://github.com/qgming/zlib-app/releases/download/v1.4.0/zhishi-1.4.0-universal.apk)**。
+当前正式版为 **[v1.5.0](https://github.com/qgming/zlib-app/releases/tag/v1.5.0)**，可直接下载 **[通用 APK](https://github.com/qgming/zlib-app/releases/download/v1.5.0/zhishi-1.5.0-universal.apk)**。
 
-本版完整变化见 [1.4.0 更新日志](docs/releases/v1.4.0.md)，即将发布的 1.5.0 草案见 [1.5.0 更新日志](docs/releases/v1.5.0.md)，发布与校验记录见[发布说明](docs/RELEASING.md)。
+本版完整变化见 [1.5.0 更新日志](docs/releases/v1.5.0.md)，发布与校验记录见[发布说明](docs/RELEASING.md)。
 
 应用会在启动后检查新版，也可在「设置 → 关于 → 检查更新」手动触发。
-发现新版后显示真实发布日志；点击更新会在应用内下载并显示进度。现有 1.3.1 及更早版本可通过检查更新直接升级到 1.4.0，无需过渡版本。
+发现新版后显示真实发布日志；点击更新会在应用内下载并显示进度。现有 1.4.0 及更早版本可通过检查更新直接升级到 1.5.0，无需过渡版本。
 校验通过的 APK 会保存到已授权的下载目录，点击安装后由系统确认；不会静默安装。
 
 若检查更新或读取更新日志失败，可开关 VPN 或切换网络后手动重试。GitHub 的匿名 API 按出口 IP 计量，使用共享 VPN 出口时可能遇到限流。
@@ -179,7 +179,7 @@ SHA256SUMS.txt
 日常打包统一使用以上正式通用版任务，只生成一个签名 APK，不附带调试包或独立架构包。
 
 发布时同步递增 `appVersionName` / `appVersionCode`，使用对应的 `vMAJOR.MINOR.PATCH` 标签创建正式 Release，
-填写真实更新日志并上传上述资产。当前已发布正式版为 1.4.0 / versionCode=7（日志见 [1.4.0 更新日志](docs/releases/v1.4.0.md)），当前开发版本已推进至 1.5.0 / versionCode=8（日志见 [1.5.0 更新日志](docs/releases/v1.5.0.md)），包名和原签名保持一致。具体校验与发布流程见 [发布说明](docs/RELEASING.md)。
+填写真实更新日志并上传上述资产。当前正式版为 1.5.0 / versionCode=8，高于 1.4.0 的 7，包名和原签名保持一致；[1.5.0 更新日志](docs/releases/v1.5.0.md)与线上正文一致。具体校验与发布流程见 [发布说明](docs/RELEASING.md)。
 正式构建启用 R8 优化和资源裁剪，通用包包含全部四种架构。
 
 ## 文档

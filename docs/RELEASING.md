@@ -7,7 +7,7 @@
 `app/build.gradle.kts` 的 `appVersionName` 使用 SemVer，`appVersionCode` 每次公开发布递增。
 Git 标签为 `v<appVersionName>`，例如 `v1.0.0`。同一版本的所有架构与通用包使用相同 versionCode，便于互相覆盖安装和后续更新。
 
-当前正式版为 `1.4.0`（`versionCode=7`），于 2026-11-25 16:51:49（北京时间，UTC 为 2026-11-25 08:51:49）发布为 `v1.4.0` 并设为 Latest，标签指向构建源码提交 `32fd44ba0be5d72c72f63d23a05668925d7546c9`。上一正式版 `v1.3.1`（`versionCode=6`）于 2026-11-24 12:54:16（北京时间）发布，标签指向 `e173ac2f9ea90dec8278ad031cbfe2d8090cf6fa`。`v1.3.0`（`versionCode=5`）于 2026-11-24 00:58:18（北京时间）发布，标签指向 `d236ad8036b500f292799bedc4e4bb864a66451e`；`v1.2.0`（`versionCode=4`）标签指向 `5784a9862152041539a65b3506852e0dabcc2222`，`v1.1.0`（`versionCode=3`）标签指向 `6c1ccb2103990b4d8fe8fed4dc8eeed4102b96ac`。
+当前正式版为 `1.5.0`（`versionCode=8`），于 2026-11-27 00:21:42（北京时间，UTC 为 2026-11-26 16:21:42）发布为 `v1.5.0` 并设为 Latest，标签指向构建源码提交 `6d6df48`；仓库内历史版本 `v1.0.0`–`v1.4.0` 的更新正文均已重写为 Markdown 并同步更新至线上对应 Release。上一正式版 `v1.4.0`（`versionCode=7`）于 2026-11-25 16:51:49（北京时间，UTC 为 2026-11-25 08:51:49）发布，标签指向 `32fd44ba0be5d72c72f63d23a05668925d7546c9`。更早版本：`v1.3.1`（`versionCode=6`）指向 `e173ac2f9ea90dec8278ad031cbfe2d8090cf6fa`，`v1.3.0`（`versionCode=5`）指向 `d236ad8036b500f292799bedc4e4bb864a66451e`，`v1.2.0`（`versionCode=4`）指向 `5784a9862152041539a65b3506852e0dabcc2222`，`v1.1.0`（`versionCode=3`）指向 `6c1ccb2103990b4d8fe8fed4dc8eeed4102b96ac`。
 
 1.3.1 修复了移动端搜索被拒绝的问题（ADR-076），并将最近搜索改为胶囊布局（ADR-077）；正文见 `docs/releases/v1.3.1.txt`，发布授权与验证见 ADR-078。
 
@@ -126,3 +126,13 @@ ADR-105/106 的本地构建仅生成 `app/build/release/zhishi-1.4.0-universal.a
 - `test lint :app:prepareReleaseAssets --offline --max-workers=1 --console=plain` 通过。当前 13 个模块共 68 个测试套件、427 项单测，失败、错误、跳过均为 0；lint 无错误，隔离挑战 WebView 的必要 JavaScript 启用保留一条 `SetJavaScriptEnabled` 安全提醒。
 - 唯一正式通用包为 `zhishi-1.4.0-universal.apk`，5,350,954 字节，SHA-256 `b42ccd8c3e6cc47f9e0ffb8a2e9e9a6cad628379e6faa3afa8cddda45390e044`，与 `SHA256SUMS.txt` 一致。包名 `com.qgming.zlib`、`1.4.0`／`versionCode=7`、minSdk 33、targetSdk 37；原签名证书 SHA-256 `d964fb1414f44fc8eb0f4a3c4835a5c8fb70e4527e3f039bc70b0e1ccaca032e`。四 ABI 原生库、16 KB ZIP 对齐和六份许可资产均已核验。
 - 本地包未发布、未递增版本号、未安装真机；不得以此同版本本地构建替换已发布资产。挑战实际可用性、VPN 上的客户端更新操作和账号功能保留给用户真机验收，详见 `TESTING.md` 第 22 节。
+
+## v1.5.0 构建与发布记录
+
+- 2026-11-27 顺序执行 `test lint` 与 `:app:prepareReleaseAssets` 通过。当前 13 个模块共 69 个测试套件、460 项单测，失败、错误、跳过均为 0；lint 无新增 error。正式包启用 R8 与资源裁剪，未构建调试包或独立架构包。
+- 输出仅含 `zhishi-1.5.0-universal.apk`（5,634,806 字节）与 `SHA256SUMS.txt`（93 字节）。APK 的 SHA-256 为 `3ad28039fafe55219f3c56a7e98e9e2b8f01ae17176254ec00de6aab77ff5562`，与校验文件一致。
+- 原签名证书 SHA-256 为 `d964fb1414f44fc8eb0f4a3c4835a5c8fb70e4527e3f039bc70b0e1ccaca032e`（`CN=qgming, C=CN`）；包名 `com.qgming.zlib`、versionName `1.5.0`、versionCode `8`、minSdk 33、targetSdk 37、非 debuggable；四种 ABI 原生库完整、16 KB ZIP 对齐通过。
+- 正式通用包已按用户要求覆盖安装至真机 `4993375f`（`M332BF`），ADB 返回 `Success`，系统复核 `1.5.0` / `versionCode=8`，保留原有数据。
+- 完整 Markdown 更新日志保存为 `docs/releases/v1.5.0.md`，同时 `v1.0.0`–`v1.4.0` 全部改写为 `.md` 并同步更新线上历史 Release 正文。构建源码提交 `6d6df48` 及标签 `v1.5.0` 已推送 `origin/main`。
+- 2026-11-26 16:21:42 UTC（北京时间 2026-11-27 00:21:42）正式发布 `https://github.com/qgming/zlib-app/releases/tag/v1.5.0`，非草稿、非预发布并设为 Latest。三个附件为唯一 `zhishi-1.5.0-universal.apk`、`SHA256SUMS.txt`、`v1.5.0.md`；草稿阶段核对 GitHub 摘要，发布后匿名重新下载三份附件逐字节 SHA-256 均与本地完全一致；无凭据 `releases/latest` API 返回 HTTP 200 且 `tag_name` 为 `v1.5.0`。
+
