@@ -44,75 +44,22 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 @OptIn(ExperimentalCoroutinesApi::class)
 class LoginViewModelTest {
     @Test
-    fun `community mirror cards stay visible and selection requires confirmation`() = runTest {
+    fun `community mirror cards stay visible and are directly selectable without confirmation`() = runTest {
         withLogin { model ->
             val community = model.state.value.checks.filter { it.group == DomainGroup.COMMUNITY }
             assertEquals(34, community.size)
             assertEquals(17, model.state.value.checks.count { it.group == DomainGroup.OFFICIAL })
             val host = community.first().host
 
-            model.selectDomain(host)
-            assertNull(model.state.value.pendingMirrorHost)
-
             model.showDomains()
             model.selectDomain(host)
             advanceUntilIdle()
 
-            assertEquals(host, model.state.value.pendingMirrorHost)
-            assertEquals("z-lib.gd", model.state.value.domain)
-            assertFalse(model.state.value.switchingDomain)
-            assertTrue(model.state.value.checks.any { it.host == host })
-
-            model.dismissCommunityMirror()
-            assertNull(model.state.value.pendingMirrorHost)
-            assertTrue(model.state.value.showDomainPicker)
-            model.confirmCommunityMirror()
-            advanceUntilIdle()
-            assertEquals("z-lib.gd", model.state.value.domain)
-
-            model.selectDomain(host)
-            model.dismissDomains()
-            assertNull(model.state.value.pendingMirrorHost)
-            assertFalse(model.state.value.showDomainPicker)
-            assertTrue(model.state.value.checks.any { it.host == host })
-        }
-    }
-
-    @Test
-    fun `confirming a community mirror approves and selects it after one anonymous check`() = runTest {
-        val requests = mutableListOf<Request>()
-        val client = OkHttpClient.Builder().addInterceptor { chain ->
-            val request = chain.request()
-            requests += request
-            Response.Builder()
-                .request(request)
-                .protocol(Protocol.HTTP_1_1)
-                .code(200)
-                .message("OK")
-                .body("""{"success":1,"domains":[{"domain":"z-lib.gd"}]}""".toResponseBody())
-                .build()
-        }.build()
-        withLogin(client = client) { model ->
-            val host = model.state.value.checks.first { it.group == DomainGroup.COMMUNITY }.host
-            model.showDomains()
-            model.selectDomain(host)
-            advanceUntilIdle()
-            assertTrue(requests.isEmpty())
-
-            model.confirmCommunityMirror()
-            model.confirmCommunityMirror()
-            advanceUntilIdle()
-
-            val request = requests.single()
-            assertEquals("https://$host/eapi/info/domains", request.url.toString())
-            assertNull(request.header("Cookie"))
-            assertNull(request.header("remix-userid"))
-            assertNull(request.header("remix-userkey"))
             assertEquals(host, model.state.value.domain)
-            assertNull(model.state.value.pendingMirrorHost)
             assertFalse(model.state.value.showDomainPicker)
             assertFalse(model.state.value.switchingDomain)
-            assertTrue(model.state.value.checks.any { it.host == host && it.healthy })
+            assertNull(model.state.value.domainError)
+            assertTrue(model.state.value.checks.any { it.host == host })
         }
     }
 
@@ -140,7 +87,7 @@ class LoginViewModelTest {
     }
 
     @Test
-    fun `anonymous community challenge does not authorize and confirmation only starts verification`() = runTest {
+    fun `selecting a challenged community mirror directly requests verification without switching`() = runTest {
         val requests = mutableListOf<Request>()
         withLogin(client = challengeClient(requests)) { model ->
             val verification = mutableListOf<String>()
@@ -155,37 +102,13 @@ class LoginViewModelTest {
             assertEquals("z-lib.gd", model.state.value.domain)
 
             model.selectDomain(host)
-            assertEquals(host, model.state.value.pendingMirrorHost)
-            model.confirmCommunityMirror()
-            model.confirmCommunityMirror()
             advanceUntilIdle()
 
             assertEquals(listOf(host), verification)
             assertEquals("z-lib.gd", model.state.value.domain)
-            assertNull(model.state.value.pendingMirrorHost)
             assertFalse(model.state.value.switchingDomain)
             assertFalse(model.state.value.showDomainPicker)
             assertEquals(1, requests.size)
-        }
-    }
-
-    @Test
-    fun `newly discovered challenge after community consent opens verification without switching`() = runTest {
-        withLogin(client = challengeClient()) { model ->
-            val verification = mutableListOf<String>()
-            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
-                model.verificationRequests.collect { verification += it }
-            }
-            val host = model.state.value.checks.first { it.group == DomainGroup.COMMUNITY }.host
-            model.showDomains()
-            model.selectDomain(host)
-            model.confirmCommunityMirror()
-            advanceUntilIdle()
-
-            assertEquals(listOf(host), verification)
-            assertEquals("z-lib.gd", model.state.value.domain)
-            assertNull(model.state.value.domainError)
-            assertFalse(model.state.value.showDomainPicker)
         }
     }
 
@@ -209,7 +132,6 @@ class LoginViewModelTest {
             assertEquals("z-lib.gd", model.state.value.domain)
             assertTrue(model.state.value.showDomainPicker)
             assertNotNull(model.state.value.domainError)
-            assertNull(model.state.value.pendingMirrorHost)
         }
     }
 

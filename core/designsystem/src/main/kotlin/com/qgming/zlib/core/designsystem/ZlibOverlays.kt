@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -23,7 +24,14 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
@@ -31,9 +39,17 @@ import top.yukonga.miuix.kmp.blur.Backdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.glass.GlassBottomSheet
+import top.yukonga.miuix.kmp.glass.GlassBottomSheetDefaults
 import top.yukonga.miuix.kmp.glass.GlassDialog
 import top.yukonga.miuix.kmp.glass.GlassDialogButton
 import top.yukonga.miuix.kmp.glass.GlassDialogButtonRole
+import top.yukonga.miuix.kmp.glass.GlassIconButton
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.glass.Add
+import top.yukonga.miuix.kmp.icon.glass.ChevronBackward
+import top.yukonga.miuix.kmp.icon.glass.Close
+import top.yukonga.miuix.kmp.icon.glass.Ok
+import top.yukonga.miuix.kmp.icon.glass.Reset
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 internal val LocalZlibOverlayBackdrop = staticCompositionLocalOf<Backdrop?> { null }
@@ -61,20 +77,26 @@ fun ZlibGlassBottomSheet(
     show: Boolean,
     title: String,
     onDismiss: () -> Unit,
+    startAction: (@Composable () -> Unit)? = { ZlibSheetCloseButton(onClick = onDismiss) },
+    endAction: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val backdrop = LocalZlibOverlayBackdrop.current
     GlassBottomSheet(
         show = show,
         title = title,
+        startAction = startAction,
+        endAction = endAction,
         backdrop = backdrop,
         stroke = if (backdrop != null) zlibGlassStroke() else null,
         containerColor = MiuixTheme.colorScheme.surfaceContainer,
         onDismissRequest = onDismiss,
-    ) {
-        // GlassBottomSheet handles the IME, but its body extends behind the navigation bar.
+    ) { headerPadding ->
+        // Respect GlassBottomSheet's floating header padding so content never overlaps the header,
+        // and reserve horizontal/bottom system-bar/cutout insets plus 16dp breathing room (ADR-047).
         Column(
             Modifier.fillMaxWidth()
+                .padding(top = headerPadding.calculateTopPadding() + 8.dp)
                 .windowInsetsPadding(
                     WindowInsets.systemBars.union(WindowInsets.displayCutout)
                         .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
@@ -83,6 +105,118 @@ fun ZlibGlassBottomSheet(
         ) {
             content()
         }
+    }
+}
+
+@Composable
+fun ZlibSheetCloseButton(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    description: String = stringResource(TextR.string.text_close),
+) {
+    SheetHeaderActionButton(
+        icon = MiuixIcons.Glass.Normal.Close,
+        description = description,
+        onClick = onClick,
+        enabled = enabled,
+    )
+}
+
+@Composable
+fun ZlibSheetBackButton(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    description: String = stringResource(TextR.string.text_back),
+) {
+    SheetHeaderActionButton(
+        icon = MiuixIcons.Glass.Normal.ChevronBackward,
+        description = description,
+        onClick = onClick,
+        enabled = enabled,
+    )
+}
+
+@Composable
+fun ZlibSheetResetButton(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    description: String = stringResource(TextR.string.text_reset),
+) {
+    SheetHeaderActionButton(
+        icon = MiuixIcons.Glass.Normal.Reset,
+        description = description,
+        onClick = onClick,
+        enabled = enabled,
+    )
+}
+
+@Composable
+fun ZlibSheetAddButton(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    description: String = stringResource(TextR.string.text_create_booklist),
+) {
+    SheetHeaderActionButton(
+        icon = MiuixIcons.Glass.Normal.Add,
+        description = description,
+        onClick = onClick,
+        enabled = enabled,
+    )
+}
+
+@Composable
+fun ZlibSheetConfirmButton(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    description: String,
+    accent: Boolean = true,
+) {
+    val colors = MiuixTheme.colorScheme
+    SheetHeaderActionButton(
+        icon = MiuixIcons.Glass.Normal.Ok,
+        description = description,
+        onClick = onClick,
+        enabled = enabled,
+        tint = when {
+            !enabled -> colors.onSurfaceVariantSummary
+            accent -> colors.primary
+            else -> colors.onSurface
+        },
+    )
+}
+
+@Composable
+private fun SheetHeaderActionButton(
+    icon: ImageVector,
+    description: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    tint: Color = if (enabled) MiuixTheme.colorScheme.onSurface else MiuixTheme.colorScheme.onSurfaceVariantSummary,
+) {
+    val iconContent: @Composable () -> Unit = {
+        Icon(
+            imageVector = icon,
+            contentDescription = description,
+            tint = tint,
+            modifier = Modifier.size(24.dp),
+        )
+    }
+    if (LocalZlibGlass.current) {
+        GlassIconButton(
+            onClick = { if (enabled) onClick() },
+            modifier = Modifier.semantics {
+                role = Role.Button
+                if (!enabled) disabled()
+            },
+            content = iconContent,
+        )
+    } else {
+        IconButton(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = Modifier.size(GlassBottomSheetDefaults.ButtonSize),
+            content = iconContent,
+        )
     }
 }
 

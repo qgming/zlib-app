@@ -113,7 +113,7 @@ class DownloadRepository @Inject constructor(
             val sameReference = stored != null && stored.hash == book.hash
             val entity = book.toEntity(
                 now = now,
-                localUri = if (sameReference) stored?.localUri else null,
+                localUri = if (sameReference) stored.localUri else null,
             )
             books.upsert(
                 if (stored == null) {
@@ -168,7 +168,12 @@ class DownloadRepository @Inject constructor(
         if (directoryStore.currentUri() == null) {
             return@withContext AppResult.Failure(AppError.Parse(appText(TextR.string.text_choose_a_download_folder_in_settings_first)))
         }
-        downloads.updateState(id, DownloadStates.QUEUED, null, System.currentTimeMillis())
+        val item = downloads.byId(id)
+            ?: return@withContext AppResult.Failure(AppError.Parse(appText(TextR.string.text_download_record_not_found)))
+        if (item.state == DownloadStates.COMPLETED) return@withContext AppResult.Success(Unit)
+        if (item.state !in DownloadStates.active) {
+            downloads.updateState(id, DownloadStates.QUEUED, null, System.currentTimeMillis())
+        }
         startQueueService()
     }
 
@@ -183,11 +188,13 @@ class DownloadRepository @Inject constructor(
         }
         val item = downloads.byId(id)
             ?: return@withContext AppResult.Failure(AppError.Parse(appText(TextR.string.text_download_record_not_found)))
+        if (item.state == DownloadStates.COMPLETED) return@withContext AppResult.Success(Unit)
+        if (item.state in DownloadStates.active) return@withContext startQueueService()
         if (item.error == DownloadCodes.RANGE || item.error == DownloadCodes.INVALID) {
             directoryStore.currentUri()?.toString()?.let { journal.setContinuation(it, item.id, null) }
             directoryStore.deletePart(item.id)
+            downloads.resetProgress(id)
         }
-        downloads.resetProgress(id)
         downloads.updateState(id, DownloadStates.QUEUED, null, System.currentTimeMillis())
         startQueueService()
     }

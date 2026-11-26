@@ -152,10 +152,10 @@ class PapiBooklistClientTest {
             BooklistCover("9", "https://images.example.test/9.jpg"),
         )
         assertEquals(AppResult.Success(listOf(
-            BooklistMembership(CloudBooklist("42", "Reading", 2, previews), true),
-            BooklistMembership(CloudBooklist("57", "Essays", null), true),
-            BooklistMembership(CloudBooklist("58", "History", null), true),
-            BooklistMembership(CloudBooklist("59", "Novels", null), false),
+            BooklistMembership(CloudBooklist("42", "Reading", 2, previews), true, readlistBookId = "1236"),
+            BooklistMembership(CloudBooklist("57", "Essays", null), true, readlistBookId = "1234"),
+            BooklistMembership(CloudBooklist("58", "History", null), true, readlistBookId = "1235"),
+            BooklistMembership(CloudBooklist("59", "Novels", null), false, readlistBookId = null),
         )), client.memberships(session, "123"))
         val request = assertNotNull(server.takeRequest(2, TimeUnit.SECONDS))
         assertEquals("GET", request.method)
@@ -184,6 +184,44 @@ class PapiBooklistClientTest {
         val error = assertIs<AppError.Server>(assertIs<AppResult.Failure>(client.addBook(session, "42", "123")).error)
         assertEquals(false, error.message.contains("private-server-message"))
         assertEquals(3, server.requestCount)
+    }
+
+    @Test
+    fun `removing uses a single cookie only GET accepts JSON or empty 2xx and rejects HTML or errors`() = withServer { server, client ->
+        assertIs<AppError.Parse>(assertIs<AppResult.Failure>(client.removeBook(session, "../42", "999")).error)
+        assertIs<AppError.Parse>(assertIs<AppResult.Failure>(client.removeBook(session, "42", "0")).error)
+        assertEquals(0, server.requestCount)
+
+        server.enqueue(json("""{"success":1}"""))
+        assertEquals(AppResult.Success(Unit), client.removeBook(session, "42", "1236"))
+        val request = assertNotNull(server.takeRequest(2, TimeUnit.SECONDS))
+        assertEquals("GET", request.method)
+        assertEquals("/papi/booklist/42/remove-book/1236", request.path)
+        assertEquals("remix_userid=7; remix_userkey=unit-test-key", request.getHeader("Cookie"))
+        assertNull(request.getHeader("source"))
+        assertNull(request.getHeader("remix-userkey"))
+        assertEquals(0L, request.bodySize)
+
+        server.enqueue(MockResponse().setResponseCode(204))
+        assertEquals(AppResult.Success(Unit), client.removeBook(session, "42", "1236"))
+        server.takeRequest(2, TimeUnit.SECONDS)
+
+        server.enqueue(MockResponse().setHeader("Content-Type", "text/html").setBody("<html>challenge</html>"))
+        assertEquals(AppResult.Failure(AppError.DomainBlocked(DomainStatus.CHALLENGED)), client.removeBook(session, "42", "1236"))
+        server.takeRequest(2, TimeUnit.SECONDS)
+
+        server.enqueue(json("""{"success":0,"error":"private-server-message"}"""))
+        val error = assertIs<AppError.Server>(assertIs<AppResult.Failure>(client.removeBook(session, "42", "1236")).error)
+        assertEquals(false, error.message.contains("private-server-message"))
+        server.takeRequest(2, TimeUnit.SECONDS)
+
+        server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", "/papi/booklist/42/remove-book/1236"))
+        assertEquals(AppResult.Failure(AppError.DomainBlocked(DomainStatus.REDIRECT_LOOP)), client.removeBook(session, "42", "1236"))
+        server.takeRequest(2, TimeUnit.SECONDS)
+
+        server.enqueue(json("""{"success":0}""", 503).setHeader("Retry-After", "0"))
+        assertIs<AppError.Server>(assertIs<AppResult.Failure>(client.removeBook(session, "42", "1236")).error)
+        assertEquals(6, server.requestCount)
     }
 
     @Test
@@ -245,6 +283,45 @@ class PapiBooklistClientTest {
         assertEquals(2, server.requestCount)
         val retry = assertNotNull(server.takeRequest(2, TimeUnit.SECONDS))
         assertEquals("remix_userid=7; remix_userkey=unit-test-key", retry.getHeader("Cookie"))
+    }
+
+    @Test
+    fun `text html content type with valid JSON succeeds and wall clearance cookie plus UA are forwarded`() = runBlocking {
+        MockWebServer().use { server ->
+            val http = OkHttpClient.Builder().addInterceptor { chain ->
+                val request = chain.request()
+                val url = server.url(request.url.encodedPath)
+                chain.proceed(request.newBuilder().url(url).build())
+            }.build()
+            val client = PapiBooklistClient(
+                client = http,
+                isAllowedHost = DomainPolicy::isBuiltIn,
+                verificationCookieProvider = { "cf_clearance=wall-ok; remix_userkey=ignored" },
+                verificationUserAgentProvider = { "Mozilla/5.0 VerifiedWebView" },
+            )
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("Content-Type", "text/html; charset=UTF-8")
+                    .setBody("""{"success":1,"list":[{"id":42,"title":"Reading"}]}"""),
+            )
+            val lists = assertIs<AppResult.Success<List<CloudBooklist>>>(client.myBooklists(session)).value
+            assertEquals(listOf("42"), lists.map { it.id })
+            val request = assertNotNull(server.takeRequest(2, TimeUnit.SECONDS))
+            assertEquals("remix_userid=7; remix_userkey=unit-test-key; cf_clearance=wall-ok", request.getHeader("Cookie"))
+            assertEquals("Mozilla/5.0 VerifiedWebView", request.getHeader("User-Agent"))
+        }
+    }
+
+    @Test
+    fun `missing pagination falls back to next page when twenty or more books are returned`() = withServer { server, client ->
+        val rows = (1..20).joinToString(",") { i ->
+            """{"book":{"id":$i,"hash":"hash$i","title":"Book $i"}}"""
+        }
+        server.enqueue(json("""{"success":1,"books":[$rows]}"""))
+        assertEquals(2, assertIs<AppResult.Success<BooklistPage>>(client.books(session, "42", 1)).value.nextPage)
+        server.enqueue(json("""{"success":1,"books":[{"book":{"id":1,"hash":"hash1","title":"Book 1"}}]}"""))
+        assertNull(assertIs<AppResult.Success<BooklistPage>>(client.books(session, "42", 1)).value.nextPage)
     }
 
     private fun withServer(block: suspend (MockWebServer, PapiBooklistClient) -> Unit) {

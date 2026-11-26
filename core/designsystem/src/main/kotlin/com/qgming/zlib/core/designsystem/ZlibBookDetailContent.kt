@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -107,15 +108,20 @@ fun formatBookFileSize(bytes: Long, locale: Locale): String = when {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ZlibBookMetadataChips(book: Book) {
+fun ZlibBookMetadataChips(
+    book: Book,
+    modifier: Modifier = Modifier.padding(top = 4.dp).widthIn(max = 520.dp).fillMaxWidth(),
+    horizontalArrangement: Arrangement.Horizontal = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+    chipColor: Color = MiuixTheme.colorScheme.surfaceContainer,
+) {
     val locale = LocalConfiguration.current.locales[0]
     val chips = remember(book, locale) { book.detailChips(locale) }
     if (chips.isEmpty()) return
 
     val colors = MiuixTheme.colorScheme
     FlowRow(
-        modifier = Modifier.padding(top = 4.dp).widthIn(max = 520.dp).fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+        modifier = modifier,
+        horizontalArrangement = horizontalArrangement,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         chips.forEach { chip ->
@@ -129,7 +135,7 @@ fun ZlibBookMetadataChips(book: Book) {
             val description = "${stringResource(chip.field.labelRes)}: ${chip.value}"
             Row(
                 modifier = Modifier.widthIn(max = 224.dp)
-                    .background(colors.surfaceContainer, PillShape)
+                    .background(chipColor, PillShape)
                     .clearAndSetSemantics { contentDescription = description }
                     .padding(horizontal = 8.dp, vertical = 3.dp),
                 horizontalArrangement = Arrangement.spacedBy(5.dp),

@@ -252,6 +252,28 @@ class BooklistPickerViewModelTest {
     }
 
     @Test
+    fun `transient cover preview failure is not permanently cached and retries when shown again`() = withDetailTestMain {
+        val cover = BooklistCover("8", "https://images.example.test/8.jpg")
+        var attempts = 0
+        val vm = picker(
+            read = { _, _ -> AppResult.Success(listOf(membership("43", count = 1))) },
+            covers = { _, _ -> if (++attempts == 1) null else listOf(cover) },
+        )
+        withPicker(vm) {
+            vm.open("123")
+            runCurrent()
+            vm.showPreviews(setOf("43"))
+            runCurrent()
+            assertTrue(vm.state.value.lists.single().booklist.covers.isEmpty())
+            vm.showPreviews(emptySet())
+            vm.showPreviews(setOf("43"))
+            runCurrent()
+            assertEquals(2, attempts)
+            assertEquals(listOf(cover), vm.state.value.lists.single().booklist.covers)
+        }
+    }
+
+    @Test
     fun `confirmed add refreshes the visible cover slots without resetting membership`() = withDetailTestMain {
         val cover = BooklistCover("123", "https://images.example.test/123.jpg")
         val requests = mutableListOf<String>()
@@ -276,14 +298,131 @@ class BooklistPickerViewModelTest {
         }
     }
 
+    @Test
+    fun `toggling an already added booklist removes it updates state and emits removed toast`() = withDetailTestMain {
+        val response = CompletableDeferred<AppResult<Unit>>()
+        val removals = mutableListOf<Triple<String, String?, String>>()
+        val coverRequests = mutableListOf<String>()
+        val vm = picker(
+            read = { _, _ -> AppResult.Success(listOf(membership("42", added = true, readlistBookId = "901", count = 3))) },
+            remove = { expected, item, bookId ->
+                assertEquals(Account, expected)
+                removals += Triple(item.booklistId, item.readlistBookId, bookId)
+                response.await()
+            },
+            covers = { _, id -> coverRequests += id; emptyList() },
+        )
+        withPicker(vm) { notices ->
+            vm.open("123")
+            runCurrent()
+            vm.showPreviews(setOf("42"))
+            runCurrent()
+            assertEquals(listOf("42"), coverRequests)
+
+            vm.toggle("42")
+            vm.toggle("42")
+            vm.dismiss()
+            runCurrent()
+            assertEquals(listOf(Triple<String, String?, String>("42", "901", "123")), removals)
+            assertEquals(PickerRequest.Remove, vm.state.value.request)
+            assertEquals("42", vm.state.value.removingList)
+            assertNull(vm.state.value.addingList)
+            assertTrue(vm.state.value.open)
+            assertTrue(vm.state.value.lists.single().isMember)
+
+            response.complete(AppResult.Success(Unit))
+            runCurrent()
+            val updated = vm.state.value.lists.single()
+            assertFalse(updated.isMember)
+            assertNull(updated.readlistBookId)
+            assertEquals(2, updated.booklist.bookCount)
+            assertNull(vm.state.value.request)
+            assertNull(vm.state.value.removingList)
+            assertEquals(1, notices.size)
+            assertEquals(listOf("42", "42"), coverRequests)
+        }
+    }
+
+    @Test
+    fun `freshly added booklist can be removed immediately by resolving readlistBookId`() = withDetailTestMain {
+        var membershipReads = 0
+        val removedWith = mutableListOf<Pair<String, String>>()
+        val vm = picker(
+            read = { _, _ ->
+                membershipReads++
+                if (membershipReads == 1) {
+                    AppResult.Success(listOf(membership("42", added = false, count = 1)))
+                } else {
+                    AppResult.Success(listOf(membership("42", added = true, readlistBookId = "777", count = 2)))
+                }
+            },
+            add = { _, _, _ -> AppResult.Success(Unit) },
+            remove = { expected, item, bookId ->
+                val resolvedId = item.readlistBookId ?: run {
+                    // Simulate BooklistRepository.removeBook refreshing memberships when readlistBookId is absent.
+                    membershipReads++
+                    "777"
+                }
+                assertEquals(Account, expected)
+                removedWith += item.booklistId to "$resolvedId:$bookId"
+                AppResult.Success(Unit)
+            },
+        )
+        withPicker(vm) { notices ->
+            vm.open("123")
+            runCurrent()
+            vm.toggle("42")
+            runCurrent()
+            val afterAdd = vm.state.value.lists.single()
+            assertTrue(afterAdd.isMember)
+            assertNull(afterAdd.readlistBookId)
+            assertEquals(2, afterAdd.booklist.bookCount)
+
+            vm.toggle("42")
+            runCurrent()
+            val afterRemove = vm.state.value.lists.single()
+            assertFalse(afterRemove.isMember)
+            assertNull(afterRemove.readlistBookId)
+            assertEquals(1, afterRemove.booklist.bookCount)
+            assertEquals(listOf("42" to "777:123"), removedWith)
+            assertEquals(2, membershipReads)
+            assertEquals(2, notices.size)
+        }
+    }
+
+    @Test
+    fun `uncertain remove failure requires reloading membership before another write`() = withDetailTestMain {
+        var removals = 0
+        val vm = picker(
+            read = { _, _ -> AppResult.Success(listOf(membership("42", added = true, readlistBookId = "901", count = 2))) },
+            remove = { _, _, _ ->
+                removals++
+                AppResult.Failure(AppError.Server(503, ""))
+            },
+        )
+        withPicker(vm) { notices ->
+            vm.open("123")
+            runCurrent()
+            vm.toggle("42")
+            runCurrent()
+            assertIs<AppError.Server>(vm.state.value.loadError)
+            assertTrue(vm.state.value.lists.single().isMember)
+            vm.toggle("42")
+            runCurrent()
+            assertEquals(1, removals)
+            assertEquals(1, notices.size)
+        }
+    }
+
     private fun picker(
         session: MutableStateFlow<Session?> = MutableStateFlow(Account),
         read: suspend (Session, String) -> AppResult<List<BooklistMembership>>,
         add: suspend (Session, BooklistMembership, String) -> AppResult<Unit> = { _, _, _ -> error("Unexpected add") },
+        remove: suspend (Session, BooklistMembership, String) -> AppResult<Unit> = { _, _, _ -> error("Unexpected remove") },
         create: suspend (Session, String, String) -> AppResult<String?> = { _, _, _ -> error("Unexpected create") },
         invalidate: (Session) -> Unit = {},
-        covers: suspend (Session, String) -> List<BooklistCover> = { _, _ -> emptyList() },
-    ) = BooklistPickerViewModel(session, read, add, create, invalidate, covers)
+        covers: suspend (Session, String) -> List<BooklistCover>? = { _, _ -> emptyList() },
+    ) = BooklistPickerViewModel(session, read, add, remove, create, invalidate, covers)
 
     private suspend fun TestScope.withPicker(vm: BooklistPickerViewModel, block: suspend (List<String>) -> Unit) {
         val notices = mutableListOf<String>()
@@ -297,8 +436,8 @@ class BooklistPickerViewModelTest {
         }
     }
 
-    private fun membership(id: String, added: Boolean = false, count: Int? = null) =
-        BooklistMembership(CloudBooklist(id, "Reading", count), added)
+    private fun membership(id: String, added: Boolean = false, count: Int? = null, readlistBookId: String? = null) =
+        BooklistMembership(CloudBooklist(id, "Reading", count), added, readlistBookId)
 
     private companion object {
         val Account = Session("7", "test-key", "zlib.bz")

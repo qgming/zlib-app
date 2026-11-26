@@ -7,6 +7,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -70,6 +71,34 @@ class DownloadPublicationTest {
         val recovered = DownloadPublication(files) {}.recover(pending.copy(step = PublicationStep.Copy, targetUri = "different-id"))
         assertEquals("different-id", recovered?.targetUri)
         assertEquals(0, files.writes)
+    }
+
+    @Test
+    fun `copy picks a unique final name when target already exists in the folder`() = runTest {
+        val files = MemoryFiles()
+        files.add(part, DownloadFileNames.partName(pending.taskId), content, rename = false)
+        files.add("existing", pending.targetName, "existing book")
+        var durable = pending
+        val completed = DownloadPublication(files) { durable = it }.publish(pending)
+        assertEquals("Title (2).epub", completed.targetName)
+        assertEquals(PublicationStep.Complete, durable.step)
+        assertContentEquals("existing book".toByteArray(), files.data("existing"))
+        assertContentEquals(content.toByteArray(), files.data(assertNotNull(completed.targetUri)))
+    }
+
+    @Test
+    fun `abandon cleans up a partial copy target without touching an unrelated file`() = runTest {
+        val files = MemoryFiles()
+        files.add(part, DownloadFileNames.partName(pending.taskId), content, rename = false)
+        files.add("partial", pending.targetName, "tes")
+        val partialCopy = pending.copy(step = PublicationStep.Copy, targetUri = "partial")
+        assertTrue(DownloadPublication(files) {}.abandon(partialCopy))
+        assertTrue(files.children().none { it.uri == "partial" })
+
+        files.add("unrelated", pending.targetName, "user's file")
+        val unrelated = pending.copy(step = PublicationStep.Copy, targetUri = "unrelated")
+        assertFalse(DownloadPublication(files) {}.abandon(unrelated))
+        assertTrue(files.children().any { it.uri == "unrelated" })
     }
 
     private class MemoryFiles : DownloadPublicationFiles {

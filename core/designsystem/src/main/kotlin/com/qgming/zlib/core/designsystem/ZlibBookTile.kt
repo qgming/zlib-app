@@ -97,7 +97,7 @@ private fun BookTile(
 }
 
 @Composable
-private fun rememberCoverSource(): ComposeCoverSource {
+internal fun rememberCoverSource(): ComposeCoverSource {
     val layer = rememberGraphicsLayer()
     val radius = with(LocalDensity.current) { 8.dp.toPx() }
     val background = MiuixTheme.colorScheme.surface.toArgb()
@@ -106,7 +106,7 @@ private fun rememberCoverSource(): ComposeCoverSource {
     }
 }
 
-private class ComposeCoverSource(
+internal class ComposeCoverSource(
     private val layer: androidx.compose.ui.graphics.layer.GraphicsLayer,
     override val radiusPx: Float,
     override val backgroundColor: Int,

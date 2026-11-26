@@ -28,9 +28,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import android.content.Intent
-import android.content.ClipData
+import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -97,11 +100,16 @@ fun DetailScreen(
     val favorite by favoriteViewModel.state.collectAsStateWithLifecycle()
     val similar by similarViewModel.state.collectAsStateWithLifecycle()
     val comments by commentsViewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val activity = remember(context) { context.findDetailActivity() }
     val pickerViewModel = hiltViewModel<BooklistPickerViewModel>(key = "$id:$hash:booklist-picker")
     val picker by pickerViewModel.state.collectAsStateWithLifecycle()
-    DisposableEffect(pickerViewModel) { onDispose { pickerViewModel.leaveDetail() } }
+    DisposableEffect(pickerViewModel, activity) {
+        onDispose {
+            if (activity?.isChangingConfigurations != true) pickerViewModel.leaveDetail()
+        }
+    }
     ZlibToastHost(pickerViewModel.events, key = picker.toastKey)
-    val context = LocalContext.current
     val locale = LocalConfiguration.current.locales[0]
     var descriptionExpanded by rememberSaveable(id, hash) { mutableStateOf(false) }
     var notice by remember(id, hash) { mutableStateOf<String?>(null) }
@@ -354,4 +362,10 @@ private fun BookActions(
             )
         }
     }
+}
+
+private tailrec fun Context.findDetailActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findDetailActivity()
+    else -> null
 }

@@ -11,6 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -25,6 +26,7 @@ import com.qgming.zlib.core.data.settings.AppSettings
 import com.qgming.zlib.core.data.settings.SettingsStore
 import com.qgming.zlib.core.designsystem.ZlibPage
 import com.qgming.zlib.core.designsystem.ZlibShareImageContent
+import com.qgming.zlib.core.designsystem.ZlibShareThemeButton
 import com.qgming.zlib.core.designsystem.ZlibTheme
 import com.qgming.zlib.core.designsystem.ZlibToastHost
 import com.qgming.zlib.core.designsystem.rememberZlibToastHostState
@@ -42,24 +44,40 @@ class ShareImageActivity : ComponentActivity() {
         enableEdgeToEdge()
         val content = ShareImagePayload.read(intent)
         setContent {
-            val settings by settingsStore.settings.collectAsStateWithLifecycle(initialValue = AppSettings())
+            val settings by settingsStore.settings.collectAsStateWithLifecycle(initialValue = null)
+            val effectiveSettings = settings ?: AppSettings()
             val state by viewModel.state.collectAsStateWithLifecycle()
-            LaunchedEffect(content) { viewModel.open(content) }
-            ZlibTheme(mode = settings.themeMode, bookGridColumns = settings.bookGridColumns) {
+            val systemDark = isSystemInDarkTheme()
+            LaunchedEffect(content, settings != null) {
+                val loaded = settings ?: return@LaunchedEffect
+                viewModel.open(content, initialDarkTheme = loaded.themeMode.isDark(systemDark))
+            }
+            ZlibTheme(mode = effectiveSettings.themeMode, bookGridColumns = effectiveSettings.bookGridColumns) {
                 val toast = rememberZlibToastHostState()
                 ZlibToastHost(toast)
-                LaunchedEffect(viewModel, toast) { viewModel.messages.collect { toast.showMessage(it) } }
+                ZlibToastHost(viewModel.messages)
                 val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { uri ->
                     uri?.let(viewModel::save)
                 }
                 val bitmap = state.image
                 val preview = remember(bitmap) { bitmap?.asImageBitmap() }
-                ZlibPage(title = stringResource(TextR.string.text_share_image_title), onBack = { finish() }) { padding ->
+                ZlibPage(
+                    title = stringResource(TextR.string.text_share_image_title),
+                    onBack = { finish() },
+                    actions = {
+                        ZlibShareThemeButton(
+                            dark = state.darkTheme,
+                            enabled = state.content != null && !state.generating && !state.working,
+                            onClick = viewModel::toggleTheme,
+                        )
+                    },
+                ) { padding ->
                     ZlibShareImageContent(
                         image = preview,
                         generating = state.generating,
                         working = state.working,
                         error = state.error,
+                        canRetry = state.content != null,
                         onRetry = viewModel::retry,
                         onSave = {
                             state.content?.let { payload ->

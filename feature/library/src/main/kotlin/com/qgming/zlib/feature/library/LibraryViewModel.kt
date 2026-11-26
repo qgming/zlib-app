@@ -181,22 +181,15 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    internal fun showHistoryActions(book: Book) {
+    internal fun requestHistoryDeletion(book: Book) {
         if (resetSession() || _historyAction.value.busy) return
         val loaded = _remote.value[CloudLibrarySource.DownloadHistory]?.page?.books
             ?.firstOrNull { it.ref == book.ref } ?: return
-        _historyAction.value = HistoryActionState(book = loaded)
+        _historyAction.value = HistoryActionState(book = loaded, confirming = true, error = null)
     }
 
     internal fun dismissHistoryActions() {
         if (!_historyAction.value.busy) _historyAction.value = HistoryActionState()
-    }
-
-    internal fun requestHistoryDeletion() {
-        if (resetSession()) return
-        val current = _historyAction.value
-        if (current.book == null || current.busy) return
-        _historyAction.value = current.copy(confirming = true, error = null)
     }
 
     internal fun confirmHistoryDeletion() {

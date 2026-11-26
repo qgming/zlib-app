@@ -11,9 +11,11 @@ import java.io.IOException
 import java.io.InterruptedIOException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -46,6 +48,7 @@ class DomainProbe(
     private val requireHttps: Boolean = true,
     private val followForeignRedirects: Boolean = true,
     private val verificationCookieProvider: (HttpUrl) -> String? = { null },
+    private val verificationUserAgentProvider: (HttpUrl) -> String? = { null },
 ) {
 
     private val probeClient: OkHttpClient = client.newBuilder()
@@ -76,10 +79,55 @@ class DomainProbe(
         }.awaitAll()
     }
 
+    /**
+     * Probes [hosts] with bounded concurrency and returns as soon as the first result matches
+     * [isUsable], cancelling remaining in-flight probes. Every finished probe is reported to
+     * [onEach] before returning.
+     */
+    suspend fun probeFirstUsable(
+        hosts: List<String>,
+        concurrency: Int = 8,
+        isUsable: (DomainCheck) -> Boolean = { it.healthy },
+        onEach: suspend (DomainCheck) -> Unit = {},
+    ): DomainCheck? {
+        val unique = hosts.distinct()
+        if (unique.isEmpty()) return null
+        val winner = CompletableDeferred<DomainCheck?>()
+        coroutineScope {
+            val semaphore = Semaphore(concurrency.coerceAtLeast(1))
+            val probeJob = launch {
+                try {
+                    coroutineScope {
+                        unique.forEach { host ->
+                            launch {
+                                semaphore.withPermit {
+                                    if (winner.isCompleted) return@withPermit
+                                    val check = probe(host)
+                                    onEach(check)
+                                    if (isUsable(check)) {
+                                        winner.complete(check)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    winner.complete(null)
+                } catch (cancellation: CancellationException) {
+                    if (!winner.isCompleted) winner.cancel(cancellation)
+                    throw cancellation
+                }
+            }
+            val found = winner.await()
+            if (found != null) probeJob.cancel()
+        }
+        return winner.getCompleted()
+    }
+
     private suspend fun follow(host: String): DomainCheck {
         var respondingHost = host
         val visited = linkedSetOf(host)
-        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
+        val startedAtNanos = System.nanoTime()
+        val deadline = startedAtNanos + TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
 
         while (true) {
             val url = endpointUrl(respondingHost).toHttpUrlOrNull()
@@ -97,7 +145,13 @@ class DomainProbe(
                     interpret(host, respondingHost, visited, response)
                 }
             }) {
-                is ProbeStep.Done -> return step.check
+                is ProbeStep.Done -> {
+                    val latencyMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos).coerceAtLeast(1L)
+                    return step.check.copy(
+                        latencyMs = if (step.check.healthy) latencyMs else null,
+                        checkedAtMillis = System.currentTimeMillis(),
+                    )
+                }
                 is ProbeStep.Redirect -> respondingHost = step.host
             }
         }
@@ -141,17 +195,27 @@ class DomainProbe(
     private fun endpointUrl(host: String): String =
         "${baseUrlFor(host).trimEnd('/')}${EapiEndpoints.DOMAINS}"
 
-    private fun request(url: HttpUrl, includeVerification: Boolean): Request = Request.Builder()
-        .url(url)
-        .get()
-        .header("Accept", EapiHeaders.ACCEPT)
-        .header("User-Agent", EapiHeaders.USER_AGENT)
-        .apply {
-            if (includeVerification) {
-                DomainVerificationCookies.sanitizeCookieHeader(verificationCookieProvider(url))?.let { header("Cookie", it) }
-            }
+    private fun request(url: HttpUrl, includeVerification: Boolean): Request {
+        val verificationCookie = if (includeVerification) {
+            DomainVerificationCookies.sanitizeCookieHeader(verificationCookieProvider(url))
+        } else {
+            null
         }
-        .build()
+        val userAgent = if (verificationCookie != null) {
+            DomainVerificationCookies.sanitizeUserAgent(verificationUserAgentProvider(url)) ?: EapiHeaders.USER_AGENT
+        } else {
+            EapiHeaders.USER_AGENT
+        }
+        return Request.Builder()
+            .url(url)
+            .get()
+            .header("Accept", EapiHeaders.ACCEPT)
+            .header("User-Agent", userAgent)
+            .apply {
+                if (verificationCookie != null) header("Cookie", verificationCookie)
+            }
+            .build()
+    }
 
     private fun classify(host: String, code: Int, body: String, finalHost: String, requireFamily: Boolean = false): DomainCheck {
         if (code == 513 || code == 517 || body.contains("diamwall", ignoreCase = true)) {

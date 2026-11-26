@@ -1,62 +1,48 @@
 package com.qgming.zlib.ui
 
-import com.qgming.zlib.core.common.appText
-import com.qgming.zlib.core.common.R as TextR
-
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.saveable.rememberSaveableStateHolder
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.platform.LocalContext
 import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qgming.zlib.AppViewModel
 import com.qgming.zlib.BuildConfig
 import com.qgming.zlib.R
-import com.qgming.zlib.domain.DomainVerificationActivity
+import com.qgming.zlib.core.common.R as TextR
 import com.qgming.zlib.core.data.startup.StartupState
-import com.qgming.zlib.core.designsystem.ZlibAppShell
-import com.qgming.zlib.core.designsystem.ZlibAppOverlay
 import com.qgming.zlib.core.designsystem.LocalZlibBookSnapshotsEnabled
+import com.qgming.zlib.core.designsystem.ZlibAppOverlay
+import com.qgming.zlib.core.designsystem.ZlibAppShell
 import com.qgming.zlib.core.designsystem.ZlibBookOpenRequest
-import com.qgming.zlib.core.designsystem.ZlibCard
-import com.qgming.zlib.core.designsystem.ZlibDomainPicker
-import com.qgming.zlib.core.designsystem.ZlibCommunityMirrorConfirmation
-import com.qgming.zlib.core.designsystem.ZlibLoadingIndicator
-import com.qgming.zlib.core.designsystem.ZlibPage
-import com.qgming.zlib.core.designsystem.ZlibCardList
+import com.qgming.zlib.core.designsystem.ZlibDirectoryWelcomeScreen
+import com.qgming.zlib.core.designsystem.ZlibSplashScreen
+import com.qgming.zlib.core.designsystem.ZlibStartupFailedScreen
 import com.qgming.zlib.core.designsystem.ZlibTab
 import com.qgming.zlib.core.designsystem.ZlibTheme
 import com.qgming.zlib.core.designsystem.ZlibToastHost
 import com.qgming.zlib.core.designsystem.userMessage
-import com.qgming.zlib.core.model.DomainCheck
+import com.qgming.zlib.core.designsystem.zlibSurfaceColor
+import com.qgming.zlib.domain.DomainVerificationActivity
 import com.qgming.zlib.feature.account.AccountScreen
 import com.qgming.zlib.feature.account.LoginScreen
 import com.qgming.zlib.feature.downloads.DownloadsScreen
@@ -71,29 +57,24 @@ import com.qgming.zlib.feature.search.PopularScreen
 import com.qgming.zlib.feature.search.ReadingSource
 import com.qgming.zlib.feature.search.ReadingTabs
 import com.qgming.zlib.feature.search.SearchScreen
-import com.qgming.zlib.feature.settings.DomainSettingsScreen
 import com.qgming.zlib.feature.settings.AboutAppInfo
 import com.qgming.zlib.feature.settings.AboutDocumentScreen
 import com.qgming.zlib.feature.settings.AboutPage
 import com.qgming.zlib.feature.settings.AboutScreen
 import com.qgming.zlib.feature.settings.AboutViewModel
 import com.qgming.zlib.feature.settings.AppUpdateHost
+import com.qgming.zlib.feature.settings.DomainSettingsScreen
 import com.qgming.zlib.feature.settings.ReleaseHistoryScreen
 import com.qgming.zlib.feature.settings.SettingsScreen
 import com.qgming.zlib.navigation.BookDetailLauncher
 import com.qgming.zlib.share.ShareImageActivity
 import com.qgming.zlib.share.ShareImagePayload
-import kotlinx.serialization.Serializable
 import kotlinx.coroutines.launch
-import top.yukonga.miuix.kmp.basic.Button
-import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextField
+import kotlinx.serialization.Serializable
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
 import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
 import top.yukonga.miuix.kmp.nav.core.NavKey
 import top.yukonga.miuix.kmp.nav.core.rememberNavController
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Serializable
 private sealed interface Route : NavKey {
@@ -142,21 +123,22 @@ fun ZlibRoot(viewModel: AppViewModel = hiltViewModel(), downloadRequest: Int = 0
     val domainChecks by viewModel.domainChecks.collectAsStateWithLifecycle()
     val domainProbing by viewModel.domainProbing.collectAsStateWithLifecycle()
     val recoveryBusy by viewModel.recoveryBusy.collectAsStateWithLifecycle()
-    val recoveryApprovalHost by viewModel.recoveryApprovalHost.collectAsStateWithLifecycle()
     val choosingDirectory by viewModel.choosingDirectory.collectAsStateWithLifecycle()
+    val currentThemeMode by rememberUpdatedState(settings.themeMode)
     val context = LocalContext.current
     val verificationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         viewModel.completeDomainVerification(
             host = result.data?.getStringExtra(DomainVerificationActivity.EXTRA_HOST),
-            rawCookies = result.data?.getStringExtra(DomainVerificationActivity.EXTRA_COOKIES),
+            rawCookies = result.data?.getStringExtra(DomainVerificationActivity.EXTRA_COOKIE),
             completed = result.resultCode == Activity.RESULT_OK,
-            verifiedNetwork = result.data?.getLongExtra(DomainVerificationActivity.EXTRA_NETWORK, -1L)?.takeIf { it >= 0 },
+            verifiedNetwork = result.data?.getLongExtra(DomainVerificationActivity.EXTRA_NETWORK_HANDLE, -1L)?.takeIf { it >= 0 },
+            userAgent = result.data?.getStringExtra(DomainVerificationActivity.EXTRA_USER_AGENT),
         )
     }
     LaunchedEffect(viewModel, verificationLauncher) {
         viewModel.verificationRequests.collect { host ->
             try {
-                verificationLauncher.launch(DomainVerificationActivity.launchIntent(context, host))
+                verificationLauncher.launch(DomainVerificationActivity.createIntent(context, host, currentThemeMode))
             } catch (_: android.content.ActivityNotFoundException) {
                 viewModel.verificationOpenFailed()
             } catch (_: SecurityException) {
@@ -177,18 +159,26 @@ fun ZlibRoot(viewModel: AppViewModel = hiltViewModel(), downloadRequest: Int = 0
     }
     val updates: AboutViewModel = hiltViewModel()
     val appInfo = AboutAppInfo(stringResource(R.string.app_name), BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE.toLong())
+    val appLogo = painterResource(R.drawable.ic_zhishi_foreground)
 
     ZlibTheme(mode = settings.themeMode, bookGridColumns = settings.bookGridColumns) {
         ZlibAppOverlay {
             when (val state = startup) {
-                StartupState.Loading -> SplashScreen()
+                StartupState.Loading -> ZlibSplashScreen(
+                    appName = appInfo.name,
+                    logo = appLogo,
+                    statusText = stringResource(TextR.string.text_checking_available_domain),
+                )
 
-                StartupState.DirectoryRequired -> DirectoryWelcome(
-                    busy = choosingDirectory, error = message,
+                StartupState.DirectoryRequired -> ZlibDirectoryWelcomeScreen(
+                    logo = appLogo,
+                    busy = choosingDirectory,
+                    error = message,
                     onChoose = { directoryPicker.launch(null) },
                 )
 
-                is StartupState.Failed -> StartupFailedScreen(
+                is StartupState.Failed -> ZlibStartupFailedScreen(
+                    logo = appLogo,
                     message = state.error.userMessage(),
                     actionError = message,
                     onRetry = viewModel::retry,
@@ -196,162 +186,23 @@ fun ZlibRoot(viewModel: AppViewModel = hiltViewModel(), downloadRequest: Int = 0
                     lockedHost = settings.lockedHost,
                     checks = domainChecks,
                     busy = recoveryBusy || domainProbing,
-                    approvalPending = recoveryApprovalHost != null,
                     onSelect = viewModel::chooseRecoveryHost,
                     onProbe = viewModel::probeRecoveryHost,
                     onVerify = viewModel::chooseRecoveryHost,
                 )
 
                 StartupState.Ready -> if (session == null) {
-                    if (accounts.entries.isEmpty()) LoginScreen(onVerifyDomain = viewModel::requestDomainVerification)
+                    if (accounts.entries.isEmpty()) LoginScreen(
+                        onVerifyDomain = viewModel::requestDomainVerification,
+                        logo = appLogo,
+                    )
                     else AccountScreen(onBack = null, onVerifyDomain = viewModel::requestDomainVerification)
                 } else {
                     MainShell(appInfo, updates, downloadRequest, viewModel::requestDomainVerification)
                 }
             }
-            ZlibCommunityMirrorConfirmation(
-                host = recoveryApprovalHost,
-                onConfirm = viewModel::confirmRecoveryApproval,
-                onDismiss = viewModel::dismissRecoveryApproval,
-            )
             ZlibToastHost(viewModel.events, key = session?.remixUserId)
             if (startup is StartupState.Ready) AppUpdateHost(appInfo, updates)
-        }
-    }
-}
-
-@Composable
-private fun DirectoryWelcome(busy: Boolean, error: String?, onChoose: () -> Unit) {
-    ZlibPage(title = stringResource(TextR.string.text_choose_download_folder)) { padding ->
-        ZlibCardList(padding) {
-            item {
-                ZlibCard(cornerRadius = 24.dp) {
-                    Text(stringResource(TextR.string.text_welcome_to_zlib), style = MiuixTheme.textStyles.title3)
-                    Spacer(Modifier.height(12.dp))
-                    Text(stringResource(TextR.string.text_choose_a_folder_for_downloaded_books_and_app_updates_then_sign_in), style = MiuixTheme.textStyles.body2)
-                    Spacer(Modifier.height(20.dp))
-                    Button(onClick = onChoose, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (busy) stringResource(TextR.string.text_saving) else stringResource(TextR.string.text_choose_folder))
-                    }
-                    error?.let {
-                        Spacer(Modifier.height(12.dp))
-                        Text(it, color = MiuixTheme.colorScheme.error, style = MiuixTheme.textStyles.footnote1)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SplashScreen() {
-    Scaffold { padding ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(padding),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(stringResource(R.string.app_name), style = MiuixTheme.textStyles.title1)
-            Spacer(Modifier.height(16.dp))
-            ZlibLoadingIndicator()
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = stringResource(TextR.string.text_checking_session_and_domains),
-                style = MiuixTheme.textStyles.footnote1,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            )
-        }
-    }
-}
-
-@Composable
-private fun StartupFailedScreen(
-    message: String,
-    actionError: String?,
-    onRetry: () -> Unit,
-    onAddHost: (String) -> Unit,
-    lockedHost: String?,
-    checks: List<DomainCheck>,
-    busy: Boolean,
-    approvalPending: Boolean,
-    onSelect: (String) -> Unit,
-    onProbe: (String) -> Unit,
-    onVerify: (String) -> Unit,
-) {
-    var host by remember { mutableStateOf("") }
-    var showDomains by remember { mutableStateOf(false) }
-    ZlibDomainPicker(
-        show = showDomains && !approvalPending,
-        checks = checks,
-        currentHost = null,
-        busy = busy,
-        error = actionError,
-        onSelect = onSelect,
-        onProbe = onProbe,
-        onVerify = onVerify,
-        onDismiss = { showDomains = false },
-    )
-    Scaffold { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(stringResource(TextR.string.text_cannot_connect_to_z_library), style = MiuixTheme.textStyles.title3)
-            Text(
-                text = message,
-                style = MiuixTheme.textStyles.body2,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            )
-            if (lockedHost != null) {
-                Text(stringResource(TextR.string.text_locked_domain_unavailable, lockedHost), style = MiuixTheme.textStyles.body2)
-            }
-            Button(onClick = onRetry, enabled = !busy) {
-                Text(stringResource(TextR.string.text_check_again))
-            }
-            if (checks.isNotEmpty()) {
-                Button(onClick = { showDomains = true }, enabled = !busy) { Text(stringResource(TextR.string.text_switch_domain)) }
-            }
-            ZlibCard {
-                Text(stringResource(TextR.string.text_add_a_mirror), style = MiuixTheme.textStyles.body2)
-                Text(
-                    text = stringResource(TextR.string.text_if_the_built_in_domains_are_unavailable_add_a_trusted_https_mirror_host),
-                    style = MiuixTheme.textStyles.footnote1,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                )
-                Text(
-                    text = stringResource(TextR.string.text_optional_mirror_credential_warning),
-                    style = MiuixTheme.textStyles.footnote1,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                )
-                Spacer(Modifier.height(8.dp))
-                TextField(
-                    value = host,
-                    onValueChange = { host = it },
-                    label = "mirror.example.org",
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                actionError?.let {
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = it,
-                        style = MiuixTheme.textStyles.footnote1,
-                        color = MiuixTheme.colorScheme.error,
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-                Button(
-                    onClick = {
-                        if (host.isNotBlank()) onAddHost(host)
-                    },
-                    enabled = !busy && host.isNotBlank(),
-                ) {
-                    Text(stringResource(TextR.string.text_add_and_retry))
-                }
-            }
         }
     }
 }
@@ -378,7 +229,7 @@ private fun MainShell(appInfo: AboutAppInfo, updates: AboutViewModel, downloadRe
         NavDisplay(
             navController = nav,
             effects = NavDisplayEffects(
-                backdropColor = MiuixTheme.colorScheme.surface,
+                backdropColor = zlibSurfaceColor(),
                 blockInputDuringTransition = true,
             ),
         ) {
@@ -400,8 +251,8 @@ private fun MainShell(appInfo: AboutAppInfo, updates: AboutViewModel, downloadRe
                 DownloadsScreen(
                     onBack = { nav.pop() },
                     onOpenHistory = { if (nav.backStack.lastOrNull() == Route.Downloads) nav.push(Route.DownloadHistory) },
-                    onOpenAccount = { nav.push(Route.Account) },
-                    onOpenDomains = { nav.push(Route.DomainSettings) },
+                    onOpenAccount = { if (nav.backStack.lastOrNull() == Route.Downloads) nav.push(Route.Account) },
+                    onOpenDomains = { if (nav.backStack.lastOrNull() == Route.Downloads) nav.push(Route.DomainSettings) },
                 )
             }
             entry<Route.DownloadHistory> {
@@ -434,11 +285,13 @@ private fun MainShell(appInfo: AboutAppInfo, updates: AboutViewModel, downloadRe
                 DomainSettingsScreen(onBack = { nav.pop() }, onVerifyDomain = onVerifyDomain)
             }
             entry<Route.About> {
+                val updateState by updates.update.collectAsStateWithLifecycle()
                 AboutScreen(
                     info = appInfo, icon = painterResource(R.drawable.ic_zhishi_foreground), onBack = { nav.pop() },
                     onOpenPage = { page -> if (nav.backStack.lastOrNull() == Route.About) nav.push(Route.AboutDocument(page.name)) },
                     onOpenChangelog = { if (nav.backStack.lastOrNull() == Route.About) nav.push(Route.ReleaseHistory) },
                     onCheckUpdate = { updates.checkUpdate(appInfo.versionName) },
+                    checkingUpdate = updateState.checking,
                 )
             }
             entry<Route.AboutDocument> { route ->

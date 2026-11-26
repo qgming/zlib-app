@@ -28,8 +28,16 @@ class KeystoreSecretCipher(
 ) : SecretCipher {
 
     override fun encrypt(plaintext: ByteArray): ByteArray {
+        return try {
+            encryptWith(key(), plaintext)
+        } catch (_: Exception) {
+            encryptWith(regenerateKey(), plaintext)
+        }
+    }
+
+    private fun encryptWith(secretKey: SecretKey, plaintext: ByteArray): ByteArray {
         val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, key())
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey)
         val iv = cipher.iv
         val encrypted = cipher.doFinal(plaintext)
         val buffer = ByteBuffer.allocate(1 + iv.size + encrypted.size)
@@ -57,22 +65,35 @@ class KeystoreSecretCipher(
     private fun key(): SecretKey {
         synchronized(lock) {
             val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-            (keyStore.getEntry(alias, null) as? KeyStore.SecretKeyEntry)?.let { return it.secretKey }
-
-            val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
-            generator.init(
-                KeyGenParameterSpec.Builder(
-                    alias,
-                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
-                )
-                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                    .setKeySize(256)
-                    .setUserAuthenticationRequired(false)
-                    .build(),
-            )
-            return generator.generateKey()
+            val existing = runCatching { (keyStore.getEntry(alias, null) as? KeyStore.SecretKeyEntry)?.secretKey }.getOrNull()
+            if (existing != null) return existing
+            return generateKeyLocked(keyStore)
         }
+    }
+
+    private fun regenerateKey(): SecretKey {
+        synchronized(lock) {
+            val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+            runCatching { keyStore.deleteEntry(alias) }
+            return generateKeyLocked(keyStore)
+        }
+    }
+
+    private fun generateKeyLocked(keyStore: KeyStore): SecretKey {
+        runCatching { if (keyStore.containsAlias(alias)) keyStore.deleteEntry(alias) }
+        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
+        generator.init(
+            KeyGenParameterSpec.Builder(
+                alias,
+                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+            )
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .setUserAuthenticationRequired(false)
+                .build(),
+        )
+        return generator.generateKey()
     }
 
     companion object {

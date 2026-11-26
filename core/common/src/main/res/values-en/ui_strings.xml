@@ -495,15 +495,24 @@
     <string name="text_create_and_add">"Create and add"</string>
     <string name="text_booklist_already_contains_book">"Added"</string>
     <string name="text_booklist_add_in_progress">"Adding…"</string>
+    <string name="text_booklist_remove_in_progress">"Removing…"</string>
     <string name="text_booklist_create_in_progress">"Creating…"</string>
     <string name="text_booklist_check_in_progress">"Checking whether the book was added…"</string>
     <string name="text_booklist_recheck">"Check booklists again"</string>
     <string name="text_booklist_create_unconfirmed">"Could not confirm that the new booklist contains this book. Check your booklists before trying to create it again."</string>
     <string name="text_book_added_to_booklist">"Added to “%1$s”"</string>
+    <string name="text_book_removed_from_booklist">"Removed from “%1$s”"</string>
+    <string name="text_remove_from_booklist">"Remove from booklist"</string>
     <string name="text_booklist_created_with_book">"Created “%1$s” and added this book"</string>
     <string name="text_back_to_booklists">"Back to booklists"</string>
     <string name="text_try_other_keywords">"Try other keywords."</string>
     <string name="text_share_image_title">"Share image"</string>
+    <string name="text_share_theme_switch_dark">"Switch to dark style"</string>
+    <string name="text_share_theme_switch_light">"Switch to light style"</string>
+    <string name="text_checking_available_domain">"Connecting to an available domain…"</string>
+    <string name="text_welcome_step_folder_hint">"You can change this folder anytime in Settings. Access is limited to the folder you choose."</string>
+    <string name="text_login_subtitle">"Sign in to your Z-Library account to sync favorites, booklists, and quota"</string>
+    <string name="text_login_cookie_subtitle">"Paste browser cookies if email sign-in is restricted"</string>
     <string name="text_share_action">"Share"</string>
     <string name="text_save_image">"Save locally"</string>
     <string name="text_generating_share_image">"Generating image…"</string>
@@ -524,6 +533,7 @@
         <item quantity="one">"%1$d book"</item>
         <item quantity="other">"%1$d books"</item>
     </plurals>
+    <string name="text_close">"Close"</string>
     <string name="text_share_booklist">"Booklist"</string>
     <string name="text_share_empty_booklist">"This booklist is empty"</string>
     <plurals name="comment_reply_count">

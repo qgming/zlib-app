@@ -90,7 +90,7 @@ internal object BookMapper {
 
     internal fun usableCover(raw: String?): String {
         val url = raw?.trim()?.toHttpUrlOrNull() ?: return ""
-        if (!url.isHttps || url.username.isNotEmpty() || url.password.isNotEmpty()) return ""
+        if (!DomainPolicy.isStandardHttps(url)) return ""
         // Downloaded lists can omit the collection folder. Only details know its value.
         if (url.encodedPath.contains("//") || url.encodedPath.endsWith("/cover-not-exists.png")) return ""
         return url.toString()

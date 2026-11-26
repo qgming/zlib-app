@@ -21,6 +21,7 @@ data class DomainCheck(
     val redirectTarget: String? = null,
     val checkedAtMillis: Long = 0L,
     val group: DomainGroup = DomainGroup.COMMUNITY,
+    val latencyMs: Long? = null,
 ) {
     val healthy: Boolean get() = status == DomainStatus.HEALTHY
 

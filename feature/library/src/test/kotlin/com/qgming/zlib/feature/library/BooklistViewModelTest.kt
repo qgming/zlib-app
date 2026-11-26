@@ -370,7 +370,7 @@ class BooklistViewModelTest {
                     val request = chain.request()
                     chain.proceed(request.newBuilder().url(server.url(request.url.encodedPath)).build())
                 }.build()
-                val client = PapiBooklistClient(http) { it == "z-lib.gd" }
+                val client = PapiBooklistClient(http, isAllowedHost = { it == "z-lib.gd" })
                 val repository = BooklistRepository(client, sessions)
                 val viewModel = BooklistViewModel(repository)
                 try {

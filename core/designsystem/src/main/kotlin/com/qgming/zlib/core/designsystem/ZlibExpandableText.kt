@@ -30,6 +30,8 @@ fun ZlibExpandableText(
     expanded: Boolean,
     onToggle: () -> Unit,
     summary: String? = null,
+    markdown: Boolean = false,
+    onOpenUrl: ((String) -> Unit)? = null,
 ) {
     val description = stringResource(if (expanded) R.string.zlib_expanded else R.string.zlib_collapsed)
     val rotation by animateFloatAsState(if (expanded) 180f else 0f, tween(150), label = "documentArrow")
@@ -50,11 +52,19 @@ fun ZlibExpandableText(
         )
         if (expanded) {
             SelectionContainer {
-                Text(
-                    body,
-                    modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 20.dp),
-                    style = MiuixTheme.textStyles.body2.copy(lineHeight = 26.sp),
-                )
+                if (markdown) {
+                    ZlibMarkdownText(
+                        markdown = body,
+                        modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 20.dp),
+                        onOpenUrl = onOpenUrl,
+                    )
+                } else {
+                    Text(
+                        body,
+                        modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 20.dp),
+                        style = MiuixTheme.textStyles.body2.copy(lineHeight = 26.sp),
+                    )
+                }
             }
         }
     }

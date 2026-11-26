@@ -25,13 +25,14 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-internal enum class PickerRequest { Load, Add, Create, Verify }
+internal enum class PickerRequest { Load, Add, Remove, Create, Verify }
 
 internal data class BooklistPickerState(
     val open: Boolean = false,
     val lists: List<BooklistMembership> = emptyList(),
     val request: PickerRequest? = null,
     val addingList: String? = null,
+    val removingList: String? = null,
     val loadError: AppError? = null,
     val formOpen: Boolean = false,
     val title: String = "",
@@ -45,13 +46,14 @@ class BooklistPickerViewModel internal constructor(
     private val session: StateFlow<Session?>,
     private val readMemberships: suspend (Session, String) -> AppResult<List<BooklistMembership>>,
     private val addBook: suspend (Session, BooklistMembership, String) -> AppResult<Unit>,
+    private val removeBook: suspend (Session, BooklistMembership, String) -> AppResult<Unit>,
     private val createBooklist: suspend (Session, String, String) -> AppResult<String?>,
     private val invalidateBooklists: (Session) -> Unit,
-    readCovers: suspend (Session, String) -> List<BooklistCover>,
+    readCovers: suspend (Session, String) -> List<BooklistCover>?,
 ) : ViewModel() {
     @Inject constructor(repository: BooklistRepository) : this(
-        repository.session, repository::memberships, repository::addBook, repository::createBooklist,
-        repository::invalidate, repository::previewCovers,
+        repository.session, repository::memberships, repository::addBook, repository::removeBook,
+        repository::createBooklist, repository::invalidate, repository::previewCovers,
     )
 
     private val _state = MutableStateFlow(BooklistPickerState())
@@ -91,7 +93,7 @@ class BooklistPickerViewModel internal constructor(
 
     internal fun dismiss() {
         when (_state.value.request) {
-            PickerRequest.Add, PickerRequest.Create, PickerRequest.Verify -> return
+            PickerRequest.Add, PickerRequest.Remove, PickerRequest.Create, PickerRequest.Verify -> return
             else -> Unit
         }
         close()
@@ -138,12 +140,33 @@ class BooklistPickerViewModel internal constructor(
         }
     }
 
+    internal fun toggle(listId: String) {
+        val opened = currentTarget() ?: return
+        val state = _state.value
+        if (state.request != null || state.formOpen || state.loadError != null) return
+        val list = state.lists.firstOrNull { it.booklistId == listId } ?: return
+        if (list.isMember) remove(opened, list) else add(opened, list)
+    }
+
     internal fun add(listId: String) {
         val opened = currentTarget() ?: return
         val state = _state.value
         if (state.request != null || state.formOpen || state.loadError != null) return
         val list = state.lists.firstOrNull { it.booklistId == listId && !it.isMember } ?: return
-        _state.value = state.copy(request = PickerRequest.Add, addingList = listId)
+        add(opened, list)
+    }
+
+    internal fun remove(listId: String) {
+        val opened = currentTarget() ?: return
+        val state = _state.value
+        if (state.request != null || state.formOpen || state.loadError != null) return
+        val list = state.lists.firstOrNull { it.booklistId == listId && it.isMember } ?: return
+        remove(opened, list)
+    }
+
+    private fun add(opened: Target, list: BooklistMembership) {
+        val listId = list.booklistId
+        _state.value = _state.value.copy(request = PickerRequest.Add, addingList = listId, removingList = null)
         job = viewModelScope.launch {
             val result = addBook(opened.session, list, opened.bookId)
             ensureActive()
@@ -162,10 +185,41 @@ class BooklistPickerViewModel internal constructor(
             val loadError = (result as? AppResult.Failure)?.error?.takeIf { it.mayHaveCommitted() }
             if (loadError != null) previews.clear()
             if (result is AppResult.Success) previews.invalidate(listId)
-            _state.value = current.copy(lists = lists, request = null, addingList = null, loadError = loadError)
+            _state.value = current.copy(lists = lists, request = null, addingList = null, removingList = null, loadError = loadError)
             if (result is AppResult.Success) loadVisiblePreviews(opened)
             _events.tryEmit(when (result) {
                 is AppResult.Success -> appText(TextR.string.text_book_added_to_booklist, list.title)
+                is AppResult.Failure -> result.error.userMessage()
+            })
+        }
+    }
+
+    private fun remove(opened: Target, list: BooklistMembership) {
+        val listId = list.booklistId
+        _state.value = _state.value.copy(request = PickerRequest.Remove, addingList = null, removingList = listId)
+        job = viewModelScope.launch {
+            val result = removeBook(opened.session, list, opened.bookId)
+            ensureActive()
+            if (!isCurrent(opened)) return@launch
+            val current = _state.value
+            val lists = if (result is AppResult.Success) {
+                current.lists.map { item ->
+                    if (item.booklistId != listId) item else item.copy(
+                        isMember = false,
+                        readlistBookId = null,
+                        booklist = item.booklist.copy(bookCount = item.booklist.bookCount?.takeIf { it > 0 }?.minus(1)),
+                    )
+                }
+            } else {
+                current.lists
+            }
+            val loadError = (result as? AppResult.Failure)?.error?.takeIf { it.mayHaveCommitted() }
+            if (loadError != null) previews.clear()
+            if (result is AppResult.Success) previews.invalidate(listId)
+            _state.value = current.copy(lists = lists, request = null, addingList = null, removingList = null, loadError = loadError)
+            if (result is AppResult.Success) loadVisiblePreviews(opened)
+            _events.tryEmit(when (result) {
+                is AppResult.Success -> appText(TextR.string.text_book_removed_from_booklist, list.title)
                 is AppResult.Failure -> result.error.userMessage()
             })
         }

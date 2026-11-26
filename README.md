@@ -13,7 +13,7 @@
   <img alt="Android 13+" src="https://img.shields.io/badge/Android-13%2B-3DDC84?style=flat-square&logo=android&logoColor=white" />
   <img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-2.4.21-7F52FF?style=flat-square&logo=kotlin&logoColor=white" />
   <img alt="Jetpack Compose" src="https://img.shields.io/badge/Jetpack_Compose-UI-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white" />
-  <img alt="Miuix" src="https://img.shields.io/badge/Miuix-0.9.5--beta03-FF6900?style=flat-square" />
+  <img alt="Miuix" src="https://img.shields.io/badge/Miuix-0.9.5--rc01-FF6900?style=flat-square" />
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" /></a>
 </p>
 
@@ -53,7 +53,7 @@
 
 当前正式版为 **[v1.4.0](https://github.com/qgming/zlib-app/releases/tag/v1.4.0)**，可直接下载 **[通用 APK](https://github.com/qgming/zlib-app/releases/download/v1.4.0/zhishi-1.4.0-universal.apk)**。
 
-本版完整变化见 [1.4.0 更新日志](docs/releases/v1.4.0.txt)，发布与校验记录见[发布说明](docs/RELEASING.md)。
+本版完整变化见 [1.4.0 更新日志](docs/releases/v1.4.0.md)，即将发布的 1.5.0 草案见 [1.5.0 更新日志](docs/releases/v1.5.0.md)，发布与校验记录见[发布说明](docs/RELEASING.md)。
 
 应用会在启动后检查新版，也可在「设置 → 关于 → 检查更新」手动触发。
 发现新版后显示真实发布日志；点击更新会在应用内下载并显示进度。现有 1.3.1 及更早版本可通过检查更新直接升级到 1.4.0，无需过渡版本。
@@ -76,7 +76,7 @@
 | 云端下载记录 | 独立查看账号的跨设备下载记录，可确认后删除记录，不影响本机文件或收藏 |
 | 域名管理 | 17 个官方与 34 个社区镜像直接分组展示，支持体检、切换、自定义域名和可关闭的自动切换；人机验证域可打开独立网页手动验证 |
 | 外观与语言 | Miuix 玻璃界面，主题模式支持跟随系统 / 浅色 / 深色，软件语言支持跟随系统 / 简体中文 / 英语，自动或 2–5 列封面网格 |
-| 应用更新与关于 | GitHub Releases 真实日志按版本展开，默认仅展开最新版本；启动及手动检查、通用包下载、进度、签名校验与系统安装；离线依赖许可默认收起，点击展开全文 |
+| 应用更新与关于 | GitHub Releases 真实日志按版本展开（支持 Markdown 渲染），默认仅展开最新版本；启动及手动检查、通用包下载、进度、签名校验与系统安装；离线依赖许可默认收起，点击展开全文 |
 
 应用**不内置阅读器**，也不建立独立本地书库或书单。云端下载记录表示账号曾下载过，
 不代表文件仍在当前设备；清除下载任务记录不会删除已完成的电子书。
@@ -179,7 +179,7 @@ SHA256SUMS.txt
 日常打包统一使用以上正式通用版任务，只生成一个签名 APK，不附带调试包或独立架构包。
 
 发布时同步递增 `appVersionName` / `appVersionCode`，使用对应的 `vMAJOR.MINOR.PATCH` 标签创建正式 Release，
-填写真实更新日志并上传上述资产。当前正式版为 1.4.0 / versionCode=7，高于 1.3.1 的 6，包名和原签名保持一致；[1.4.0 更新日志](docs/releases/v1.4.0.txt)与线上正文一致。具体校验与发布流程见 [发布说明](docs/RELEASING.md)。
+填写真实更新日志并上传上述资产。当前已发布正式版为 1.4.0 / versionCode=7（日志见 [1.4.0 更新日志](docs/releases/v1.4.0.md)），当前开发版本已推进至 1.5.0 / versionCode=8（日志见 [1.5.0 更新日志](docs/releases/v1.5.0.md)），包名和原签名保持一致。具体校验与发布流程见 [发布说明](docs/RELEASING.md)。
 正式构建启用 R8 优化和资源裁剪，通用包包含全部四种架构。
 
 ## 文档

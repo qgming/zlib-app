@@ -36,7 +36,6 @@ data class LoginUiState(
     val showDomainPicker: Boolean = false,
     val switchingDomain: Boolean = false,
     val domainError: String? = null,
-    val pendingMirrorHost: String? = null,
 )
 
 @HiltViewModel
@@ -60,34 +59,6 @@ class LoginViewModel internal constructor(
                 .collect { (host, checks) ->
                     _state.update { it.copy(domain = host, checks = checks) }
             }
-        }
-    }
-
-    private fun requestCommunityMirror(host: String) {
-        _state.update {
-            if (!it.showDomainPicker || it.loading || it.switchingDomain || it.pendingMirrorHost != null) it
-            else it.copy(pendingMirrorHost = host, domainError = null)
-        }
-    }
-
-    fun dismissCommunityMirror() {
-        _state.update { it.copy(pendingMirrorHost = null) }
-    }
-
-    fun confirmCommunityMirror() {
-        val host = _state.value.pendingMirrorHost ?: return
-        if (requiresVerification(host)) {
-            switchDomain {
-                when (val result = domainRepository.approveCommunityHost(host)) {
-                    is AppResult.Success -> {
-                        _verificationRequests.send(result.value)
-                        result
-                    }
-                    is AppResult.Failure -> result
-                }
-            }
-        } else {
-            switchDomain { selectionResult(host, domainRepository.approveAndSelectHost(host)) }
         }
     }
 
@@ -142,16 +113,12 @@ class LoginViewModel internal constructor(
 
     fun dismissDomains() {
         if (!_state.value.switchingDomain) {
-            _state.update { it.copy(showDomainPicker = false, domainError = null, pendingMirrorHost = null) }
+            _state.update { it.copy(showDomainPicker = false, domainError = null) }
         }
     }
 
     fun selectDomain(host: String) {
-        if (_state.value.loading || _state.value.switchingDomain || _state.value.pendingMirrorHost != null) return
-        if (domainRepository.requiresApproval(host)) {
-            requestCommunityMirror(host)
-            return
-        }
+        if (_state.value.loading || _state.value.switchingDomain) return
         switchDomain {
             if (requiresVerification(host) && domainRepository.isApprovedHost(host)) {
                 _verificationRequests.send(host)
@@ -192,7 +159,7 @@ class LoginViewModel internal constructor(
 
     private fun switchDomain(action: suspend () -> AppResult<String>) {
         if (_state.value.loading || _state.value.switchingDomain) return
-        _state.update { it.copy(switchingDomain = true, domainError = null, pendingMirrorHost = null) }
+        _state.update { it.copy(switchingDomain = true, domainError = null) }
         viewModelScope.launch {
             try {
                 when (val result = action()) {

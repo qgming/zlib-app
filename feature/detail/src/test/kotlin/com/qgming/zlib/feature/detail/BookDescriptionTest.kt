@@ -52,4 +52,11 @@ class BookDescriptionTest {
         assertFalse(html.contains("hidden"))
         assertEquals("", BookDescription.html("\n<br>\n<p></p>\n"))
     }
+
+    @Test
+    fun `oversized description input is bounded before html formatting`() {
+        val huge = "a".repeat(100_000)
+        val html = BookDescription.html(huge)
+        assertEquals(64_000, html.length)
+    }
 }

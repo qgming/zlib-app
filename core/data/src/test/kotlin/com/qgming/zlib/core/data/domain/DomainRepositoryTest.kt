@@ -36,31 +36,25 @@ import okhttp3.mockwebserver.RecordedRequest
 @OptIn(ExperimentalCoroutinesApi::class)
 class DomainRepositoryTest {
     @Test
-    fun `community mirrors are listed immediately and full probes do not grant authorization`() = runTest {
+    fun `community mirrors are directly usable and probed by default`() = runTest {
         fixture {
             val host = DomainPolicy.COMMUNITY_MIRROR_HOSTS.first()
             val communityChecks = repository.checks.value.filter { it.group == DomainGroup.COMMUNITY }
             assertEquals(DomainPolicy.COMMUNITY_MIRROR_HOSTS, communityChecks.map { it.host })
             assertTrue(communityChecks.all { it.status == DomainStatus.UNKNOWN })
-            assertTrue(repository.requiresApproval(host))
+            assertTrue(repository.isApprovedHost(host))
+            assertTrue(registry.isAllowed(host))
+            assertFalse(registry.isAllowed("sub.$host"))
             assertTrue(registry.isProbeAllowed(host))
             assertFalse(registry.isProbeAllowed("sub.$host"))
-            assertIs<AppResult.Failure>(repository.setCurrentHost(host))
-            assertEquals(0, server.requestCount)
-
-            repository.probeAll()
-
-            assertEquals(DomainPolicy.DEFAULT_PROBE_HOSTS.size, server.requestCount)
-            assertEquals(communityChecks, repository.checks.value.filter { it.group == DomainGroup.COMMUNITY })
 
             emptyDomains += host
             unhealthy += DomainPolicy.DEFAULT_PROBE_HOSTS
-            repository.probeAll(includeCommunity = true)
+            repository.probeAll()
 
-            assertEquals(DomainPolicy.DEFAULT_PROBE_HOSTS.size * 2 + DomainPolicy.COMMUNITY_MIRROR_HOSTS.size, server.requestCount)
+            assertEquals(DomainPolicy.DEFAULT_PROBE_HOSTS.size + DomainPolicy.COMMUNITY_MIRROR_HOSTS.size, server.requestCount)
             assertTrue(repository.checks.value.first { it.host == host }.healthy)
-            assertEquals("z-lib.gd", repository.currentHostOrNull())
-            assertFalse(repository.isApprovedHost(host))
+            assertTrue(repository.currentHostOrNull() in DomainPolicy.COMMUNITY_MIRROR_HOSTS)
             assertTrue(store.value.value.customHosts.isEmpty())
             repeat(server.requestCount) {
                 val probe = server.takeRequest()
@@ -72,85 +66,48 @@ class DomainRepositoryTest {
     }
 
     @Test
-    fun `community consent and selection survives restart and revocation keeps the built-in card`() = runTest {
+    fun `community selection survives restart and keeps exact host trust`() = runTest {
         fixture {
             val host = DomainPolicy.COMMUNITY_MIRROR_HOSTS.first()
-            val otherHost = DomainPolicy.COMMUNITY_MIRROR_HOSTS[1]
             val original = Session("123", "test-key", "z-lib.gd")
             sessions.add(original)
             assertIs<AppResult.Success<Unit>>(repository.setAutoSwitchEnabled(false))
 
-            assertEquals(AppResult.Success(host), repository.approveAndSelectHost(host))
+            assertEquals(AppResult.Success(host), repository.setCurrentHost(host))
 
             assertEquals(host, repository.currentHostOrNull())
             assertEquals(host, store.value.value.lockedHost)
             assertEquals(original.withDomain(host), sessions.current())
-            assertEquals(setOf(host), store.value.value.customHosts)
+            assertTrue(store.value.value.customHosts.isEmpty())
             assertTrue(repository.isApprovedHost(host))
             assertFalse(registry.isAllowed("sub.$host"))
-            assertFalse(registry.isAllowed(otherHost))
-            assertFalse(repository.requiresApproval(host))
-            assertEquals(1, server.requestCount)
-            val probe = server.takeRequest()
-            assertEquals("/$host/eapi/info/domains", probe.path)
-            assertNull(probe.getHeader("Cookie"))
-            assertNull(probe.getHeader("remix-userid"))
-            assertNull(probe.getHeader("remix-userkey"))
+            assertEquals(0, server.requestCount)
 
             val restarted = newRepository(AllowedHostRegistry())
             restarted.initialize()
             assertEquals(host, restarted.currentHostOrNull())
-            assertFalse(restarted.requiresApproval(host))
             assertEquals(1, restarted.checks.value.count { it.host == host })
-
-            assertIs<AppResult.Success<Unit>>(repository.removeCustomHost(host))
-
-            assertNull(store.value.value.lockedHost)
-            assertFalse(registry.isAllowed(host))
-            assertTrue(registry.isProbeAllowed(host))
-            assertEquals(1 + DomainPolicy.DEFAULT_PROBE_HOSTS.size, server.requestCount)
-            assertTrue(repository.requiresApproval(host))
-            assertEquals(DomainGroup.COMMUNITY, repository.checks.value.single { it.host == host }.group)
-            assertIs<AppResult.Failure>(repository.setCurrentHost(host))
         }
     }
 
     @Test
-    fun `anonymous community host checks preserve credential consent and other cards`() = runTest {
+    fun `anonymous community host checks preserve current host and other cards`() = runTest {
         fixture {
             val (host, otherHost) = DomainPolicy.COMMUNITY_MIRROR_HOSTS
             assertTrue(repository.probeHost(host).healthy)
-            assertTrue(repository.requiresApproval(host))
             assertEquals("z-lib.gd", repository.currentHostOrNull())
             assertEquals(DomainStatus.UNKNOWN, repository.checks.value.single { it.host == otherHost }.status)
-
-            assertEquals(AppResult.Success(host), repository.approveCommunityHost(host))
             assertEquals(1, server.requestCount)
-            assertTrue(repository.isApprovedHost(host))
-            assertEquals("z-lib.gd", repository.currentHostOrNull())
-            assertIs<AppResult.Failure>(repository.approveCommunityHost("sub.$host"))
-            assertIs<AppResult.Failure>(repository.approveCommunityHost("$host:443"))
-            assertIs<AppResult.Failure>(repository.approveCommunityHost("mirror.example.org"))
-
-            unhealthy += DomainPolicy.DEFAULT_PROBE_HOSTS
-            repository.probeAll()
-
-            assertEquals(host, repository.currentHostOrNull())
-            assertEquals(DomainPolicy.DEFAULT_PROBE_HOSTS.size + 2, server.requestCount)
-            assertEquals(DomainStatus.UNKNOWN, repository.checks.value.single { it.host == otherHost }.status)
         }
     }
 
     @Test
-    fun `new challenge keeps the current host after approval and successful check can select it later`() = runTest {
+    fun `challenged host rejects direct selection until verification probe succeeds`() = runTest {
         fixture {
             val host = DomainPolicy.COMMUNITY_MIRROR_HOSTS.first()
             challenged += host
+            assertEquals(DomainStatus.DIAMWALL, repository.probeHost(host).status)
             val expectedFailure = AppResult.Failure(AppError.DomainBlocked(DomainStatus.DIAMWALL))
-            assertEquals(expectedFailure, repository.approveAndSelectHost(host))
-            assertTrue(repository.isApprovedHost(host))
-            assertEquals("z-lib.gd", repository.currentHostOrNull())
-            assertEquals(DomainStatus.DIAMWALL, repository.checks.value.single { it.host == host }.status)
             assertEquals(expectedFailure, repository.setCurrentHost(host))
             assertIs<AppResult.Failure>(repository.selectVerifiedHost(host))
             assertEquals("z-lib.gd", repository.currentHostOrNull())
@@ -171,7 +128,7 @@ class DomainRepositoryTest {
             val original = Session("123", "test-key", "z-lib.gd")
             sessions.add(original)
             assertIs<AppResult.Success<Unit>>(repository.setAutoSwitchEnabled(false))
-            assertEquals(AppResult.Success(host), repository.approveCommunityHost(host))
+            assertTrue(repository.isApprovedHost(host))
             assertTrue(repository.isApprovedHost(redirectTarget))
             redirects[host] = redirectTarget
 
@@ -191,22 +148,17 @@ class DomainRepositoryTest {
     }
 
     @Test
-    fun `revoked community mirror cannot be selected after verification`() = runTest {
+    fun `unapproved unknown mirror cannot be selected after verification`() = runTest {
         fixture {
-            val host = DomainPolicy.COMMUNITY_MIRROR_HOSTS.first()
-            assertEquals(AppResult.Success(host), repository.approveCommunityHost(host))
-            assertIs<AppResult.Success<Unit>>(repository.removeCustomHost(host))
-            assertTrue(registry.isProbeAllowed(host))
-
+            val host = "unapproved.example.test"
             assertIs<AppResult.Failure>(repository.selectVerifiedHost(host))
-
             assertEquals("z-lib.gd", repository.currentHostOrNull())
             assertEquals(0, server.requestCount)
         }
     }
 
     @Test
-    fun `upgraded community entries deduplicate and revocation removes every saved alias`() = runTest {
+    fun `legacy saved community host entries deduplicate cleanly`() = runTest {
         val host = DomainPolicy.COMMUNITY_MIRROR_HOSTS.first()
         fixture(AppSettings(currentHost = "z-lib.gd", customHosts = setOf(host.uppercase(), "$host."))) {
             assertEquals(1, repository.checks.value.count { it.host == host })
@@ -215,7 +167,7 @@ class DomainRepositoryTest {
             assertIs<AppResult.Success<Unit>>(repository.removeCustomHost(host))
 
             assertTrue(store.value.value.customHosts.isEmpty())
-            assertTrue(repository.requiresApproval(host))
+            assertTrue(repository.isApprovedHost(host))
             assertEquals(1, repository.checks.value.count { it.host == host })
             assertEquals(0, server.requestCount)
         }
@@ -225,7 +177,7 @@ class DomainRepositoryTest {
     fun `remembered host lists defaults custom and active host before any probes`() = runTest {
         fixture(AppSettings(currentHost = "zh.z-lib.by", customHosts = setOf("mirror.example.org"))) {
             assertEquals(
-                DomainPolicy.DEFAULT_PROBE_HOSTS + DomainPolicy.COMMUNITY_MIRROR_HOSTS + listOf("mirror.example.org", "zh.z-lib.by"),
+                DomainPolicy.DEFAULT_PROBE_HOSTS + listOf("zh.z-lib.by") + DomainPolicy.COMMUNITY_MIRROR_HOSTS + listOf("mirror.example.org"),
                 repository.checks.value.map { it.host },
             )
             assertTrue(repository.checks.value.all { it.status == DomainStatus.UNKNOWN })
@@ -255,7 +207,9 @@ class DomainRepositoryTest {
     @Test
     fun `batch respects disabled auto switch and enabled auto switch chooses healthy fallback`() = runTest {
         fixture {
+            val totalCatalog = DomainPolicy.DEFAULT_PROBE_HOSTS.size + DomainPolicy.COMMUNITY_MIRROR_HOSTS.size
             unhealthy += "z-lib.gd"
+            unhealthy += DomainPolicy.COMMUNITY_MIRROR_HOSTS
             repository.setAutoSwitchEnabled(false)
             repository.probeAll()
             assertEquals("z-lib.gd", repository.currentHostOrNull())
@@ -264,8 +218,8 @@ class DomainRepositoryTest {
             assertIs<AppResult.Success<Unit>>(repository.setAutoSwitchEnabled(true))
             assertNull(repository.settings.value.lockedHost)
             repository.probeAll()
-            assertEquals("zlib.bz", repository.currentHostOrNull())
-            assertEquals(DomainPolicy.DEFAULT_PROBE_HOSTS.size * 2, server.requestCount)
+            assertTrue(repository.currentHostOrNull() in (DomainPolicy.DEFAULT_PROBE_HOSTS - "z-lib.gd"))
+            assertEquals(totalCatalog * 2, server.requestCount)
         }
     }
 
@@ -290,7 +244,7 @@ class DomainRepositoryTest {
     fun `anonymous discovery never makes a mirror eligible to receive credentials`() = runTest {
         fixture {
             redirects["zlib.re"] = "zh.mirror.test"
-            unhealthy += DomainPolicy.DEFAULT_PROBE_HOSTS - "zlib.re"
+            unhealthy += (DomainPolicy.DEFAULT_PROBE_HOSTS - "zlib.re") + DomainPolicy.COMMUNITY_MIRROR_HOSTS
 
             repository.probeAll()
 
@@ -332,7 +286,7 @@ class DomainRepositoryTest {
         fixture {
             redirects["zlib.re"] = "phish.test"
             unverified += "phish.test"
-            unhealthy += DomainPolicy.DEFAULT_PROBE_HOSTS - "zlib.re"
+            unhealthy += (DomainPolicy.DEFAULT_PROBE_HOSTS - "zlib.re") + DomainPolicy.COMMUNITY_MIRROR_HOSTS
 
             repository.probeAll()
 
@@ -370,7 +324,7 @@ class DomainRepositoryTest {
             assertIs<AppResult.Success<String>>(repository.addCustomHost("https://mirror.example.org"))
             assertTrue(registry.isAllowed("mirror.example.org"))
             assertFalse(registry.isAllowed("sub.mirror.example.org"))
-            assertEquals(DomainStatus.HEALTHY, repository.checks.value.last().status)
+            assertEquals(DomainStatus.HEALTHY, repository.checks.value.single { it.host == "mirror.example.org" }.status)
             assertEquals("z-lib.gd", repository.currentHostOrNull())
             assertEquals("z-lib.gd", repository.settings.value.lockedHost)
             assertEquals(1, server.requestCount)
@@ -399,6 +353,25 @@ class DomainRepositoryTest {
     }
 
     @Test
+    fun `auto switch prefers the lowest latency healthy mirror and ranks healthy cards by speed`() = runTest {
+        fixture {
+            val fastCommunity = DomainPolicy.COMMUNITY_MIRROR_HOSTS.last()
+            val slowOfficial = "zlib.bz"
+            unhealthy += (DomainPolicy.DEFAULT_PROBE_HOSTS - slowOfficial) + (DomainPolicy.COMMUNITY_MIRROR_HOSTS - fastCommunity)
+            delaysMs[slowOfficial] = 80L
+
+            repository.probeAll()
+
+            assertEquals(fastCommunity, repository.currentHostOrNull())
+            val fastCheck = repository.checks.value.single { it.host == fastCommunity }
+            val slowCheck = repository.checks.value.single { it.host == slowOfficial }
+            assertTrue((fastCheck.latencyMs ?: Long.MAX_VALUE) < (slowCheck.latencyMs ?: 0L))
+            val communityChecks = repository.checks.value.filter { it.group == DomainGroup.COMMUNITY }
+            assertEquals(fastCommunity, communityChecks.first().host)
+        }
+    }
+
+    @Test
     fun `failed anonymous probe removes a stale discovery from candidates`() = runTest {
         fixture(AppSettings(currentHost = "z-lib.gd", discoveredHosts = setOf("stale.test"))) {
             unverified += "stale.test"
@@ -410,6 +383,69 @@ class DomainRepositoryTest {
             assertFalse(registry.isAllowed("stale.test"))
             assertFalse(registry.isProbeAllowed("stale.test"))
             assertTrue(store.value.value.discoveredHosts.isEmpty())
+        }
+    }
+
+    @Test
+    fun `background ranking probe preserves active host and yields to manual selection`() = runTest {
+        fixture(AppSettings(currentHost = "z-lib.sk")) {
+            delaysMs["z-lib.sk"] = 30L
+            assertEquals(AppResult.Success("z-lib.sk"), repository.ensureUsableHostForStartup())
+            assertEquals(1, server.requestCount)
+
+            repository.probeRemainingForRankingInBackground()
+
+            assertEquals("z-lib.sk", repository.currentHostOrNull())
+            val totalCatalog = DomainPolicy.DEFAULT_PROBE_HOSTS.size + DomainPolicy.COMMUNITY_MIRROR_HOSTS.size
+            assertEquals(totalCatalog, server.requestCount)
+            assertTrue(repository.checks.value.filter { it.host in DomainPolicy.DEFAULT_PROBE_HOSTS }.all { it.healthy && it.latencyMs != null })
+        }
+    }
+
+    @Test
+    fun `startup probe uses previously ranked lower latency candidates first on subsequent fallback`() = runTest {
+        fixture(AppSettings(currentHost = "z-lib.sk")) {
+            val fastHost = "z-library.website"
+            val slowHost = "zlib.bz"
+            delaysMs[slowHost] = 60L
+            unhealthy += (DomainPolicy.DEFAULT_PROBE_HOSTS - setOf("z-lib.sk", fastHost, slowHost)) + DomainPolicy.COMMUNITY_MIRROR_HOSTS
+
+            assertEquals(AppResult.Success("z-lib.sk"), repository.ensureUsableHostForStartup())
+            repository.probeRemainingForRankingInBackground()
+
+            val checksByHost = repository.checks.value.associateBy { it.host }
+            assertTrue((checksByHost[fastHost]?.latencyMs ?: Long.MAX_VALUE) < (checksByHost[slowHost]?.latencyMs ?: 0L))
+
+            // Now the active host fails; startup should fall back and pick a healthy candidate.
+            unhealthy += "z-lib.sk"
+            val result = assertIs<AppResult.Success<String>>(repository.ensureUsableHostForStartup())
+            assertEquals(fastHost, result.value)
+            assertEquals(fastHost, repository.currentHostOrNull())
+        }
+    }
+
+    @Test
+    fun `persisted latency weights prioritize faster hosts across cold restarts`() = runTest {
+        fixture(AppSettings(currentHost = "z-lib.sk")) {
+            val fastCommunity = DomainPolicy.COMMUNITY_MIRROR_HOSTS.last()
+            val slowOfficial = DomainPolicy.DEFAULT_PROBE_HOSTS.first()
+            delaysMs[slowOfficial] = 60L
+            unhealthy += (DomainPolicy.DEFAULT_PROBE_HOSTS - setOf("z-lib.sk", slowOfficial)) +
+                (DomainPolicy.COMMUNITY_MIRROR_HOSTS - fastCommunity)
+
+            assertEquals(AppResult.Success("z-lib.sk"), repository.ensureUsableHostForStartup())
+            repository.probeRemainingForRankingInBackground()
+
+            assertTrue(store.value.value.hostLatenciesMs[fastCommunity] != null)
+            assertTrue(store.value.value.hostLatenciesMs[slowOfficial] != null)
+            assertTrue(store.value.value.hostLatenciesMs.getValue(fastCommunity) < store.value.value.hostLatenciesMs.getValue(slowOfficial))
+
+            // Simulate a fresh cold start where the previous active host is now down.
+            unhealthy += "z-lib.sk"
+            val restarted = newRepository(AllowedHostRegistry())
+            val selected = assertIs<AppResult.Success<String>>(restarted.ensureUsableHostForStartup())
+            assertEquals(fastCommunity, selected.value)
+            assertEquals(fastCommunity, restarted.currentHostOrNull())
         }
     }
 
@@ -432,10 +468,13 @@ class DomainRepositoryTest {
         val emptyDomains = ConcurrentHashMap.newKeySet<String>()
         val redirects = ConcurrentHashMap<String, String>()
         val unverified = ConcurrentHashMap.newKeySet<String>()
+        val delaysMs = ConcurrentHashMap<String, Long>()
         val server = MockWebServer().apply {
             dispatcher = object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     val host = request.path.orEmpty().removePrefix("/").substringBefore('/')
+                    val delayMs = delaysMs[host] ?: 0L
+                    if (delayMs > 0L) Thread.sleep(delayMs)
                     if (host in unhealthy) return MockResponse().setResponseCode(503).setBody("unavailable")
                     if (host in challenged) return MockResponse().setResponseCode(307).setHeader("Server", "DiamWall")
                     redirects[host]?.let { target ->
@@ -486,6 +525,7 @@ class DomainRepositoryTest {
         override suspend fun setCustomHosts(hosts: Set<String>) { value.value = value.value.copy(customHosts = hosts) }
         override suspend fun setDiscoveredHosts(hosts: Set<String>) { value.value = value.value.copy(discoveredHosts = hosts) }
         override suspend fun setLockedHost(host: String?) { value.value = value.value.copy(lockedHost = host) }
+        override suspend fun setHostLatenciesMs(latencies: Map<String, Long>) { value.value = value.value.copy(hostLatenciesMs = latencies) }
         override suspend fun setThemeMode(mode: ThemeMode) { value.value = value.value.copy(themeMode = mode) }
         override suspend fun setBookGridColumns(columns: BookGridColumns) { value.value = value.value.copy(bookGridColumns = columns) }
         override suspend fun setDownloadTreeUri(uri: String?) { value.value = value.value.copy(downloadTreeUri = uri) }

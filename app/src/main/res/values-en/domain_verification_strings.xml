@@ -1,11 +1,13 @@
 <resources>
     <string name="domain_verification_title">Domain verification</string>
-    <string name="domain_verification_description">%1$s\nComplete the website challenge, then tap “Done and recheck”. Account login is unavailable here. Some challenges may be incompatible.</string>
+    <string name="domain_verification_description">%1$s\nComplete the website challenge, then tap “Done and recheck” in the top bar. Account login is unavailable here. Some challenges may be incompatible.</string>
     <string name="domain_verification_close">Close</string>
     <string name="domain_verification_refresh">Refresh</string>
     <string name="domain_verification_done">Done and recheck</string>
     <string name="domain_verification_loading">Loading verification page…</string>
-    <string name="domain_verification_loaded">After completing the website challenge, tap “Done and recheck”.</string>
+    <string name="domain_verification_loaded">After completing the website challenge, tap “Done and recheck” in the top bar.</string>
     <string name="domain_verification_failed">The verification page failed to load or is incompatible. Refresh or try another domain.</string>
     <string name="domain_verification_blocked">This action is unavailable on the verification page.</string>
+    <string name="domain_verification_not_completed">No verification cookie detected yet. Complete the website challenge first.</string>
+    <string name="domain_verification_network_changed">Network changed. Please reopen the verification page.</string>
 </resources>

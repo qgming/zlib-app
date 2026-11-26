@@ -24,6 +24,7 @@ class DomainProbeTest {
         trusted: (String) -> Boolean = allowed,
         followForeignRedirects: Boolean = true,
         verificationCookieProvider: (HttpUrl) -> String? = { null },
+        verificationUserAgentProvider: (HttpUrl) -> String? = { null },
     ): DomainProbe {
         val base = server.url("/").toString().trimEnd('/')
         return DomainProbe(
@@ -35,6 +36,7 @@ class DomainProbeTest {
             timeoutMillis = 5_000,
             followForeignRedirects = followForeignRedirects,
             verificationCookieProvider = verificationCookieProvider,
+            verificationUserAgentProvider = verificationUserAgentProvider,
         )
     }
 
@@ -58,6 +60,7 @@ class DomainProbeTest {
             val check = runProbe(server)
             assertEquals(DomainStatus.HEALTHY, check.status)
             assertEquals("probe.test", check.host)
+            assertTrue((check.latencyMs ?: 0L) >= 1L)
             assertEquals("/eapi/info/domains", server.takeRequest().path)
         } finally {
             server.shutdown()
@@ -332,6 +335,49 @@ class DomainProbeTest {
             val results = runBlocking { probe.probeAll(listOf("a.test", "b.test"), concurrency = 2) }
             assertEquals(listOf("a.test", "b.test"), results.map { it.host })
         } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `probeFirstUsable returns immediately on first healthy host without waiting for slow hosts`() {
+        val slowGate = java.util.concurrent.CountDownLatch(1)
+        val server = MockWebServer().apply {
+            dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    if (path.startsWith("/slow.test/")) {
+                        slowGate.await(5, java.util.concurrent.TimeUnit.SECONDS)
+                    }
+                    if (path.startsWith("/bad.test/")) {
+                        return MockResponse().setResponseCode(503).setBody("down")
+                    }
+                    return MockResponse().setBody("""{"success":1,"domains":["z-library.sk"]}""")
+                }
+            }
+            start()
+        }
+        try {
+            val probe = DomainProbe(
+                OkHttpClient(),
+                isAllowedHost = { true },
+                isTrustedHost = { true },
+                baseUrlFor = { host -> server.url("/$host").toString() },
+                requireHttps = false,
+            )
+            val seen = java.util.Collections.synchronizedList(mutableListOf<String>())
+            val winner = runBlocking {
+                probe.probeFirstUsable(
+                    hosts = listOf("bad.test", "slow.test", "fast.test"),
+                    concurrency = 3,
+                    onEach = { seen.add(it.host) },
+                )
+            }
+            assertEquals("fast.test", winner?.host)
+            assertEquals(DomainStatus.HEALTHY, winner?.status)
+            assertTrue("fast.test" in seen)
+        } finally {
+            slowGate.countDown()
             server.shutdown()
         }
     }

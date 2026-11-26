@@ -52,4 +52,15 @@ class UpdateDownloadAttemptsTest {
         assertFalse(worker.isCancelled)
         worker.complete()
     }
+
+    @Test
+    fun `cancel resets a ready download and invalidates its generation`() {
+        val attempts = UpdateDownloadAttempts()
+        val id = assertNotNull(attempts.begin(release))
+        attempts.change(id) { it.copy(phase = UpdateDownloadPhase.Ready, savedUri = "content://provider/file") }
+        attempts.cancel()
+        assertEquals(UpdateDownloadPhase.Idle, attempts.state.value.phase)
+        assertNull(attempts.state.value.savedUri)
+        assertFalse(attempts.change(id) { it.copy(phase = UpdateDownloadPhase.Saving) })
+    }
 }

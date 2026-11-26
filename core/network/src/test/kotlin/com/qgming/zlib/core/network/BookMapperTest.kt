@@ -54,6 +54,10 @@ class BookMapperTest {
             "https://covers.example/img/cover-not-exists.png",
             "http://covers.example/abc.jpg",
             "https://user:key@covers.example/abc.jpg",
+            "https://127.0.0.1/abc.jpg",
+            "https://localhost/abc.jpg",
+            "https://covers.example:8443/abc.jpg",
+            "https://[::1]/abc.jpg",
         )
         covers.forEach { cover ->
             val book = BookMapper.fromJson(buildJsonObject {

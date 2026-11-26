@@ -7,10 +7,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -18,6 +18,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
@@ -26,28 +27,27 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.qgming.zlib.core.designsystem.ZlibBookTile
+import com.qgming.zlib.core.designsystem.ZlibAutoPagination
+import com.qgming.zlib.core.designsystem.ZlibBookListItem
 import com.qgming.zlib.core.designsystem.ZlibBookOpenRequest
-import com.qgming.zlib.core.designsystem.ZlibBookGrid
+import com.qgming.zlib.core.designsystem.ZlibCardList
 import com.qgming.zlib.core.designsystem.ZlibExactMatchPreference
 import com.qgming.zlib.core.designsystem.ZlibFilterButton
 import com.qgming.zlib.core.designsystem.ZlibGlassBottomSheet
 import com.qgming.zlib.core.designsystem.ZlibLoading
+import com.qgming.zlib.core.designsystem.ZlibMultiSelectPreference
 import com.qgming.zlib.core.designsystem.ZlibPage
-import com.qgming.zlib.core.designsystem.ZlibSearchBar
+import com.qgming.zlib.core.designsystem.ZlibPreferenceGroup
+import com.qgming.zlib.core.designsystem.ZlibPreferenceMenu
 import com.qgming.zlib.core.designsystem.ZlibRecentSearches
+import com.qgming.zlib.core.designsystem.ZlibSearchBar
+import com.qgming.zlib.core.designsystem.ZlibSelectionOption
+import com.qgming.zlib.core.designsystem.ZlibSheetConfirmButton
+import com.qgming.zlib.core.designsystem.ZlibSheetResetButton
 import com.qgming.zlib.core.designsystem.ZlibStateCard
 import com.qgming.zlib.core.designsystem.ZlibToastHost
-import com.qgming.zlib.core.designsystem.fullWidthItem
-import com.qgming.zlib.core.designsystem.ZlibAutoPagination
-import com.qgming.zlib.core.designsystem.ZlibMultiSelectPreference
-import com.qgming.zlib.core.designsystem.ZlibSelectionOption
-import com.qgming.zlib.core.designsystem.ZlibPreferenceMenu
-import com.qgming.zlib.core.designsystem.ZlibPreferenceGroup
 import com.qgming.zlib.core.model.SearchFilterOptions
 import com.qgming.zlib.core.model.SearchSort
-import top.yukonga.miuix.kmp.basic.Button
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
@@ -63,10 +63,10 @@ fun SearchScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val history by viewModel.history.collectAsStateWithLifecycle()
     ZlibToastHost(viewModel.messages)
-    val listState = rememberLazyGridState()
+    val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
-    var showFilters by remember { mutableStateOf(false) }
-    var draft by remember { mutableStateOf(SearchFilters()) }
+    var showFilters by rememberSaveable { mutableStateOf(false) }
+    var draft by remember { mutableStateOf(state.filters) }
     ZlibAutoPagination(
         state = listState,
         enabled = state.hasMore && !state.loading && !state.loadingMore && state.error == null && state.appendError == null,
@@ -100,9 +100,9 @@ fun SearchScreen(
             ZlibSearchBar(value = state.query, onValueChange = viewModel::onQueryChange, onSubmit = submitSearch)
         },
     ) { padding ->
-        ZlibBookGrid(padding = padding, state = listState) {
+        ZlibCardList(padding = padding, state = listState) {
             when {
-                !state.searched && !state.loading -> fullWidthItem("search-recents") {
+                !state.searched && !state.loading -> item("search-recents") {
                     ZlibRecentSearches(
                         queries = history.queries,
                         onSearch = { query -> focusManager.clearFocus(); viewModel.searchRecent(query) },
@@ -110,8 +110,8 @@ fun SearchScreen(
                         onClear = viewModel::clearRecent,
                     )
                 }
-                state.loading -> fullWidthItem("search-loading") { ZlibLoading() }
-                state.error != null -> fullWidthItem("search-error") {
+                state.loading -> item("search-loading") { ZlibLoading() }
+                state.error != null -> item("search-error") {
                     ZlibStateCard(
                         title = stringResource(TextR.string.text_cannot_search),
                         message = state.error.orEmpty(),
@@ -119,18 +119,18 @@ fun SearchScreen(
                     )
                 }
 
-                state.searched && state.books.isEmpty() -> fullWidthItem("search-empty") {
+                state.searched && state.books.isEmpty() -> item("search-empty") {
                     ZlibStateCard(title = stringResource(TextR.string.text_no_books_found), message = stringResource(TextR.string.text_try_other_keywords_or_fewer_filters))
                 }
 
                 else -> items(state.books, key = { "result-${it.ref}" }) { book ->
-                    ZlibBookTile(book = book, onClick = onOpenBook)
+                    ZlibBookListItem(book = book, onClick = onOpenBook)
                 }
             }
 
             when {
-                state.loadingMore -> fullWidthItem("search-more-loading") { ZlibLoading() }
-                state.appendError != null -> fullWidthItem("search-more-error") {
+                state.loadingMore -> item("search-more-loading") { ZlibLoading() }
+                state.appendError != null -> item("search-more-error") {
                     ZlibStateCard(
                         title = stringResource(TextR.string.text_cannot_load_more_books),
                         message = state.appendError.orEmpty(),
@@ -138,13 +138,33 @@ fun SearchScreen(
                     )
                 }
 
-                state.searched && !state.hasMore && state.books.isNotEmpty() && !state.loading -> fullWidthItem("search-end") {
+                state.searched && !state.hasMore && state.books.isNotEmpty() && !state.loading -> item("search-end") {
                     Text(stringResource(TextR.string.text_all_results_shown), style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
                 }
             }
         }
 
-        ZlibGlassBottomSheet(show = showFilters, title = stringResource(TextR.string.text_search_filters), onDismiss = dismissFilters) {
+        ZlibGlassBottomSheet(
+            show = showFilters,
+            title = stringResource(TextR.string.text_search_filters),
+            onDismiss = dismissFilters,
+            startAction = {
+                ZlibSheetResetButton(
+                    onClick = { draft = SearchFilters() },
+                    enabled = draft != SearchFilters(),
+                )
+            },
+            endAction = {
+                ZlibSheetConfirmButton(
+                    onClick = {
+                        dismissFilters()
+                        viewModel.applyFilters(draft)
+                    },
+                    enabled = draft.yearRangeValid,
+                    description = stringResource(TextR.string.text_apply_filters),
+                )
+            },
+        ) {
             FilterPanel(
                 filters = draft,
                 options = state.filterOptions,
@@ -152,10 +172,6 @@ fun SearchScreen(
                 optionsError = state.optionsError,
                 onRetryOptions = viewModel::loadFilterOptions,
                 onChange = { draft = it },
-                onApply = {
-                    dismissFilters()
-                    viewModel.applyFilters(draft)
-                },
             )
         }
     }
@@ -168,7 +184,6 @@ private fun FilterPanel(
     optionsError: String?,
     onRetryOptions: () -> Unit,
     onChange: (SearchFilters) -> Unit,
-    onApply: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -202,6 +217,7 @@ private fun FilterPanel(
             )
         }
         Text(stringResource(TextR.string.text_publication_year), style = MiuixTheme.textStyles.body2)
+        val focusManager = LocalFocusManager.current
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextField(
                 value = filters.yearFrom,
@@ -210,6 +226,7 @@ private fun FilterPanel(
                 singleLine = true,
                 modifier = Modifier.weight(1f),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
             )
             TextField(
                 value = filters.yearTo,
@@ -218,22 +235,11 @@ private fun FilterPanel(
                 singleLine = true,
                 modifier = Modifier.weight(1f),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
             )
         }
         if (!filters.yearRangeValid) {
             Text(stringResource(TextR.string.text_the_start_year_cannot_be_later_than_the_end_year), style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.error)
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            TextButton(text = stringResource(TextR.string.text_reset), onClick = { onChange(SearchFilters()) }, modifier = Modifier.weight(1f))
-            Button(
-                onClick = onApply,
-                enabled = filters.yearRangeValid,
-                modifier = Modifier.weight(2f),
-                colors = ButtonDefaults.buttonColorsPrimary(),
-            ) { Text(stringResource(TextR.string.text_apply_filters)) }
         }
     }
 }

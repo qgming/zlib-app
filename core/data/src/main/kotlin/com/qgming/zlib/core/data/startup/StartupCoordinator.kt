@@ -2,6 +2,7 @@ package com.qgming.zlib.core.data.startup
 
 import com.qgming.zlib.core.common.AppDispatchers
 import com.qgming.zlib.core.common.AppError
+import com.qgming.zlib.core.common.AppResult
 import com.qgming.zlib.core.data.account.AccountRepository
 import com.qgming.zlib.core.data.domain.DomainRepository
 import com.qgming.zlib.core.data.session.SessionManager
@@ -23,8 +24,9 @@ sealed interface StartupState {
 }
 
 /**
- * Gate the first use on local directory selection, then load the domain and encrypted session.
- * The shell refreshes the profile after Ready so a slow mirror does not delay the first page.
+ * Gate the first use on local directory selection, then verify a usable domain before entering
+ * the shell so Discover/Bookshelf immediately talk to a live host instead of waiting on a blank
+ * screen. Remaining mirrors are probed in the background to refine latency-based ranking weights.
  */
 @Singleton
 class StartupCoordinator @Inject constructor(
@@ -52,16 +54,15 @@ class StartupCoordinator @Inject constructor(
                     _state.value = StartupState.DirectoryRequired
                     return@withContext
                 }
-                domainRepository.initialize()
-                sessionManager.load()
-
-                if (domainRepository.currentHostOrNull() == null) {
-                    _state.value = StartupState.Failed(AppError.NoDomain)
-                    return@withContext
+                when (val result = domainRepository.ensureUsableHostForStartup()) {
+                    is AppResult.Success -> {
+                        completed = true
+                        _state.value = StartupState.Ready
+                    }
+                    is AppResult.Failure -> {
+                        _state.value = StartupState.Failed(result.error)
+                    }
                 }
-
-                completed = true
-                _state.value = StartupState.Ready
             }
         }
     }
@@ -72,19 +73,16 @@ class StartupCoordinator @Inject constructor(
 
     suspend fun retry() {
         completed = false
-        withContext(dispatchers.io) {
-            domainRepository.probeAll(switchToBest = true)
-        }
         start()
     }
 
     /**
-     * Background health check once the shell is visible. Does not block startup and keeps the
-     * current domain when it is still healthy (ADR-013).
+     * One-shot background probe of mirrors not yet checked at startup. Populates latencies and
+     * ranking weights without blocking entry or switching away from the active healthy host.
      */
     suspend fun probeInBackground() {
         withContext(dispatchers.io) {
-            domainRepository.probeAll(switchToBest = true)
+            domainRepository.probeRemainingForRankingInBackground()
         }
     }
 }

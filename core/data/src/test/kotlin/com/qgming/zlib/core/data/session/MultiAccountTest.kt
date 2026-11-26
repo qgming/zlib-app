@@ -75,6 +75,16 @@ class MultiAccountTest {
         assertEquals("z-lib.sk", manager.current()?.domain)
     }
 
+    @Test fun `profile update and expiration still match after a concurrent domain switch`() = runTest {
+        val manager = manager(); val original = session("1")
+        manager.add(original, profile("1", remaining = 5))
+        manager.updateDomain(original, "z-lib.gd")
+        assertTrue(manager.updateProfile(original, profile("1", remaining = 2)))
+        assertEquals(2, manager.vault.value.entries.single().profile?.quota?.remaining)
+        manager.expire(original)
+        assertTrue(manager.vault.value.entries.single().expired)
+    }
+
     @Test fun `vault codec encrypts all credentials and profiles and rejects corrupt state`() {
         val cipher = object : SecretCipher {
             override fun encrypt(plaintext: ByteArray) = plaintext.map { (it.toInt() xor 0x5a).toByte() }.toByteArray()

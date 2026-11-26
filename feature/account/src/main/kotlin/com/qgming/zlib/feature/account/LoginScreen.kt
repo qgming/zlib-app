@@ -1,8 +1,10 @@
 package com.qgming.zlib.feature.account
 
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -10,25 +12,41 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qgming.zlib.core.common.R as TextR
 import com.qgming.zlib.core.designsystem.ZlibCard
 import com.qgming.zlib.core.designsystem.ZlibCardList
-import com.qgming.zlib.core.designsystem.ZlibCommunityMirrorConfirmation
 import com.qgming.zlib.core.designsystem.ZlibCurrentDomainCard
 import com.qgming.zlib.core.designsystem.ZlibDomainPicker
 import com.qgming.zlib.core.designsystem.ZlibLoginForm
+import com.qgming.zlib.core.designsystem.ZlibLoginHeader
 import com.qgming.zlib.core.designsystem.ZlibPage
 
 @Composable
-fun LoginScreen(viewModel: LoginViewModel = hiltViewModel(), onVerifyDomain: (String) -> Unit = {}) {
+fun LoginScreen(
+    viewModel: LoginViewModel = hiltViewModel(),
+    onVerifyDomain: (String) -> Unit = {},
+    logo: Painter? = null,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     LaunchedEffect(viewModel, onVerifyDomain) { viewModel.verificationRequests.collect(onVerifyDomain) }
 
     ZlibPage(title = stringResource(TextR.string.zlib_login_title)) { padding ->
         ZlibCardList(padding) {
+            item("header") {
+                ZlibLoginHeader(
+                    logo = logo,
+                    subtitle = stringResource(
+                        if (state.showCookieImport) TextR.string.text_login_cookie_subtitle
+                        else TextR.string.text_login_subtitle,
+                    ),
+                )
+            }
             item("domain") {
                 ZlibCurrentDomainCard(state.domain, enabled = !state.loading, onChange = viewModel::showDomains)
             }
             item("form") {
-                ZlibCard(cornerRadius = 24.dp) {
+                ZlibCard(
+                    cornerRadius = 24.dp,
+                    insideMargin = PaddingValues(20.dp),
+                ) {
                     ZlibLoginForm(
                         useCookie = state.showCookieImport,
                         email = state.email, password = state.password, cookie = state.cookieText,
@@ -42,15 +60,11 @@ fun LoginScreen(viewModel: LoginViewModel = hiltViewModel(), onVerifyDomain: (St
             }
         }
         ZlibDomainPicker(
-            show = state.showDomainPicker && state.pendingMirrorHost == null,
+            show = state.showDomainPicker,
             checks = state.checks, currentHost = state.domain,
             busy = state.switchingDomain, error = state.domainError,
             onSelect = viewModel::selectDomain, onDismiss = viewModel::dismissDomains,
             onProbe = viewModel::probeDomain, onVerify = viewModel::selectDomain,
-        )
-        ZlibCommunityMirrorConfirmation(
-            host = state.pendingMirrorHost,
-            onDismiss = viewModel::dismissCommunityMirror, onConfirm = viewModel::confirmCommunityMirror,
         )
     }
 }

@@ -47,18 +47,6 @@ class AccountViewModel @Inject constructor(
     private val _events = Channel<String>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
 
-    init {
-        var previousId: String? = null
-        viewModelScope.launch {
-            sessions.session.collect { session ->
-                val id = session?.remixUserId
-                if (id != previousId) {
-                    previousId = id
-                    if (id != null) refresh(id)
-                }
-            }
-        }
-    }
     fun showAdd() { if (!_form.value.busy) _form.value = AddAccountState(visible = true) }
     fun dismissAdd() { if (!_form.value.busy) _form.value = AddAccountState() }
     fun email(value: String) = _form.update { it.copy(email = value, error = null) }

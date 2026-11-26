@@ -1,16 +1,22 @@
 package com.qgming.zlib.feature.detail
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.ClipData
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.webkit.CookieManager
+import android.webkit.HttpAuthHandler
+import android.webkit.PermissionRequest
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
+import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.Box
@@ -38,6 +44,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.net.toUri
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qgming.zlib.core.common.R as TextR
 import com.qgming.zlib.core.designsystem.ZlibLoading
@@ -71,11 +80,14 @@ private fun BookPreviewContent(id: String, hash: String, onBack: () -> Unit, vie
     val noBrowser = stringResource(TextR.string.text_no_browser_available)
     val refresh = { viewModel.refresh(id, hash) }
 
+    val activity = remember(context) { context.findActivity() }
     LaunchedEffect(id, hash) { viewModel.open(id, hash) }
-    DisposableEffect(viewModel) {
+    DisposableEffect(viewModel, activity) {
         onDispose {
-            viewModel.close()
-            clearPreviewCookies()
+            if (activity?.isChangingConfigurations != true) {
+                viewModel.close()
+                clearPreviewCookies()
+            }
         }
     }
 
@@ -147,6 +159,20 @@ private fun ReaderWebView(preview: OnlineBookPreview, isCurrent: () -> Boolean, 
     var progress by remember { mutableIntStateOf(0) }
     var failed by remember { mutableStateOf(false) }
     val released = remember { AtomicBoolean(false) }
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, webViewRef) {
+        val view = webViewRef
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> view?.onResume()
+                Lifecycle.Event.ON_PAUSE -> view?.onPause()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     if (failed) {
         PreviewMessage(TextR.string.text_preview_load_failed, TextR.string.text_preview_retry_or_open_browser, onRefresh)
         return
@@ -163,22 +189,29 @@ private fun ReaderWebView(preview: OnlineBookPreview, isCurrent: () -> Boolean, 
                         allowFileAccess = false
                         allowContentAccess = false
                         javaScriptCanOpenWindowsAutomatically = false
+                        setSupportMultipleWindows(false)
                         mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                         cacheMode = WebSettings.LOAD_NO_CACHE
                         safeBrowsingEnabled = true
                         domStorageEnabled = true
-                        databaseEnabled = true
+                        databaseEnabled = false
                         userAgentString = PREVIEW_UA
                     }
+                    CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
                     webChromeClient = object : WebChromeClient() {
                         override fun onProgressChanged(view: WebView, newProgress: Int) {
                             progress = newProgress
                         }
+
+                        override fun onPermissionRequest(request: PermissionRequest) {
+                            request.deny()
+                        }
                     }
                     webViewClient = object : WebViewClient() {
                         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                            if (!request.isForMainFrame) return false
-                            if (isCurrent() && isHttpsPreviewNavigation(request.url.toString())) return false
+                            val allowed = isCurrent() && isHttpsPreviewNavigation(request.url.toString())
+                            if (!request.isForMainFrame) return !allowed
+                            if (allowed) return false
                             failed = true
                             return true
                         }
@@ -198,11 +231,16 @@ private fun ReaderWebView(preview: OnlineBookPreview, isCurrent: () -> Boolean, 
                             if (request.isForMainFrame) failed = true
                         }
 
+                        override fun onReceivedHttpAuthRequest(view: WebView, handler: HttpAuthHandler, host: String, realm: String) {
+                            handler.cancel()
+                        }
+
                         override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
                             failed = true
                             return true
                         }
                     }
+                    webViewRef = this
                     clearPreviewCookies {
                         if (!released.get() && isCurrent()) loadUrl(preview.readerUrl)
                     }
@@ -210,6 +248,7 @@ private fun ReaderWebView(preview: OnlineBookPreview, isCurrent: () -> Boolean, 
             },
             onRelease = { view ->
                 released.set(true)
+                if (webViewRef === view) webViewRef = null
                 view.stopLoading()
                 view.webChromeClient = null
                 view.webViewClient = WebViewClient()
@@ -221,15 +260,32 @@ private fun ReaderWebView(preview: OnlineBookPreview, isCurrent: () -> Boolean, 
     }
 }
 
-internal fun isHttpsPreviewNavigation(url: String): Boolean = runCatching { URI(url) }.getOrNull()?.let {
-    it.scheme.equals("https", ignoreCase = true) && it.host != null && it.rawUserInfo == null &&
-        (it.port == -1 || it.port in 1..65535)
+private val previewIpv4Pattern = Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")
+
+internal fun isHttpsPreviewNavigation(url: String): Boolean = runCatching { URI(url) }.getOrNull()?.let { uri ->
+    val host = uri.host?.lowercase()?.trimEnd('.') ?: return@let false
+    uri.scheme.equals("https", ignoreCase = true) &&
+        uri.rawUserInfo == null &&
+        (uri.port == -1 || uri.port == 443) &&
+        host.isNotEmpty() &&
+        host != "localhost" &&
+        !host.endsWith(".localhost") &&
+        '.' in host &&
+        !host.startsWith('[') &&
+        !previewIpv4Pattern.matches(host)
 } == true
 
 private fun clearPreviewCookies(onCleared: (() -> Unit)? = null) {
     val manager = CookieManager.getInstance()
     manager.removeAllCookies {
         manager.flush()
+        runCatching { WebStorage.getInstance().deleteAllData() }
         onCleared?.invoke()
     }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

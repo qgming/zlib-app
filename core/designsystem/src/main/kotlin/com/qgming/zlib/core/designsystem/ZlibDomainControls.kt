@@ -3,36 +3,47 @@ package com.qgming.zlib.core.designsystem
 import androidx.compose.ui.res.stringResource
 import com.qgming.zlib.core.common.R as TextR
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.qgming.zlib.core.common.DomainStatus
 import com.qgming.zlib.core.model.DomainCheck
 import com.qgming.zlib.core.model.DomainGroup
 import top.yukonga.miuix.kmp.basic.Button
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.glass.Ok
 import top.yukonga.miuix.kmp.icon.glass.Refresh
@@ -46,13 +57,52 @@ fun ZlibChangeDomainButton(enabled: Boolean, onClick: () -> Unit) {
 
 @Composable
 fun ZlibCurrentDomainCard(host: String?, enabled: Boolean, onChange: () -> Unit) {
-    ZlibCard(cornerRadius = 24.dp) {
+    val colors = MiuixTheme.colorScheme
+    ZlibCard(
+        cornerRadius = 24.dp,
+        insideMargin = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
+        onClick = if (enabled) onChange else null,
+    ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(stringResource(TextR.string.text_current_domain), style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
-                Text(host ?: stringResource(TextR.string.text_choose_domain), style = MiuixTheme.textStyles.body2)
+            Column(Modifier.weight(1f).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    stringResource(TextR.string.text_current_domain),
+                    style = MiuixTheme.textStyles.footnote1,
+                    color = colors.onSurfaceVariantSummary,
+                )
+                Text(
+                    text = host ?: stringResource(TextR.string.text_choose_domain),
+                    style = MiuixTheme.textStyles.body2.copy(fontWeight = FontWeight.Medium),
+                    color = colors.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
-            ZlibChangeDomainButton(enabled, onChange)
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(colors.primary.copy(alpha = if (enabled) 0.12f else 0.06f))
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = MiuixIcons.Glass.Normal.Replace,
+                        contentDescription = null,
+                        tint = if (enabled) colors.primary else colors.onSurfaceVariantSummary,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        text = stringResource(TextR.string.text_switch_domain),
+                        style = MiuixTheme.textStyles.footnote1.copy(fontWeight = FontWeight.Medium),
+                        color = if (enabled) colors.primary else colors.onSurfaceVariantSummary,
+                        maxLines = 1,
+                    )
+                }
+            }
         }
     }
 }
@@ -86,24 +136,36 @@ fun ZlibDomainCard(
 ) {
     val colors = MiuixTheme.colorScheme
     val needsVerification = check.status == DomainStatus.DIAMWALL || check.status == DomainStatus.CHALLENGED
+    val canActivate = enabled && (!current || needsVerification)
     val action = if (needsVerification && onVerify != null) onVerify else onSelect
     val actionDescription = if (needsVerification) stringResource(TextR.string.text_verify_domain, check.host)
         else stringResource(TextR.string.text_switch_to, check.host)
     val interaction = if (onLongClick != null) Modifier.combinedClickable(
         enabled = enabled, role = Role.Button,
-        onClickLabel = actionDescription, onLongClickLabel = stringResource(TextR.string.text_domain_actions),
-        onClick = action, onLongClick = onLongClick,
+        onClickLabel = if (canActivate) actionDescription else stringResource(TextR.string.text_current_domain_2, check.host),
+        onLongClickLabel = stringResource(TextR.string.text_domain_actions),
+        onClick = { if (canActivate) action() },
+        onLongClick = onLongClick,
     ) else Modifier
     ZlibCard(
         modifier = interaction.semantics { selected = current },
         cornerRadius = 24.dp,
-        onClick = if (onLongClick == null && enabled) action else null,
+        onClick = if (onLongClick == null && canActivate) action else null,
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(check.host, style = MiuixTheme.textStyles.body2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val statusText = buildString {
+                    if (current) append(stringResource(TextR.string.text_active_2))
+                    append(check.status.label())
+                    if (check.healthy && check.latencyMs != null) {
+                        append(" · ")
+                        append(check.latencyMs)
+                        append(" ms")
+                    }
+                }
                 Text(
-                    (if (current) stringResource(TextR.string.text_active_2) else "") + check.status.label(),
+                    statusText,
                     style = MiuixTheme.textStyles.footnote1,
                     color = if (current || check.healthy) colors.primary else colors.onSurfaceVariantSummary,
                 )
@@ -176,6 +238,7 @@ fun ZlibAddDomainForm(
     error: String?,
     onHostChange: (String) -> Unit,
     onSubmit: () -> Unit,
+    showSubmitButton: Boolean = true,
 ) {
     Column(Modifier.fillMaxWidth().heightIn(max = 480.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         LazyColumn(
@@ -184,9 +247,18 @@ fun ZlibAddDomainForm(
         ) {
             item("form") {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    TextField(
-                        value = host, onValueChange = onHostChange, label = stringResource(TextR.string.text_domain_e_g_mirror_example_org),
-                        singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(),
+                    ZlibTextField(
+                        value = host,
+                        onValueChange = onHostChange,
+                        label = stringResource(TextR.string.text_domain_e_g_mirror_example_org),
+                        singleLine = true,
+                        enabled = !busy,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Uri,
+                            imeAction = ImeAction.Done,
+                        ),
+                        onDone = { if (!busy && host.isNotBlank()) onSubmit() },
+                        modifier = Modifier.fillMaxWidth(),
                     )
                     Text(
                         stringResource(TextR.string.text_enter_a_trusted_https_hostname_without_a_path_port_or_ip_address),
@@ -196,13 +268,20 @@ fun ZlibAddDomainForm(
                         stringResource(TextR.string.text_optional_mirror_credential_warning),
                         style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     )
-                    error?.let { Text(it, style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.error) }
+                    error?.let { ZlibInlineErrorBanner(it) }
                     if (busy) ZlibLoadingStatus(stringResource(TextR.string.text_adding_and_checking))
                 }
             }
         }
-        Button(onClick = onSubmit, enabled = !busy && host.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(TextR.string.text_add_domain))
+        if (showSubmitButton) {
+            Button(
+                onClick = onSubmit,
+                enabled = !busy && host.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColorsPrimary(),
+            ) {
+                Text(stringResource(TextR.string.text_add_domain), color = MiuixTheme.colorScheme.onPrimary)
+            }
         }
     }
 }
@@ -216,15 +295,47 @@ fun ZlibDomainGroupHeading(group: DomainGroup) {
 }
 
 @Composable
-fun ZlibCommunityMirrorConfirmation(host: String?, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    ZlibConfirmDialog(
-        show = host != null,
-        title = stringResource(TextR.string.text_trust_community_mirror),
-        summary = stringResource(TextR.string.text_confirm_community_mirror, host.orEmpty()),
-        confirmLabel = stringResource(TextR.string.text_trust_and_switch_domain),
-        onDismiss = onDismiss,
-        onConfirm = onConfirm,
-    )
+fun ZlibDomainVerificationPage(
+    title: String,
+    refreshDescription: String,
+    doneDescription: String,
+    refreshEnabled: Boolean,
+    doneEnabled: Boolean,
+    onBack: () -> Unit,
+    onRefresh: () -> Unit,
+    onDone: () -> Unit,
+    content: @Composable BoxScope.(PaddingValues) -> Unit,
+) {
+    val colors = MiuixTheme.colorScheme
+    CompositionLocalProvider(LocalZlibGlass provides false) {
+        ZlibPage(
+            title = title,
+            onBack = onBack,
+            actions = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TopBarButton(
+                        icon = MiuixIcons.Glass.Normal.Refresh,
+                        description = refreshDescription,
+                        onClick = onRefresh,
+                        glass = false,
+                        enabled = refreshEnabled,
+                        tint = if (refreshEnabled) colors.onSurface else colors.onSurfaceVariantSummary,
+                    )
+                    TopBarButton(
+                        icon = MiuixIcons.Glass.Normal.Ok,
+                        description = doneDescription,
+                        onClick = onDone,
+                        glass = false,
+                        enabled = doneEnabled,
+                        tint = if (doneEnabled) colors.primary else colors.onSurfaceVariantSummary,
+                    )
+                }
+            },
+            contentGutters = false,
+        ) { padding ->
+            Box(Modifier.fillMaxSize()) { content(padding) }
+        }
+    }
 }
 
 @Composable

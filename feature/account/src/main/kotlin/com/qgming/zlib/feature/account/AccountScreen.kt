@@ -25,7 +25,6 @@ import com.qgming.zlib.core.designsystem.ZlibAddAccountButton
 import com.qgming.zlib.core.designsystem.ZlibAutoSwitchPreference
 import com.qgming.zlib.core.designsystem.ZlibCardList
 import com.qgming.zlib.core.designsystem.ZlibConfirmDialog
-import com.qgming.zlib.core.designsystem.ZlibCommunityMirrorConfirmation
 import com.qgming.zlib.core.designsystem.ZlibCurrentDomainCard
 import com.qgming.zlib.core.designsystem.ZlibDomainPicker
 import com.qgming.zlib.core.designsystem.ZlibGlassBottomSheet
@@ -34,7 +33,6 @@ import com.qgming.zlib.core.designsystem.ZlibMenuAction
 import com.qgming.zlib.core.designsystem.ZlibPage
 import com.qgming.zlib.core.designsystem.ZlibToastHost
 import com.qgming.zlib.core.designsystem.ZlibStateCard
-import com.qgming.zlib.core.designsystem.rememberZlibToastHostState
 
 @Composable
 fun AccountScreen(
@@ -51,10 +49,8 @@ fun AccountScreen(
     var actionId by remember { mutableStateOf<String?>(null) }
     var logoutId by remember { mutableStateOf<String?>(null) }
     var confirmAutoSwitch by remember { mutableStateOf(false) }
-    val toast = rememberZlibToastHostState()
-    LaunchedEffect(viewModel, toast) { viewModel.events.collect { toast.showMessage(it) } }
     LaunchedEffect(domainViewModel, onVerifyDomain) { domainViewModel.verificationRequests.collect(onVerifyDomain) }
-    ZlibToastHost(toast)
+    ZlibToastHost(viewModel.events)
 
     ZlibPage(title = stringResource(TextR.string.text_account), onBack = onBack, actions = { ZlibAddAccountButton(viewModel::showAdd) }) { padding ->
         ZlibCardList(padding) {
@@ -95,7 +91,7 @@ fun AccountScreen(
             onConfirm = { viewModel.setAutoSwitch(true); confirmAutoSwitch = false },
         )
         ZlibGlassBottomSheet(
-            show = form.visible && !domainState.showDomainPicker && domainState.pendingMirrorHost == null,
+            show = form.visible && !domainState.showDomainPicker,
             title = stringResource(TextR.string.text_add_account),
             onDismiss = viewModel::dismissAdd,
         ) {
@@ -112,7 +108,7 @@ fun AccountScreen(
             }
         }
         ZlibDomainPicker(
-            show = domainState.showDomainPicker && domainState.pendingMirrorHost == null,
+            show = domainState.showDomainPicker,
             checks = domainState.checks,
             currentHost = domainState.domain,
             busy = domainState.switchingDomain || form.busy || busy != null,
@@ -121,11 +117,6 @@ fun AccountScreen(
             onDismiss = domainViewModel::dismissDomains,
             onProbe = domainViewModel::probeDomain,
             onVerify = domainViewModel::selectDomain,
-        )
-        ZlibCommunityMirrorConfirmation(
-            host = domainState.pendingMirrorHost,
-            onConfirm = domainViewModel::confirmCommunityMirror,
-            onDismiss = domainViewModel::dismissCommunityMirror,
         )
     }
 }

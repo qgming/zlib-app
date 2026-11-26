@@ -93,7 +93,8 @@ internal class DownloadPublication(
             if (!isPrefix(source.uri, target.uri, pending.totalBytes)) throw IOException("The download destination changed")
             target.uri
         } else {
-            if (children.any { it.name == pending.targetName }) throw IOException("The download destination already exists")
+            val targetName = DownloadFileNames.uniqueFinalName(pending.targetName) { name -> children.any { it.name == name } }
+            if (targetName != pending.targetName) pending = pending.copy(targetName = targetName).also { save(it) }
             withContext(NonCancellable) {
                 val created = files.create(pending.targetName) ?: throw IOException("The download destination could not be created")
                 if (children.any { it.uri == created }) throw IOException("The provider returned an existing document")
@@ -114,8 +115,13 @@ internal class DownloadPublication(
     suspend fun abandon(pending: PendingDownloadPublication): Boolean {
         val children = files.children()
         val target = children.firstOrNull { it.uri == pending.targetUri }
-        if (target == null) return children.none { it.name == pending.targetName } ||
-            children.singleOrNull { it.name == pending.targetName }?.verified(pending) == true
+        if (target == null) {
+            if (pending.targetUri != null) return true
+            if (pending.step == PublicationStep.Copy) return true
+            val existing = children.singleOrNull { it.name == pending.targetName }
+            if (existing == null) return true
+            return existing.verified(pending) || originalPart(pending, children) != null
+        }
         if (target.verified(pending)) return true
         val part = originalPart(pending, children) ?: return false
         return pending.step == PublicationStep.Copy && part.verified(pending) &&
@@ -192,6 +198,10 @@ internal class SafDownloadPublicationFiles(private val resolver: ContentResolver
     override fun rename(part: DownloadDocument, name: String): String? = try {
         DocumentsContract.renameDocument(resolver, part.uri.toUri(), name)?.toString()
     } catch (_: UnsupportedOperationException) {
+        null
+    } catch (_: IllegalStateException) {
+        null
+    } catch (_: IllegalArgumentException) {
         null
     }
 

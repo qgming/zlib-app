@@ -55,10 +55,15 @@ internal fun LocalFilesContent(padding: PaddingValues, viewModel: LocalFilesView
             }
         }
     }
-    LaunchedEffect(state.treeUri) { viewModel.dismissActions() }
+    LaunchedEffect(state.treeUri, state.files) {
+        val selected = action.file
+        if (selected != null && (selected.treeUri != state.treeUri || (!state.loading && state.files.none { it.uri == selected.uri }))) {
+            viewModel.dismissActions()
+        }
+    }
     ZlibToastHost(toast)
 
-    ZlibBookGrid(padding = padding, refreshing = false, onRefresh = viewModel::refresh) {
+    ZlibBookGrid(padding = padding, refreshing = state.refreshing, onRefresh = { viewModel.refresh(userInitiated = true) }) {
         when {
             state.loading -> fullWidthItem("local-loading") { ZlibLoading() }
             state.treeUri == null -> fullWidthItem("local-no-directory") {

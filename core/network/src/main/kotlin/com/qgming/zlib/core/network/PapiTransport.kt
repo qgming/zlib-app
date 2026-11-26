@@ -50,10 +50,12 @@ private fun restrictedBooklistClient(client: OkHttpClient): OkHttpClient = clien
     }
     .build()
 
-/** Same-host JSON transport using only the current session's two remix cookies. */
+/** Same-host JSON transport using only the current session's two remix cookies and optional wall-clearance cookies. */
 internal class PapiTransport(
     client: OkHttpClient,
     private val isAllowedHost: (String) -> Boolean,
+    private val verificationCookieProvider: (HttpUrl) -> String? = { null },
+    private val verificationUserAgentProvider: (HttpUrl) -> String? = { null },
 ) {
     private val transport = restrictedBooklistClient(client)
 
@@ -63,25 +65,35 @@ internal class PapiTransport(
         body: RequestBody? = null,
         query: HttpUrl.Builder.() -> Unit = {},
         createConfirmation: Boolean = false,
+        allowEmptySuccess: Boolean = false,
         parse: (JsonObject) -> T,
     ): AppResult<T> {
-        val cookie = sessionCookie(session) ?: return AppResult.Failure(AppError.NotLoggedIn)
+        val baseCookie = sessionCookie(session) ?: return AppResult.Failure(AppError.NotLoggedIn)
         val host = session.domain
         if (DomainPolicy.normalizeHostInput(host) != host.lowercase() || !isAllowedHost(host)) {
             return AppResult.Failure(AppError.DomainBlocked(DomainStatus.INVALID))
         }
         val url = DomainPolicy.baseUrl(host).toHttpUrlOrNull()?.newBuilder()?.encodedPath(path)?.apply(query)?.build()
             ?: return AppResult.Failure(AppError.DomainBlocked(DomainStatus.INVALID))
+        val verificationCookie = DomainVerificationCookies.sanitizeCookieHeader(verificationCookieProvider(url))
+        val cookie = listOfNotNull(baseCookie, verificationCookie).filter(String::isNotBlank).joinToString("; ")
+        val userAgent = if (verificationCookie != null) {
+            DomainVerificationCookies.sanitizeUserAgent(verificationUserAgentProvider(url)) ?: EapiHeaders.USER_AGENT
+        } else {
+            EapiHeaders.USER_AGENT
+        }
         val request = Request.Builder().url(url)
             .cacheControl(NO_CACHE)
             .header("Accept", EapiHeaders.ACCEPT)
-            .header("User-Agent", EapiHeaders.USER_AGENT)
+            .header("User-Agent", userAgent)
             .tag(PapiRequestCredentials::class.java, PapiRequestCredentials(cookie))
             .header(EapiHeaders.COOKIE, cookie)
             .apply { if (body != null) post(body) }
             .build()
         return try {
-            transport.newCall(request).awaitParsed { response -> AppResult.Success(parse(envelope(response, createConfirmation))) }
+            transport.newCall(request).awaitParsed { response ->
+                AppResult.Success(parse(envelope(response, createConfirmation, allowEmptySuccess)))
+            }
         } catch (failure: AppErrorException) {
             AppResult.Failure(failure.error)
         } catch (failure: IOException) {
@@ -89,7 +101,7 @@ internal class PapiTransport(
         }
     }
 
-    private fun envelope(response: Response, createConfirmation: Boolean): JsonObject {
+    private fun envelope(response: Response, createConfirmation: Boolean, allowEmptySuccess: Boolean): JsonObject {
         if (response.code == 513 || response.code == 517 || response.header("Server").equals("DiamWall", true) ||
             (response.code in 300..399 && response.headers("Set-Cookie").any { it.trimStart().startsWith("__diamwall=", true) })
         ) {
@@ -98,26 +110,45 @@ internal class PapiTransport(
         if (response.code in 300..399) throw AppErrorException(AppError.DomainBlocked(DomainStatus.REDIRECT_LOOP))
         if (response.code == 429) throw AppErrorException(AppError.Unsupported(appText(TextR.string.text_papi_rate_limited)))
         val type = response.body.contentType()
-        if (type?.subtype == "html") throw AppErrorException(AppError.DomainBlocked(DomainStatus.CHALLENGED))
         val body = response.body.stringUpTo(MAX_RESPONSE_BYTES) ?: malformedPapiResponse()
-        if (createConfirmation && response.isSuccessful && body.isEmpty()) return JsonObject(emptyMap())
+        if ((createConfirmation || allowEmptySuccess) && response.isSuccessful && body.isEmpty()) return JsonObject(emptyMap())
+        // Live Z-Library PAPI endpoints often return valid JSON with `Content-Type: text/html; charset=UTF-8` (ADR-109).
         val root = jsonObject(body)
-        val success = root?.intOrNull("success")
-        val explicitError = root?.obj("error")?.stringOrNull("message") ?: root?.stringOrNull("error")
-        val errorText = explicitError ?: root?.stringOrNull("message")
+        if (root == null) {
+            if (body.contains("diamwall", ignoreCase = true)) {
+                throw AppErrorException(AppError.DomainBlocked(DomainStatus.DIAMWALL))
+            }
+            if (type?.subtype == "html" || looksLikeHtml(body)) {
+                throw AppErrorException(AppError.DomainBlocked(DomainStatus.CHALLENGED))
+            }
+            if (response.code == 401) {
+                throw AppErrorException(AppError.Unsupported(appText(TextR.string.text_papi_session_not_accepted)))
+            }
+            if (!response.isSuccessful) {
+                throw AppErrorException(AppError.Server(response.code, ""))
+            }
+            malformedPapiResponse()
+        }
+        val success = root.intOrNull("success")
+        val explicitError = root.obj("error")?.stringOrNull("message") ?: root.stringOrNull("error")
+        val errorText = explicitError ?: root.stringOrNull("message")
         rejectAuthentication(response.code, root)
-        val hasCreateError = createConfirmation && root != null &&
+        val hasCreateError = createConfirmation &&
             (explicitError != null || !root.obj("error").isNullOrEmpty() || !root.array("error").isNullOrEmpty() ||
                 success != 1 && errorText != null)
         if (!response.isSuccessful || success == 0 || hasCreateError) {
             val message = if (response.isSuccessful) appText(TextR.string.text_papi_request_refused) else ""
             throw AppErrorException(AppError.Server(response.code, message))
         }
-        if (root == null || type?.type != "application" || type.subtype != "json") malformedPapiResponse()
         val hasCreatedList = createConfirmation && "success" !in root &&
             root.obj("readlist")?.stringOrNull("id")?.matches(PAPI_ID) == true
         if (success != 1 && !hasCreatedList) malformedPapiResponse()
         return root
+    }
+
+    private fun looksLikeHtml(body: String): Boolean {
+        val trimmed = body.trimStart()
+        return trimmed.startsWith("<") && (trimmed.contains("<html", true) || trimmed.contains("<!doctype", true))
     }
 
     private fun jsonObject(body: String): JsonObject? = try {

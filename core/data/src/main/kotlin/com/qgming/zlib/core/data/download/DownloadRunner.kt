@@ -43,6 +43,7 @@ class DownloadRunner @Inject constructor(
     private val execution = Mutex()
     private val recovery = CoroutineScope(SupervisorJob() + dispatchers.io)
     @Volatile private var worker: Job? = null
+    @Volatile private var acceptingQueueWork = false
 
     fun cancelActiveTransfer() = engine.cancelActiveTransfer()
 
@@ -66,12 +67,11 @@ class DownloadRunner @Inject constructor(
     }
 
     internal suspend fun pauseAfterLaunchRejection(): Boolean {
-        if (!execution.tryLock()) return false
-        try {
+        if (acceptingQueueWork) return false
+        return execution.withLock {
+            if (acceptingQueueWork) return@withLock false
             parkQueue(DownloadCodes.FOREGROUND_UNAVAILABLE)
-            return true
-        } finally {
-            execution.unlock()
+            true
         }
     }
 
@@ -151,11 +151,20 @@ class DownloadRunner @Inject constructor(
     suspend fun runQueue() = withContext(dispatchers.io) {
         execution.withLock {
             worker = currentCoroutineContext().job
+            acceptingQueueWork = true
             try {
                 val dao = database.downloadDao()
                 dao.resetInterrupted()
                 while (true) {
-                    val item = controls.selectNext(DownloadEntity::id) { dao.nextActive() } ?: break
+                    val item = controls.selectNext(DownloadEntity::id) { dao.nextActive() }
+                    if (item == null) {
+                        acceptingQueueWork = false
+                        if (dao.nextActive() != null) {
+                            acceptingQueueWork = true
+                            continue
+                        }
+                        break
+                    }
                     try {
                         if (!runItem(item)) break
                     } finally {
@@ -163,6 +172,7 @@ class DownloadRunner @Inject constructor(
                     }
                 }
             } finally {
+                acceptingQueueWork = false
                 worker = null
             }
         }

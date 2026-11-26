@@ -7,6 +7,8 @@ import java.net.URLDecoder
 object FileNames {
 
     private const val MAX_BASE_LENGTH = 120
+    private const val MAX_BASE_UTF8_BYTES = 180
+    private const val MAX_EXT_LENGTH = 16
     private const val FALLBACK = "download"
 
     private val illegalChars = Regex("[<>:\"/\\\\|?*\\u0000-\\u001f\\u007f]")
@@ -14,7 +16,8 @@ object FileNames {
 
     /**
      * Produces a safe name: strips any directory component, control/illegal characters,
-     * trailing dots/spaces, and caps the base name while keeping the extension.
+     * leading/trailing dots and spaces, and caps the base name (both chars and UTF-8 bytes)
+     * while keeping a bounded extension.
      */
     fun sanitize(raw: String?, fallback: String = FALLBACK): String {
         if (raw.isNullOrBlank()) return fallback
@@ -23,20 +26,45 @@ object FileNames {
             .replace(illegalChars, "_")
             .replace(whitespace, " ")
             .trim()
+            .trimStart('.', ' ')
             .trimEnd('.', ' ')
         if (name.isBlank() || name == "." || name == "..") return fallback
 
         val dot = name.lastIndexOf('.')
         if (dot > 0) {
-            val base = name.substring(0, dot)
-            val ext = name.substring(dot + 1).take(16)
-            if (base.length > MAX_BASE_LENGTH) {
-                name = base.take(MAX_BASE_LENGTH).trimEnd() + "." + ext
+            val base = truncateUtf8(name.substring(0, dot), MAX_BASE_LENGTH, MAX_BASE_UTF8_BYTES).trimEnd('.', ' ')
+            val ext = truncateUtf8(name.substring(dot + 1), MAX_EXT_LENGTH, MAX_EXT_LENGTH * 2).trimEnd('.', ' ')
+            name = when {
+                base.isBlank() -> fallback
+                ext.isBlank() -> base
+                else -> "$base.$ext"
             }
-        } else if (name.length > MAX_BASE_LENGTH) {
-            name = name.take(MAX_BASE_LENGTH).trimEnd()
+        } else {
+            name = truncateUtf8(name, MAX_BASE_LENGTH, MAX_BASE_UTF8_BYTES).trimEnd('.', ' ')
         }
         return name.ifBlank { fallback }
+    }
+
+    private fun truncateUtf8(value: String, maxChars: Int, maxBytes: Int): String {
+        if (value.length <= maxChars && value.toByteArray(Charsets.UTF_8).size <= maxBytes) return value
+        val out = StringBuilder(minOf(value.length, maxChars))
+        var bytes = 0
+        var i = 0
+        while (i < value.length && out.length < maxChars) {
+            val cp = value.codePointAt(i)
+            val charCount = Character.charCount(cp)
+            val utf8Bytes = when {
+                cp <= 0x7F -> 1
+                cp <= 0x7FF -> 2
+                cp <= 0xFFFF -> 3
+                else -> 4
+            }
+            if (out.length + charCount > maxChars || bytes + utf8Bytes > maxBytes) break
+            out.appendCodePoint(cp)
+            bytes += utf8Bytes
+            i += charCount
+        }
+        return out.toString()
     }
 
     /** Appends [extension] if the name has none. */

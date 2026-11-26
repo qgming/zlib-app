@@ -221,6 +221,22 @@ class BookCommentsViewModelTest {
         }
     }
 
+    @Test
+    fun `auto pagination stops after ten pages when searching for a missing comment`() = withDetailTestMain {
+        val reads = mutableListOf<Int>()
+        val vm = BookCommentsViewModel(MutableStateFlow(Account)) { _, _, page ->
+            reads += page
+            AppResult.Success(BookCommentsPage(listOf(comment("reply-$page", parentId = "missing")), nextPage = page + 1))
+        }
+        withViewModel(vm) {
+            vm.open("123", "target")
+            runCurrent()
+            assertEquals((0..9).toList(), reads)
+            assertFalse(vm.state.value.loading)
+            assertEquals(10, vm.state.value.page?.nextPage)
+        }
+    }
+
     private suspend fun TestScope.withViewModel(vm: BookCommentsViewModel, block: suspend () -> Unit) {
         try {
             block()

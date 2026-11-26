@@ -495,15 +495,24 @@
     <string name="text_create_and_add">"创建并加入"</string>
     <string name="text_booklist_already_contains_book">"已加入"</string>
     <string name="text_booklist_add_in_progress">"正在加入…"</string>
+    <string name="text_booklist_remove_in_progress">"正在移除…"</string>
     <string name="text_booklist_create_in_progress">"正在创建…"</string>
     <string name="text_booklist_check_in_progress">"正在确认图书已加入…"</string>
     <string name="text_booklist_recheck">"重新检查书单"</string>
     <string name="text_booklist_create_unconfirmed">"暂未确认新书单包含本书。请先检查书单，避免重复创建。"</string>
     <string name="text_book_added_to_booklist">"已加入「%1$s」"</string>
+    <string name="text_book_removed_from_booklist">"已从「%1$s」移除"</string>
+    <string name="text_remove_from_booklist">"从书单移除"</string>
     <string name="text_booklist_created_with_book">"已创建「%1$s」并加入本书"</string>
     <string name="text_back_to_booklists">"返回书单列表"</string>
     <string name="text_try_other_keywords">"试试其他关键词。"</string>
     <string name="text_share_image_title">"分享图片"</string>
+    <string name="text_share_theme_switch_dark">"切换为深色样式"</string>
+    <string name="text_share_theme_switch_light">"切换为浅色样式"</string>
+    <string name="text_checking_available_domain">"正在连接可用域名…"</string>
+    <string name="text_welcome_step_folder_hint">"可随时在设置中更改目录，系统仅授权应用访问所选文件夹。"</string>
+    <string name="text_login_subtitle">"登录 Z-Library 账号以同步收藏、书单与每日额度"</string>
+    <string name="text_login_cookie_subtitle">"若邮箱登录受限，可粘贴浏览器 Cookie 快速登录"</string>
     <string name="text_share_action">"分享"</string>
     <string name="text_save_image">"保存到本地"</string>
     <string name="text_generating_share_image">"正在生成分享图片…"</string>
@@ -522,6 +531,7 @@
     <plurals name="share_booklist_total">
         <item quantity="other">"共 %1$d 本"</item>
     </plurals>
+    <string name="text_close">"关闭"</string>
     <string name="text_share_booklist">"书单"</string>
     <string name="text_share_empty_booklist">"这份书单还没有图书"</string>
     <plurals name="comment_reply_count">

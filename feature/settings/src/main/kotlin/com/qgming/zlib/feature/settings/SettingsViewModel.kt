@@ -22,6 +22,8 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -59,11 +61,17 @@ class SettingsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            val name = downloadRepository.downloadDirectoryName()
-            directory.value = if (name != null && !downloadRepository.downloadDirectoryAccessible()) {
-                appText(TextR.string.text_folder_unavailable_choose_it_again_to_grant_access)
-            } else name
+            domainRepository.settings.map { it.downloadTreeUri }.distinctUntilChanged().collect {
+                refreshDirectory()
+            }
         }
+    }
+
+    private suspend fun refreshDirectory() {
+        val name = downloadRepository.downloadDirectoryName()
+        directory.value = if (name != null && !downloadRepository.downloadDirectoryAccessible()) {
+            appText(TextR.string.text_folder_unavailable_choose_it_again_to_grant_access)
+        } else name
     }
 
     val state: StateFlow<SettingsUiState> = combine(
@@ -91,8 +99,6 @@ class SettingsViewModel @Inject constructor(
     val domainBusy = _domainBusy.asStateFlow()
     private val _addDomain = MutableStateFlow(AddDomainState())
     val addDomain = _addDomain.asStateFlow()
-    private val _pendingMirrorHost = MutableStateFlow<String?>(null)
-    val pendingMirrorHost = _pendingMirrorHost.asStateFlow()
     private val _verificationRequests = Channel<String>(Channel.BUFFERED)
     val verificationRequests = _verificationRequests.receiveAsFlow()
 
@@ -148,34 +154,10 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun selectHost(host: String) {
-        if (_domainBusy.value || _addDomain.value.busy || state.value.probing || _pendingMirrorHost.value != null) return
-        if (domainRepository.requiresApproval(host)) {
-            _pendingMirrorHost.value = host
-            return
-        }
+        if (_domainBusy.value || _addDomain.value.busy || state.value.probing) return
         domainAction {
             if (requiresVerification(host) && domainRepository.isApprovedHost(host)) _verificationRequests.send(host)
             else completeSelection(host, domainRepository.setCurrentHost(host))
-        }
-    }
-
-    fun dismissCommunityMirror() {
-        _pendingMirrorHost.value = null
-    }
-
-    fun confirmCommunityMirror() {
-        val host = _pendingMirrorHost.value ?: return
-        if (_domainBusy.value || _addDomain.value.busy || state.value.probing) return
-        _pendingMirrorHost.value = null
-        domainAction {
-            if (requiresVerification(host)) {
-                when (val result = domainRepository.approveCommunityHost(host)) {
-                    is AppResult.Success -> _verificationRequests.send(result.value)
-                    is AppResult.Failure -> _events.send(result.error.userMessage())
-                }
-            } else {
-                completeSelection(host, domainRepository.approveAndSelectHost(host))
-            }
         }
     }
 

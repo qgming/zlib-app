@@ -115,7 +115,7 @@ object DomainPolicy {
 
     fun isAllowed(host: String, customHosts: Set<String> = emptySet()): Boolean {
         val h = host.lowercase()
-        if (isBuiltIn(h)) return true
+        if (isBuiltIn(h) || isCommunityMirror(h)) return true
         return customHosts.any { it.equals(h, ignoreCase = true) }
     }
 
@@ -179,7 +179,7 @@ object DomainPolicy {
             ?: return AppResult.Failure(
                 com.qgming.zlib.core.common.AppError.Parse(appText(TextR.string.text_invalid_domain_use_an_https_hostname_without_a_port_path_or_ip_address)),
             )
-        if (isBuiltIn(host)) {
+        if (isBuiltIn(host) || isCommunityMirror(host)) {
             return AppResult.Failure(
                 com.qgming.zlib.core.common.AppError.Parse(appText(TextR.string.text_this_domain_is_built_in_and_does_not_need_to_be_added)),
             )

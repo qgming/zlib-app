@@ -16,8 +16,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        downloadRequest.intValue = savedInstanceState?.getInt(STATE_DOWNLOAD_REQUEST, 0) ?: 0
         acceptNotification(intent)
         setContent { ZlibRoot(downloadRequest = downloadRequest.intValue) }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt(STATE_DOWNLOAD_REQUEST, downloadRequest.intValue)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -31,5 +37,9 @@ class MainActivity : ComponentActivity() {
             downloadRequest.intValue++
             intent.removeExtra(DownloadNavigation.EXTRA_DESTINATION)
         }
+    }
+
+    private companion object {
+        const val STATE_DOWNLOAD_REQUEST = "download_request"
     }
 }

@@ -36,7 +36,7 @@ class LocalFilesViewModel @Inject constructor(private val repository: LocalFiles
     private val _fileIntents = Channel<LocalFileIntent>(Channel.BUFFERED)
     internal val fileIntents = _fileIntents.receiveAsFlow()
 
-    fun refresh() = repository.refresh()
+    fun refresh(userInitiated: Boolean = false) = repository.refresh(userInitiated)
 
     internal fun showActions(file: LocalFile) {
         if (!_action.value.busy && file.treeUri == state.value.treeUri) _action.value = LocalFileAction(file)

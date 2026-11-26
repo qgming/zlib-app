@@ -25,6 +25,7 @@ fun AboutScreen(
     onOpenPage: (AboutPage) -> Unit,
     onOpenChangelog: () -> Unit,
     onCheckUpdate: () -> Unit,
+    checkingUpdate: Boolean = false,
 ) {
     val uriHandler = LocalUriHandler.current
     val toast = rememberZlibToastHostState()
@@ -46,8 +47,13 @@ fun AboutScreen(
             }
             item("support") {
                 ZlibAboutGroup {
-                    ZlibAboutLink(stringResource(R.string.about_check_update), onCheckUpdate)
-                    ZlibAboutLink(stringResource(R.string.about_changelog), onOpenChangelog)
+                    ZlibAboutLink(
+                        title = stringResource(R.string.about_check_update),
+                        endText = if (checkingUpdate) stringResource(R.string.about_update_checking) else null,
+                        enabled = !checkingUpdate,
+                        onClick = onCheckUpdate,
+                    )
+                    ZlibAboutLink(stringResource(R.string.about_changelog), onClick = onOpenChangelog)
                 }
             }
             item("project") {

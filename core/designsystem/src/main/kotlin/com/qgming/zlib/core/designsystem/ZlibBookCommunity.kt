@@ -10,6 +10,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
@@ -27,20 +29,44 @@ import top.yukonga.miuix.kmp.icon.glass.Ok
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
-fun ZlibBooklistChoice(membership: BooklistMembership, adding: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    val addingLabel = stringResource(TextR.string.text_booklist_add_in_progress)
+fun ZlibBooklistChoice(
+    membership: BooklistMembership,
+    adding: Boolean,
+    removing: Boolean = false,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val busy = adding || removing
+    val stateLabel = when {
+        removing -> stringResource(TextR.string.text_booklist_remove_in_progress)
+        adding -> stringResource(TextR.string.text_booklist_add_in_progress)
+        membership.isMember -> stringResource(TextR.string.text_remove_from_booklist)
+        else -> null
+    }
     ZlibBooklistCard(
         booklist = membership.booklist,
-        modifier = if (adding) Modifier.semantics { stateDescription = addingLabel } else Modifier,
-        onClick = onClick.takeIf { enabled && !membership.isMember && !adding },
+        modifier = Modifier.semantics {
+            role = Role.Button
+            if (stateLabel != null) stateDescription = stateLabel
+        },
+        onClick = onClick.takeIf { enabled && !busy },
         trailing = {
-            if (adding) {
-                ZlibLoadingIndicator(Modifier.size(24.dp))
-            } else if (membership.isMember) {
-                val tint = MiuixTheme.colorScheme.primary
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(MiuixIcons.Glass.Normal.Ok, contentDescription = null, modifier = Modifier.size(18.dp), tint = tint)
-                    Text(stringResource(TextR.string.text_booklist_already_contains_book), style = MiuixTheme.textStyles.footnote1, color = tint)
+            when {
+                busy -> {
+                    val label = stringResource(
+                        if (removing) TextR.string.text_booklist_remove_in_progress else TextR.string.text_booklist_add_in_progress,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        ZlibLoadingIndicator(Modifier.size(20.dp))
+                        Text(label, style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                    }
+                }
+                membership.isMember -> {
+                    val tint = MiuixTheme.colorScheme.primary
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(MiuixIcons.Glass.Normal.Ok, contentDescription = null, modifier = Modifier.size(18.dp), tint = tint)
+                        Text(stringResource(TextR.string.text_booklist_already_contains_book), style = MiuixTheme.textStyles.footnote1, color = tint)
+                    }
                 }
             }
         },

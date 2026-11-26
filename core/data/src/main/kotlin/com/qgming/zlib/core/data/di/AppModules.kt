@@ -71,13 +71,29 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun papiBooklistClient(client: OkHttpClient, registry: AllowedHostRegistry): PapiBooklistClient =
-        PapiBooklistClient(client, registry::isAllowed)
+    fun papiBooklistClient(
+        client: OkHttpClient,
+        registry: AllowedHostRegistry,
+        verificationCookies: DomainVerificationCookies,
+    ): PapiBooklistClient = PapiBooklistClient(
+        client = client,
+        isAllowedHost = registry::isAllowed,
+        verificationCookieProvider = verificationCookies::cookieHeaderFor,
+        verificationUserAgentProvider = verificationCookies::userAgentFor,
+    )
 
     @Provides
     @Singleton
-    fun papiCommentsClient(client: OkHttpClient, registry: AllowedHostRegistry): PapiCommentsClient =
-        PapiCommentsClient(client, registry::isAllowed)
+    fun papiCommentsClient(
+        client: OkHttpClient,
+        registry: AllowedHostRegistry,
+        verificationCookies: DomainVerificationCookies,
+    ): PapiCommentsClient = PapiCommentsClient(
+        client = client,
+        isAllowedHost = registry::isAllowed,
+        verificationCookieProvider = verificationCookies::cookieHeaderFor,
+        verificationUserAgentProvider = verificationCookies::userAgentFor,
+    )
 
     @Provides
     @Singleton
@@ -126,6 +142,7 @@ object AppModule {
         isAllowedHost = registry::isProbeAllowed,
         isTrustedHost = { registry.isAllowed(it) || DomainPolicy.isCatalogHost(it) },
         verificationCookieProvider = verificationCookies::cookieHeaderFor,
+        verificationUserAgentProvider = verificationCookies::userAgentFor,
     )
 
     @Provides
@@ -146,6 +163,7 @@ object AppModule {
         dispatchers = dispatchers,
         isAllowedUrl = { url -> DomainPolicy.isStandardHttps(url) && registry.isAllowed(url.host) },
         verificationCookieProvider = verificationCookies::cookieHeaderFor,
+        verificationUserAgentProvider = verificationCookies::userAgentFor,
     )
 }
 

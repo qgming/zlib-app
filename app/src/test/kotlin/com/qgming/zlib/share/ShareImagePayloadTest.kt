@@ -61,11 +61,58 @@ class ShareImagePayloadTest {
             books = listOf(ShareImageBook("书".repeat(1_000), "作者".repeat(1_000), "https://covers.example.test/book.jpg")),
             fields = (1..30).map { ShareImageField("字段".repeat(100), "值".repeat(1_000)) },
             description = "简介".repeat(5_000),
+            rating = "4.8",
         )
         val encoded = ShareImagePayload.encode(content)
         assertTrue(encoded.toByteArray(Charsets.UTF_8).size <= ShareImagePayload.MAX_PAYLOAD_BYTES)
         assertEquals(content.bounded(), ShareImagePayload.decode(encoded))
+        assertEquals("4.8", ShareImagePayload.decode(encoded)?.rating)
         assertTrue(ShareImagePayload.filename(content).length <= 80)
+    }
+
+    @Test
+    fun `reader accepts legacy payloads without rating and rejects malformed rating`() {
+        val book = ShareImageContent(
+            kind = ShareImageKind.Book,
+            title = "Sample",
+            books = listOf(ShareImageBook("Sample", "Author", "https://covers.example.test/1.jpg")),
+            rating = "4.5",
+        )
+        val root = Json.parseToJsonElement(ShareImagePayload.encode(book)) as JsonObject
+        val withoutRating = JsonObject(root - "rating").toString()
+        assertEquals("", ShareImagePayload.decode(withoutRating)?.rating)
+        assertNull(ShareImagePayload.decode(JsonObject(root + ("rating" to JsonPrimitive("x".repeat(17)))).toString()))
+        assertNull(ShareImagePayload.decode(JsonObject(root + ("rating" to JsonPrimitive(4.5))).toString()))
+
+        val list = ShareImagePayload.booklist(CloudBooklist("42", "Reading", null), listOf(Book("1", "hash", "First")), false)
+        val listRoot = Json.parseToJsonElement(ShareImagePayload.encode(list)) as JsonObject
+        assertNull(ShareImagePayload.decode(JsonObject(listRoot + ("rating" to JsonPrimitive("4.5"))).toString()))
+    }
+
+    @Test
+    fun `light and dark share palettes provide distinct high-contrast themes`() {
+        val light = SharePalette.of(darkTheme = false)
+        val dark = SharePalette.of(darkTheme = true)
+        assertEquals(SharePalette.Light, light)
+        assertEquals(SharePalette.Dark, dark)
+        assertTrue(light.canvas != dark.canvas)
+        assertTrue(light.surface != dark.surface)
+        assertTrue(light.ink != dark.ink)
+        assertTrue(light.chipFill != dark.chipFill)
+        assertTrue(light.classicCloths.isNotEmpty())
+        assertTrue(dark.classicCloths.isNotEmpty())
+        // Light canvas is bright and ink is dark; dark canvas is dark and ink is bright.
+        assertTrue(luminance(light.canvas) > 0.8)
+        assertTrue(luminance(light.ink) < 0.2)
+        assertTrue(luminance(dark.canvas) < 0.2)
+        assertTrue(luminance(dark.ink) > 0.8)
+    }
+
+    private fun luminance(argb: Int): Double {
+        val r = ((argb ushr 16) and 0xFF) / 255.0
+        val g = ((argb ushr 8) and 0xFF) / 255.0
+        val b = (argb and 0xFF) / 255.0
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
     }
 
     @Test

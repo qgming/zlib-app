@@ -115,9 +115,16 @@ class AuthRepository @Inject constructor(
             is AppResult.Success -> {
                 sessionManager.updateProfile(entry.session, profile.value)
                 return downloads.withAccountChange {
-                    if (sessionManager.current() != expected) return@withAccountChange AppResult.Failure(AppError.Parse(appText(TextR.string.text_the_active_account_changed_please_retry)))
+                    val current = sessionManager.current()
+                    val unchanged = if (expected == null) {
+                        current == null
+                    } else {
+                        current?.remixUserId == expected.remixUserId && current.remixUserKey == expected.remixUserKey
+                    }
+                    if (!unchanged) return@withAccountChange AppResult.Failure(AppError.Parse(appText(TextR.string.text_the_active_account_changed_please_retry)))
+                    val latestHost = domainRepository.currentHostOrNull() ?: candidate.domain
                     withContext(NonCancellable) {
-                        if (sessionManager.activate(id, candidate.domain, expected)) AppResult.Success(Unit)
+                        if (sessionManager.activate(id, latestHost, expected)) AppResult.Success(Unit)
                         else AppResult.Failure(AppError.Parse(appText(TextR.string.text_cannot_switch_accounts_please_sign_in_again)))
                     }
                 }

@@ -12,10 +12,17 @@ class DomainVerificationCookiesTest {
     private val endpoint = "https://$host/eapi/info/domains".toHttpUrl()
 
     @Test
-    fun `only a bounded single DiamWall cookie is accepted`() {
-        assertEquals("__diamwall=clearance", DomainVerificationCookies.sanitizeCookieHeader("remix_userid=123; __diamwall=clearance; remix_userkey=secret; other=value"))
+    fun `only bounded allowlisted wall cookies and sanitized user agent are accepted`() {
+        assertEquals(
+            "__diamwall=clearance",
+            DomainVerificationCookies.sanitizeCookieHeader("remix_userid=123; __diamwall=clearance; remix_userkey=secret; other=value"),
+        )
+        assertEquals(
+            "cf_clearance=cf-tok; __cf_bm=bm-tok; __ddg1_=ddg-tok",
+            DomainVerificationCookies.sanitizeCookieHeader("remix_userid=1; cf_clearance=cf-tok; __cf_bm=bm-tok; __ddg1_=ddg-tok; remix_userkey=secret"),
+        )
+        assertEquals("__diamwall=clearance", DomainVerificationCookies.sanitizeCookieHeader("__DIAMWALL=clearance"))
         assertNull(DomainVerificationCookies.sanitizeCookieHeader("remix_userid=123; remix_userkey=secret"))
-        assertNull(DomainVerificationCookies.sanitizeCookieHeader("__DIAMWALL=clearance"))
         assertNull(DomainVerificationCookies.sanitizeCookieHeader("__diamwall=first; __diamwall=second"))
         assertNull(DomainVerificationCookies.sanitizeCookieHeader("__diamwall="))
         assertNull(DomainVerificationCookies.sanitizeCookieHeader("__diamwall=bad\r\nInjected: value"))
@@ -25,16 +32,24 @@ class DomainVerificationCookiesTest {
         assertNull(DomainVerificationCookies.sanitizeCookieHeader("__diamwall=${"a".repeat(4097)}"))
         assertNull(DomainVerificationCookies.sanitizeCookieHeader("other=${"a".repeat(16384)}; __diamwall=ok"))
         assertNull(DomainVerificationCookies.sanitizeCookieHeader((1..65).joinToString(";") { "other$it=value" } + ";__diamwall=ok"))
+        assertEquals("Mozilla/5.0 Chrome/131.0", DomainVerificationCookies.sanitizeUserAgent("  Mozilla/5.0 Chrome/131.0  "))
+        assertNull(DomainVerificationCookies.sanitizeUserAgent(""))
+        assertNull(DomainVerificationCookies.sanitizeUserAgent("Mozilla/5.0\r\nInjected: 1"))
+        assertNull(DomainVerificationCookies.sanitizeUserAgent("a".repeat(513)))
     }
 
     @Test
-    fun `credentials require exact approved HTTPS EAPI origin`() {
+    fun `credentials require exact approved HTTPS EAPI or PAPI origin`() {
         val approved = mutableSetOf(host)
         val cookies = DomainVerificationCookies(approved::contains, { 1L })
+        val papiEndpoint = "https://$host/papi/booklist/current-user/0".toHttpUrl()
         assertFalse(cookies.putFromWebView("foreign.example", "__diamwall=clearance"))
         assertFalse(cookies.putFromWebView("https://$host/", "__diamwall=clearance"))
-        assertTrue(cookies.putFromWebView(host, "__diamwall=clearance; remix_userkey=discard"))
+        assertTrue(cookies.putFromWebView(host, "__diamwall=clearance; remix_userkey=discard", userAgent = "Mozilla/5.0 WebView"))
         assertEquals("__diamwall=clearance", cookies.cookieHeaderFor(endpoint))
+        assertEquals("__diamwall=clearance", cookies.cookieHeaderFor(papiEndpoint))
+        assertEquals("Mozilla/5.0 WebView", cookies.userAgentFor(endpoint))
+        assertEquals("Mozilla/5.0 WebView", cookies.userAgentFor(papiEndpoint))
         for (url in listOf(
             "http://$host/eapi/info/domains",
             "https://$host:8443/eapi/info/domains",
@@ -42,12 +57,16 @@ class DomainVerificationCookiesTest {
             "https://sub.$host/eapi/info/domains",
             "https://$host.evil.example/eapi/info/domains",
             "https://cdn.example/eapi/info/domains",
-            "https://$host/papi/booklist",
             "https://$host/cover.jpg",
             "https://$host/eapiary/info/domains",
-        )) assertNull(cookies.cookieHeaderFor(url.toHttpUrl()), url)
+            "https://$host/papiary/booklist",
+        )) {
+            assertNull(cookies.cookieHeaderFor(url.toHttpUrl()), url)
+            assertNull(cookies.userAgentFor(url.toHttpUrl()), url)
+        }
         approved.clear()
         assertNull(cookies.cookieHeaderFor(endpoint))
+        assertNull(cookies.userAgentFor(endpoint))
         approved += host
         assertNull(cookies.cookieHeaderFor(endpoint))
     }

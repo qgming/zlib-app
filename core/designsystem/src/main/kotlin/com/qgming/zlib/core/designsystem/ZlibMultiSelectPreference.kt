@@ -33,7 +33,6 @@ import androidx.compose.ui.unit.dp
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.DropdownArrowEndAction
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.glass.GlassDropdownPopup
 import top.yukonga.miuix.kmp.glass.GlassMotion
 import top.yukonga.miuix.kmp.glass.GlassPopupDefaults
@@ -113,8 +112,11 @@ fun ZlibMultiSelectPreference(
                     stroke = if (backdrop != null) zlibGlassStroke() else null,
                     containerColor = MiuixTheme.colorScheme.surfaceContainer),
             ) {
-                if (searchable) TextField(
-                    value = query, onValueChange = { query = it }, label = stringResource(TextR.string.text_find_language), singleLine = true,
+                if (searchable) ZlibTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = stringResource(TextR.string.text_find_language),
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                 )
                 GlassPopupItem(text = allLabel, selected = selected.isEmpty(), onClick = { onChange(emptySet()) }, modifier = Modifier.heightIn(min = 48.dp))

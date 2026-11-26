@@ -18,26 +18,30 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
-import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.onTimeout
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
 
 data class LocalFilesState(
     val treeUri: String? = null,
     val files: List<LocalFile> = emptyList(),
     val loading: Boolean = false,
+    val refreshing: Boolean = false,
     val error: AppError? = null,
 )
 
@@ -66,29 +70,76 @@ class LocalFilesRepository internal constructor(
         journal.publications,
     )
 
-    private val refreshes = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    private val refreshes = MutableSharedFlow<Boolean>(extraBufferCapacity = 1)
 
-    fun refresh() { refreshes.tryEmit(Unit) }
+    fun refresh(userInitiated: Boolean = false) { refreshes.tryEmit(userInitiated) }
 
     // Collected only while the Local tab is visible and its lifecycle is STARTED.
     fun observeFiles(): Flow<LocalFilesState> = settings.settings.map { it.downloadTreeUri }.distinctUntilChanged()
         .flatMapLatest { tree ->
-            if (tree == null) flowOf(LocalFilesState()) else {
-                val invalidations = merge(refreshes, store.changes(tree).debounce(180)).onStart { emit(Unit) }
-                combine(knownBooks, publications, invalidations) { books, pending, _ -> books to pending }
-                    .flatMapLatest { (books, pending) ->
-                        flow {
-                            val byUri = books.mapNotNull { book -> book.localUri?.let { it to book } }.toMap()
-                            var interval = 3_000L
-                            while (true) {
-                                emit(scan(tree, byUri, pending))
-                                delay(interval)
-                                interval = (interval * 2).coerceAtMost(15_000L)
-                            }
-                        }
-                    }.distinctUntilChanged().onStart { emit(LocalFilesState(treeUri = tree, loading = true)) }
-            }
+            if (tree == null) flowOf(LocalFilesState()) else observeTree(tree)
         }.flowOn(dispatchers.io)
+
+    private fun observeTree(tree: String): Flow<LocalFilesState> = channelFlow {
+        send(LocalFilesState(treeUri = tree, loading = true))
+        val triggers = Channel<Boolean>(Channel.CONFLATED)
+        var latestBooks = knownBooks.first()
+        var latestPending = publications.first()
+        coroutineScope {
+            val booksJob = launch {
+                knownBooks.drop(1).collect { books ->
+                    latestBooks = books
+                    triggers.trySend(false)
+                }
+            }
+            val pendingJob = launch {
+                publications.drop(1).collect { pending ->
+                    latestPending = pending
+                    triggers.trySend(false)
+                }
+            }
+            val changeJob = launch {
+                merge(
+                    refreshes,
+                    store.changes(tree).debounce(180).map { false },
+                ).collect { userInitiated ->
+                    triggers.trySend(userInitiated)
+                }
+            }
+            try {
+                // Initial snapshots are primed before starting the loop so in-flight SAF scans
+                // finish cleanly instead of being cancelled by subsequent bursts.
+                var interval = 3_000L
+                var lastState = LocalFilesState(treeUri = tree, loading = true)
+                var showRefreshing = false
+                while (true) {
+                    if (showRefreshing && !lastState.loading) {
+                        send(lastState.copy(refreshing = true))
+                    }
+                    val byUri = latestBooks.mapNotNull { book -> book.localUri?.let { it to book } }.toMap()
+                    val scanned = scan(tree, byUri, latestPending)
+                    if (scanned != lastState || showRefreshing) {
+                        lastState = scanned
+                        send(scanned)
+                    }
+                    showRefreshing = false
+                    // Drain coalesced trigger or wait up to the polling interval.
+                    val triggered = select {
+                        triggers.onReceive { userInitiated ->
+                            showRefreshing = userInitiated
+                            true
+                        }
+                        onTimeout(interval) { false }
+                    }
+                    interval = if (triggered) 3_000L else (interval * 2).coerceAtMost(15_000L)
+                }
+            } finally {
+                booksJob.cancel()
+                pendingJob.cancel()
+                changeJob.cancel()
+            }
+        }
+    }.distinctUntilChanged()
 
     private suspend fun scan(tree: String, known: Map<String, Book>, pending: List<PendingDownloadPublication>): LocalFilesState =
         try {

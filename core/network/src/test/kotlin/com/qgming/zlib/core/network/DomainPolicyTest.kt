@@ -38,22 +38,24 @@ class DomainPolicyTest {
     }
 
     @Test
-    fun `community catalog entries allow exact anonymous discovery only`() {
+    fun `community catalog entries are directly allowed by exact host only`() {
         val community = DomainPolicy.COMMUNITY_MIRROR_HOSTS
         assertEquals(34, community.size)
         assertEquals(community.distinct(), community)
         assertTrue(community.all { it == DomainPolicy.normalizeHostInput(it) })
         assertTrue(community.all(DomainPolicy::isCatalogHost))
         assertTrue(community.none(DomainPolicy::isBuiltIn))
-        assertTrue(community.none { DomainPolicy.isAllowed(it) })
+        assertTrue(community.all { DomainPolicy.isAllowed(it) })
+        assertTrue(community.none { DomainPolicy.isAllowed("sub.$it") })
         assertTrue(DomainPolicy.isCatalogHost("z-library.gy"))
         assertFalse(DomainPolicy.isCatalogHost("zh.z-library.gy"))
         assertTrue(DomainPolicy.isCommunityMirror("libb.la"))
         assertFalse(DomainPolicy.isCommunityMirror("sub.libb.la"))
         assertFalse(DomainPolicy.isCatalogHost("sub.libb.la"))
         assertFalse(DomainPolicy.isCatalogHost("libb.la.example.test"))
-        assertTrue(DomainPolicy.isAllowed("libb.la", setOf("libb.la")))
-        assertFalse(DomainPolicy.isAllowed("sub.libb.la", setOf("libb.la")))
+        assertTrue(DomainPolicy.isAllowed("libb.la"))
+        assertFalse(DomainPolicy.isAllowed("sub.libb.la"))
+        assertTrue(DomainPolicy.validateCustomHost("libb.la") is com.qgming.zlib.core.common.AppResult.Failure)
     }
 
     @Test

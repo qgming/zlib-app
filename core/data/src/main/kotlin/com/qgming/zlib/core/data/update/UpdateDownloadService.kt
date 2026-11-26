@@ -48,6 +48,10 @@ class UpdateDownloadService : Service() {
         latestStartId = startId
         val requested = intent?.getLongExtra(EXTRA_ATTEMPT, 0L) ?: 0L
         if (stopping) {
+            runCatching {
+                startForeground(ID, notification(downloads.state.value), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            }
+            stopForeground(STOP_FOREGROUND_REMOVE)
             downloads.interrupted(requested)
             stopSelf()
             return START_NOT_STICKY

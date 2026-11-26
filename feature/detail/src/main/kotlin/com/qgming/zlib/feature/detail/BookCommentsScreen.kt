@@ -61,7 +61,6 @@ fun BookCommentDetailScreen(commentId: String, viewModel: BookCommentsViewModel,
                         ZlibBookCommentCard(
                             comment = reply.comment,
                             replyCount = state.threads.replyCount(reply.comment.id),
-                            modifier = Modifier.padding(start = 12.dp * (reply.depth - 1).coerceAtMost(3)),
                             replyTo = reply.replyTo?.author,
                         )
                     }

@@ -13,6 +13,7 @@ data class ShareImageContent(
     val description: String = "",
     val totalBooks: Int? = null,
     val previewIsPartial: Boolean = false,
+    val rating: String = "",
 ) {
     /** Limits both rendering work and the small display snapshot passed between activities. */
     fun bounded(): ShareImageContent {
@@ -34,6 +35,7 @@ data class ShareImageContent(
             totalBooks = knownTotal,
             previewIsPartial = kind == ShareImageKind.Booklist &&
                 (previewIsPartial || books.size > visibleBooks.size || knownTotal != null && knownTotal > visibleBooks.size),
+            rating = if (kind == ShareImageKind.Book) shareText(rating, MAX_RATING_LENGTH) else "",
         )
     }
 
@@ -46,6 +48,7 @@ data class ShareImageContent(
         const val MAX_FIELD_VALUE_LENGTH = 180
         const val MAX_DESCRIPTION_LENGTH = 1_200
         const val MAX_COVER_URL_LENGTH = 768
+        const val MAX_RATING_LENGTH = 16
     }
 }
 

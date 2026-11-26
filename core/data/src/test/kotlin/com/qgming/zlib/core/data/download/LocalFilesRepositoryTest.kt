@@ -86,6 +86,22 @@ class LocalFilesRepositoryTest {
     }
 
     @Test
+    fun `user initiated refresh sets refreshing flag and settles cleanly`() = runTest {
+        withFiles { store, _, _, _, repository ->
+            store.files = listOf(file("book.epub"))
+            val states = mutableListOf<LocalFilesState>()
+            backgroundScope.launch { repository.observeFiles().collect { states += it } }
+            runCurrent()
+            assertEquals(1, store.scans)
+            repository.refresh(userInitiated = true)
+            runCurrent()
+            assertEquals(2, store.scans)
+            assertFalse(states.last().refreshing)
+            assertEquals(1, states.last().files.size)
+        }
+    }
+
+    @Test
     fun `a pending final file stays hidden without hiding a namesake in a subdirectory`() = runTest {
         val pending = MutableStateFlow<List<PendingDownloadPublication>>(emptyList())
         withFiles(pending) { store, _, _, cleared, repository ->

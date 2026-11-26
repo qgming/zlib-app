@@ -47,12 +47,14 @@ internal object ShareImagePayload {
             field(TextR.string.text_current_format, book.extension.uppercase(locale))
             field(TextR.string.text_file_size, book.sizeBytes?.takeIf { it >= 0 }?.let { formatBookFileSize(it, locale) }.orEmpty())
         }
+        val rating = book.rating?.takeIf(Double::isFinite)?.let { "%.1f".format(locale, it) }.orEmpty()
         return ShareImageContent(
             kind = ShareImageKind.Book,
             title = book.title,
             books = listOf(book.displayBook()),
             fields = fields,
             description = plainDescription(book.description),
+            rating = rating,
         ).bounded()
     }
 
@@ -94,6 +96,7 @@ internal object ShareImagePayload {
             put("description", safe.description)
             safe.totalBooks?.let { put("totalBooks", it) }
             put("partial", safe.previewIsPartial)
+            if (safe.rating.isNotEmpty()) put("rating", safe.rating)
         }.toString()
         check(encoded.toByteArray(Charsets.UTF_8).size <= MAX_PAYLOAD_BYTES)
         return encoded
@@ -125,6 +128,7 @@ internal object ShareImagePayload {
             }
             val total = if ("totalBooks" in root) root.integer("totalBooks") ?: return null else null
             val partial = (root["partial"] as? JsonPrimitive)?.takeUnless(JsonPrimitive::isString)?.booleanOrNull ?: return null
+            val rating = if ("rating" in root) root.string("rating") ?: return null else ""
             val content = ShareImageContent(
                 kind = kind,
                 title = root.string("title") ?: return null,
@@ -133,6 +137,7 @@ internal object ShareImagePayload {
                 description = root.string("description") ?: return null,
                 totalBooks = total,
                 previewIsPartial = partial,
+                rating = rating,
             )
             content.takeIf { it == it.bounded() }
         } catch (_: SerializationException) {
@@ -156,8 +161,8 @@ internal object ShareImagePayload {
     private fun JsonObject.string(name: String): String? = (this[name] as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.content
     private fun JsonObject.integer(name: String): Int? = (this[name] as? JsonPrimitive)?.takeUnless(JsonPrimitive::isString)?.intOrNull
 
-    private val ROOT_KEYS = setOf("version", "kind", "title", "books", "fields", "description", "totalBooks", "partial")
-    private val REQUIRED_KEYS = ROOT_KEYS - "totalBooks"
+    private val ROOT_KEYS = setOf("version", "kind", "title", "books", "fields", "description", "totalBooks", "partial", "rating")
+    private val REQUIRED_KEYS = ROOT_KEYS - setOf("totalBooks", "rating")
     private val BOOK_KEYS = setOf("title", "authors", "cover")
     private val FIELD_KEYS = setOf("label", "value")
     private val HIDDEN_HTML = Regex("""<!--.*?-->|<(script|style|iframe|object)\b[^>]*>.*?</\1\s*>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))

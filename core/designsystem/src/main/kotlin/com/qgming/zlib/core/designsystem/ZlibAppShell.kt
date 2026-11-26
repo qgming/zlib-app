@@ -42,7 +42,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -77,7 +81,6 @@ import top.yukonga.miuix.kmp.glass.GlassTopAppBarDefaults
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.glass.BookOutline
 import top.yukonga.miuix.kmp.icon.glass.ChevronBackward
-import top.yukonga.miuix.kmp.icon.glass.Cloud
 import top.yukonga.miuix.kmp.icon.glass.Download
 import top.yukonga.miuix.kmp.icon.glass.FavoriteFill
 import top.yukonga.miuix.kmp.icon.glass.FavoriteOutline
@@ -340,10 +343,39 @@ fun ZlibFilterButton(active: Boolean, onClick: () -> Unit) {
     )
 }
 
+/** Hollow outline cloud icon matching Miuix Glass 28dp outline icon proportions (Miuix ships only a filled Cloud). */
+private val CloudOutlineIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "CloudOutline",
+        defaultWidth = 28.dp,
+        defaultHeight = 28.dp,
+        viewportWidth = 28f,
+        viewportHeight = 28f,
+    ).apply {
+        path(
+            fill = null,
+            stroke = SolidColor(Color.Black),
+            strokeLineWidth = 1.9f,
+            strokeLineCap = StrokeCap.Round,
+            strokeLineJoin = StrokeJoin.Round,
+        ) {
+            moveTo(9.2f, 20.6f)
+            horizontalLineTo(19.3f)
+            curveTo(21.95f, 20.6f, 24.0f, 18.6f, 24.0f, 16.05f)
+            curveTo(24.0f, 13.7f, 22.25f, 11.75f, 19.95f, 11.5f)
+            curveTo(19.35f, 8.35f, 16.6f, 6.2f, 13.4f, 6.2f)
+            curveTo(10.05f, 6.2f, 7.25f, 8.6f, 6.75f, 11.85f)
+            curveTo(4.95f, 12.4f, 3.8f, 14.05f, 3.8f, 16.0f)
+            curveTo(3.8f, 18.55f, 6.1f, 20.6f, 9.2f, 20.6f)
+            close()
+        }
+    }.build()
+}
+
 @Composable
 fun ZlibDownloadHistoryButton(onClick: () -> Unit) {
     TopBarButton(
-        icon = MiuixIcons.Glass.Normal.Cloud,
+        icon = CloudOutlineIcon,
         description = stringResource(TextR.string.text_cloud_download_history), onClick = onClick, glass = LocalZlibGlass.current,
     )
 }

@@ -57,6 +57,7 @@ class EapiClient(
     private val maxAttempts: Int = 4,
     private val isAllowedUrl: (HttpUrl) -> Boolean = { DomainPolicy.isStandardHttps(it) && DomainPolicy.isAllowed(it.host) },
     private val verificationCookieProvider: (HttpUrl) -> String? = { null },
+    private val verificationUserAgentProvider: (HttpUrl) -> String? = { null },
 ) {
     private val guard = EapiRedirectGuardInterceptor(isAllowedUrl)
     private val readClient = client.newBuilder()
@@ -457,12 +458,17 @@ class EapiClient(
         } else {
             builder.post(form ?: EMPTY_FORM)
         }
+        val verificationCookie = DomainVerificationCookies.sanitizeCookieHeader(verificationCookieProvider(url))
+        val userAgent = if (verificationCookie != null) {
+            DomainVerificationCookies.sanitizeUserAgent(verificationUserAgentProvider(url)) ?: EapiHeaders.USER_AGENT
+        } else {
+            EapiHeaders.USER_AGENT
+        }
         builder.header("Accept", EapiHeaders.ACCEPT)
-        builder.header("User-Agent", EapiHeaders.USER_AGENT)
+        builder.header("User-Agent", userAgent)
         if (cacheControl != null) builder.cacheControl(cacheControl)
         // ADR-076: the search endpoint rejects requests that do not identify the mobile client.
         builder.header(EapiHeaders.SOURCE, EapiHeaders.SOURCE_ANDROID)
-        val verificationCookie = DomainVerificationCookies.sanitizeCookieHeader(verificationCookieProvider(url))
         val cookies = listOfNotNull(session?.cookieHeader, verificationCookie).filter(String::isNotBlank)
         if (cookies.isNotEmpty()) builder.header(EapiHeaders.COOKIE, cookies.joinToString("; "))
         if (session != null) {

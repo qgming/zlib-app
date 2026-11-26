@@ -15,12 +15,23 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.FormBody
+import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
 
-class PapiBooklistClient(client: OkHttpClient, isAllowedHost: (String) -> Boolean) {
-    private val transport = PapiTransport(client, isAllowedHost)
+class PapiBooklistClient(
+    client: OkHttpClient,
+    isAllowedHost: (String) -> Boolean,
+    verificationCookieProvider: (HttpUrl) -> String? = { null },
+    verificationUserAgentProvider: (HttpUrl) -> String? = { null },
+) {
+    private val transport = PapiTransport(
+        client = client,
+        isAllowedHost = isAllowedHost,
+        verificationCookieProvider = verificationCookieProvider,
+        verificationUserAgentProvider = verificationUserAgentProvider,
+    )
 
     suspend fun myBooklists(session: Session): AppResult<List<CloudBooklist>> =
         transport.request(session, "/papi/booklist/current-user/0") { root ->
@@ -38,16 +49,17 @@ class PapiBooklistClient(client: OkHttpClient, isAllowedHost: (String) -> Boolea
         return transport.request(session, "/papi/booklist/current-user/$bookId") { root ->
             listRows(root).map { row ->
                 val membership = row["readlistBookId"]
-                val isMember = when (membership) {
-                    null, JsonNull -> false
-                    else -> if (membership.stringOrNull()?.matches(PAPI_ID) == true) true else malformedPapiResponse()
+                val readlistBookId = when (membership) {
+                    null, JsonNull -> null
+                    else -> membership.stringOrNull()?.takeIf(PAPI_ID::matches) ?: malformedPapiResponse()
                 }
-                BooklistMembership(cloudBooklist(row), isMember)
+                BooklistMembership(cloudBooklist(row), isMember = readlistBookId != null, readlistBookId = readlistBookId)
             }.groupBy(BooklistMembership::booklistId).values.map { entries ->
                 val list = entries.first().booklist.copy(
                     bookCount = entries.firstNotNullOfOrNull { it.booklist.bookCount },
                 ).withCoverPreview(entries.flatMap { it.booklist.covers })
-                BooklistMembership(list, isMember = entries.any(BooklistMembership::isMember))
+                val readlistBookId = entries.firstNotNullOfOrNull(BooklistMembership::readlistBookId)
+                BooklistMembership(list, isMember = readlistBookId != null, readlistBookId = readlistBookId)
             }
         }
     }
@@ -56,6 +68,16 @@ class PapiBooklistClient(client: OkHttpClient, isAllowedHost: (String) -> Boolea
     suspend fun addBook(session: Session, booklistId: String, bookId: String): AppResult<Unit> {
         if (!PAPI_ID.matches(booklistId) || !PAPI_ID.matches(bookId)) return invalidPapiParameters()
         return transport.request(session, "/papi/booklist/$booklistId/add-book/$bookId") { Unit }
+    }
+
+    /** This GET writes: do not redirect, cache or replay it. */
+    suspend fun removeBook(session: Session, booklistId: String, readlistBookId: String): AppResult<Unit> {
+        if (!PAPI_ID.matches(booklistId) || !PAPI_ID.matches(readlistBookId)) return invalidPapiParameters()
+        return transport.request(
+            session = session,
+            path = "/papi/booklist/$booklistId/remove-book/$readlistBookId",
+            allowEmptySuccess = true,
+        ) { Unit }
     }
 
     /** Returns the new list's ID when available; membership must still be verified after creation. */
@@ -97,7 +119,7 @@ class PapiBooklistClient(client: OkHttpClient, isAllowedHost: (String) -> Boolea
             val book = BookMapper.fromJson(record) ?: malformedPapiResponse()
             book.copy(href = "")
         }.distinctBy(Book::ref)
-        return BooklistPage(books, if (books.isEmpty()) null else nextPage(root, page))
+        return BooklistPage(books, if (books.isEmpty()) null else nextPage(root, page, books.size))
     }
 
     private fun previewCovers(row: JsonObject): List<BooklistCover> =
@@ -107,8 +129,9 @@ class PapiBooklistClient(client: OkHttpClient, isAllowedHost: (String) -> Boolea
             BookMapper.usableCover(book.stringOrNull("cover")).takeIf(String::isNotBlank)?.let { BooklistCover(id, it) }
         }?.distinctBy(BooklistCover::bookId)?.take(BooklistCover.COUNT)?.toList().orEmpty()
 
-    private fun nextPage(root: JsonObject, page: Int): Int? {
-        val pagination = root["pagination"]?.takeUnless { it is JsonNull } ?: return null
+    private fun nextPage(root: JsonObject, page: Int, itemCount: Int): Int? {
+        val pagination = root["pagination"]?.takeUnless { it is JsonNull }
+            ?: return (page + 1).takeIf { itemCount >= FALLBACK_PAGE_SIZE && it <= MAX_PAGE }
         val fields = pagination as? JsonObject ?: malformedPapiResponse()
         if ("current" in fields && fields.intOrNull("current") != page) malformedPapiResponse()
         if ("next" in fields) {
@@ -122,6 +145,7 @@ class PapiBooklistClient(client: OkHttpClient, isAllowedHost: (String) -> Boolea
 
     private companion object {
         const val MAX_PAGE = 1_000
+        const val FALLBACK_PAGE_SIZE = 20
         val TEXT_PLAIN = "text/plain; charset=utf-8".toMediaType()
         val EMPTY_FORM = FormBody.Builder().build()
         val END_OF_PAGINATION = setOf("false", "0")

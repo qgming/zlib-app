@@ -2,7 +2,9 @@ package com.qgming.zlib.core.data.library
 
 import com.qgming.zlib.core.common.AppError
 import com.qgming.zlib.core.common.AppResult
+import com.qgming.zlib.core.common.appText
 import com.qgming.zlib.core.common.getOrNull
+import com.qgming.zlib.core.common.R as TextR
 import com.qgming.zlib.core.data.session.SessionManager
 import com.qgming.zlib.core.model.Book
 import com.qgming.zlib.core.model.BooklistCover
@@ -47,6 +49,29 @@ class BooklistRepository @Inject constructor(
             }
         }
 
+    suspend fun removeBook(expected: Session, membership: BooklistMembership, bookId: String): AppResult<Unit> =
+        withSession(expected) {
+            if (!membership.isMember) return@withSession AppResult.Success(Unit)
+            val resolvedId = membership.readlistBookId?.takeIf(PAPI_ID::matches) ?: when (val refreshed = memberships(expected, bookId)) {
+                is AppResult.Failure -> return@withSession refreshed
+                is AppResult.Success -> {
+                    val latest = refreshed.value.firstOrNull { it.booklistId == membership.booklistId }
+                    if (latest == null || !latest.isMember) {
+                        invalidate(expected)
+                        return@withSession AppResult.Success(Unit)
+                    }
+                    latest.readlistBookId?.takeIf(PAPI_ID::matches)
+                        ?: return@withSession AppResult.Failure(
+                            AppError.Parse(appText(TextR.string.text_unexpected_server_response_please_retry_later)),
+                        )
+                }
+            }
+            if (sessions.current() != expected) return@withSession AppResult.Failure(AppError.NotLoggedIn)
+            client.removeBook(expected, membership.booklistId, resolvedId).also { result ->
+                if (result is AppResult.Success) invalidate(expected)
+            }
+        }
+
     suspend fun createBooklist(expected: Session, title: String, bookId: String): AppResult<String?> =
         withSession(expected) { client.createBooklist(expected, title, bookId) }
 
@@ -58,8 +83,8 @@ class BooklistRepository @Inject constructor(
     fun previews(scope: CoroutineScope): BooklistPreviews =
         BooklistPreviews(scope, isCurrentSession = { session.value == it }, readCovers = ::previewCovers)
 
-    suspend fun previewCovers(expected: Session, id: String): List<BooklistCover> = previewPermits.withPermit {
-        books(expected, id, 1).getOrNull()?.books.orEmpty().coverPreviews()
+    suspend fun previewCovers(expected: Session, id: String): List<BooklistCover>? = previewPermits.withPermit {
+        books(expected, id, 1).getOrNull()?.books?.coverPreviews()
     }
 
     private fun List<Book>.coverPreviews(): List<BooklistCover> = asSequence()
@@ -73,5 +98,9 @@ class BooklistRepository @Inject constructor(
         if (sessions.current() != expected) return AppResult.Failure(AppError.NotLoggedIn)
         val result = request()
         return if (sessions.current() == expected) result else AppResult.Failure(AppError.NotLoggedIn)
+    }
+
+    private companion object {
+        val PAPI_ID = Regex("[1-9][0-9]{0,19}")
     }
 }

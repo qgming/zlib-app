@@ -86,6 +86,16 @@ fun ReleaseHistoryScreen(onBack: () -> Unit, viewModel: ReleaseHistoryViewModel 
                     body = release.notes.ifBlank { stringResource(R.string.about_update_no_notes) },
                     expanded = release.tag in expanded,
                     onToggle = { expandedTags = if (release.tag in expanded) expanded - release.tag else expanded + release.tag },
+                    markdown = true,
+                    onOpenUrl = { url ->
+                        try {
+                            uriHandler.openUri(url)
+                        } catch (_: IllegalArgumentException) {
+                            localMessages.trySend(cannotOpenLink)
+                        } catch (_: SecurityException) {
+                            localMessages.trySend(cannotOpenLink)
+                        }
+                    },
                 )
             }
         }

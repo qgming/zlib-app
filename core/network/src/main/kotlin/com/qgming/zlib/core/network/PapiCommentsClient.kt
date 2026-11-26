@@ -11,8 +11,18 @@ import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 
-class PapiCommentsClient(client: OkHttpClient, isAllowedHost: (String) -> Boolean) {
-    private val transport = PapiTransport(client, isAllowedHost)
+class PapiCommentsClient(
+    client: OkHttpClient,
+    isAllowedHost: (String) -> Boolean,
+    verificationCookieProvider: (HttpUrl) -> String? = { null },
+    verificationUserAgentProvider: (HttpUrl) -> String? = { null },
+) {
+    private val transport = PapiTransport(
+        client = client,
+        isAllowedHost = isAllowedHost,
+        verificationCookieProvider = verificationCookieProvider,
+        verificationUserAgentProvider = verificationUserAgentProvider,
+    )
 
     suspend fun comments(session: Session, bookId: String, page: Int): AppResult<BookCommentsPage> {
         if (!PAPI_ID.matches(bookId) || page !in 0 until MAX_PAGES) return invalidPapiParameters()

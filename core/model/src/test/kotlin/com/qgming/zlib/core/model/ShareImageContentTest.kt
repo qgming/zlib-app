@@ -30,6 +30,7 @@ class ShareImageContentTest {
                 "content://downloads/private file:///storage/private h\u200bttps://reader.example.test/?token=hidden " + "文".repeat(2_000),
             totalBooks = 12,
             previewIsPartial = true,
+            rating = "  4.9  " + "9".repeat(30),
         ).bounded()
         assertTrue(content.title.length <= ShareImageContent.MAX_TITLE_LENGTH)
         assertTrue(content.title.startsWith("Title Author"))
@@ -45,7 +46,10 @@ class ShareImageContentTest {
         assertFalse(content.description.any { it.isISOControl() && it != '\n' })
         assertNull(content.totalBooks)
         assertFalse(content.previewIsPartial)
+        assertTrue(content.rating.length <= ShareImageContent.MAX_RATING_LENGTH)
+        assertTrue(content.rating.startsWith("4.9"))
         assertEquals(content, content.bounded())
+        assertEquals("", ShareImageContent(ShareImageKind.Booklist, "Reading", listOf(book(1)), rating = "4.9").bounded().rating)
     }
 
     @Test

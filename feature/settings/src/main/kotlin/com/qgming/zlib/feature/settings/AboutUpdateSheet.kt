@@ -45,12 +45,20 @@ internal fun AboutUpdateSheet(
                     UpdateCheckResult.NoRelease -> ZlibAboutText(stringResource(R.string.about_update_no_release), stringResource(R.string.about_update_no_release_body))
                     is UpdateCheckResult.Current -> ZlibAboutText(stringResource(R.string.about_update_current), stringResource(R.string.about_update_installed, installed, result.release.tag))
                     is UpdateCheckResult.Uncomparable -> ZlibAboutText(stringResource(R.string.about_update_uncomparable), stringResource(R.string.about_update_installed, installed, result.release.tag))
-                    is UpdateCheckResult.Available -> ZlibAboutText(stringResource(R.string.about_update_available, result.release.tag), result.release.notes.ifBlank { stringResource(R.string.about_update_no_notes) })
-                    is UpdateCheckResult.Cached -> ZlibAboutText(stringResource(R.string.about_update_cached_release, result.release.tag), result.release.notes.ifBlank { stringResource(R.string.about_update_no_notes) })
+                    is UpdateCheckResult.Available -> ZlibAboutText(
+                        title = stringResource(R.string.about_update_available, result.release.tag),
+                        body = result.release.notes.ifBlank { stringResource(R.string.about_update_no_notes) },
+                        markdown = true,
+                    )
+                    is UpdateCheckResult.Cached -> ZlibAboutText(
+                        title = stringResource(R.string.about_update_cached_release, result.release.tag),
+                        body = result.release.notes.ifBlank { stringResource(R.string.about_update_no_notes) },
+                        markdown = true,
+                    )
                     null -> Unit
                 }
                 if (state.failure != null || state.result is UpdateCheckResult.Uncomparable) {
-                    ZlibAboutLink(stringResource(R.string.about_open_github_releases), onOpenReleases)
+                    ZlibAboutLink(stringResource(R.string.about_open_github_releases), onClick = onOpenReleases)
                 }
                 transfer.failure?.let { failure ->
                     ZlibAboutText(stringResource(R.string.about_download_failed), stringResource(when (failure) {

@@ -33,6 +33,7 @@ class DownloadService : Service() {
     private var pendingCommands = 0
     private var latestStartId = 0
     private var queueRequested = false
+    private var foregroundStarted = false
     private var stopping = false
     private val controlMutex = Mutex()
 
@@ -44,36 +45,71 @@ class DownloadService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (stopping) return START_NOT_STICKY
+        latestStartId = startId
         val action = intent?.action
         val id = intent?.getStringExtra(DownloadServiceActions.EXTRA_ID)
-        latestStartId = startId
-        pendingCommands++
-        // Post immediately, including commands received while a foreground launch is pending.
-        try {
-            startForeground(DownloadNotifications.NOTIFICATION_ID, notifications.progress(null), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        } catch (_: IllegalStateException) {
-            stopForForegroundLimit(DownloadCodes.FOREGROUND_UNAVAILABLE)
-            return START_NOT_STICKY
-        } catch (_: SecurityException) {
-            stopForForegroundLimit(DownloadCodes.FOREGROUND_UNAVAILABLE)
+        val controlAction = action?.takeIf {
+            id != null && it in setOf(
+                DownloadServiceActions.PAUSE,
+                DownloadServiceActions.CANCEL,
+                DownloadServiceActions.REMOVE,
+            )
+        }
+        val requiresForeground = controlAction == null
+        if (stopping) {
+            if (requiresForeground) {
+                runCatching {
+                    startForeground(DownloadNotifications.NOTIFICATION_ID, notifications.progress(null), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                }
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            }
+            stopSelf()
             return START_NOT_STICKY
         }
+        if (requiresForeground) {
+            queueRequested = true
+            // Post immediately for foreground launches, preserving active notification updates if already foreground.
+            if (!foregroundStarted) {
+                try {
+                    startForeground(DownloadNotifications.NOTIFICATION_ID, notifications.progress(null), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                    foregroundStarted = true
+                } catch (_: IllegalStateException) {
+                    stopForForegroundLimit(DownloadCodes.FOREGROUND_UNAVAILABLE)
+                    return START_NOT_STICKY
+                } catch (_: SecurityException) {
+                    stopForForegroundLimit(DownloadCodes.FOREGROUND_UNAVAILABLE)
+                    return START_NOT_STICKY
+                }
+            }
+        }
+        pendingCommands++
         scope.launch {
             controlMutex.withLock {
                 try {
-                    if (id != null && action in setOf(DownloadServiceActions.PAUSE, DownloadServiceActions.CANCEL, DownloadServiceActions.REMOVE)) {
+                    if (controlAction != null && id != null) {
                         runner.control(
                             id,
                             stopActive = {
                                 stopDownloadWorker(job, runner::cancelActiveTransfer) { job = null }
                             },
-                            apply = { repository.finishControl(action!!, id) },
+                            apply = { repository.finishControl(controlAction, id) },
                         )
                     }
                 } finally {
                     pendingCommands--
-                    if (pendingCommands == 0) startQueue()
+                    if (pendingCommands == 0) {
+                        if (queueRequested || job?.isActive == true) {
+                            startQueue()
+                        } else if (foregroundStarted) {
+                            // A PAUSE/CANCEL/REMOVE stopped the active item while already foreground;
+                            // continue draining any remaining queued items.
+                            startQueue()
+                        } else {
+                            stopForeground(STOP_FOREGROUND_REMOVE)
+                            foregroundStarted = false
+                            stopSelf(latestStartId)
+                        }
+                    }
                 }
             }
         }
@@ -98,6 +134,7 @@ class DownloadService : Service() {
                         if (pendingCommands == 0) {
                             if (queueRequested) startQueue() else {
                                 stopForeground(STOP_FOREGROUND_REMOVE)
+                                foregroundStarted = false
                                 stopSelf(latestStartId)
                             }
                         }
@@ -108,7 +145,7 @@ class DownloadService : Service() {
     }
 
     override fun onTimeout(startId: Int, fgsType: Int) {
-        if (fgsType == ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC) {
+        if (fgsType and ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC != 0) {
             stopForForegroundLimit(DownloadCodes.FOREGROUND_TIMEOUT)
         }
     }
@@ -118,6 +155,7 @@ class DownloadService : Service() {
         job?.cancel()
         runner.stopForForegroundLimit(reason)
         stopForeground(STOP_FOREGROUND_REMOVE)
+        foregroundStarted = false
         stopSelf()
     }
 

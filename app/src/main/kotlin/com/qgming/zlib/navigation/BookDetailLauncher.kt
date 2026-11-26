@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import com.itgsa.animation.sharedview.ViewAnimationConfig
 import com.itgsa.animation.sharedview.ViewAnimationExtras
 import com.itgsa.animation.sharedview.ViewAnimationListener
@@ -34,17 +36,22 @@ internal object BookDetailLauncher {
         var animated = false
     }
 
-    // Accessed on main; each source can open one child while older details keep their return source.
+    // Guarded by lock because ROM animation callbacks may invoke listeners off the main thread.
+    private val lock = Any()
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val sessions = mutableMapOf<String, Session>()
     private val activeSources = WeakHashMap<Activity, String>()
 
     fun isSupported(): Boolean = sdkOrNull { ViewAnimationManager.isViewAnimationSupported() > 0 } == true
 
     suspend fun open(activity: Activity, request: ZlibBookOpenRequest) {
-        if (activeSources.containsKey(activity) || activity.isFinishing || activity.isDestroyed) return
-        val session = Session(UUID.randomUUID().toString(), activity, request.source)
-        sessions[session.token] = session
-        activeSources[activity] = session.token
+        val session = synchronized(lock) {
+            if (activeSources.containsKey(activity) || activity.isFinishing || activity.isDestroyed) return
+            Session(UUID.randomUUID().toString(), activity, request.source).also { created ->
+                sessions[created.token] = created
+                activeSources[activity] = created.token
+            }
+        }
         try {
             val book = request.book
             val intent = Intent(activity, BookDetailActivity::class.java)
@@ -85,7 +92,12 @@ internal object BookDetailLauncher {
             session.animated = options != null
             if (options == null) {
                 session.bitmap = null
-                activity.startActivity(intent)
+                try {
+                    activity.startActivity(intent)
+                } finally {
+                    // Non-animated transitions do not keep a return snapshot; unblock the source immediately.
+                    release(session.token)
+                }
             } else {
                 try {
                     activity.startActivity(intent, options.toBundle())
@@ -93,12 +105,18 @@ internal object BookDetailLauncher {
                     sdkOrNull { ViewAnimationManager.cancelCurrentViewAnimation() }
                     session.animated = false
                     session.bitmap = null
-                    activity.startActivity(intent)
+                    try {
+                        activity.startActivity(intent)
+                    } finally {
+                        release(session.token)
+                    }
                 }
             }
         } catch (cancelled: CancellationException) {
             release(session.token)
             throw cancelled
+        } catch (_: RuntimeException) {
+            release(session.token)
         } catch (error: Exception) {
             release(session.token)
             throw error
@@ -119,7 +137,7 @@ internal object BookDetailLauncher {
 
     fun prepareReturn(activity: Activity) {
         val token = activity.intent.getStringExtra(EXTRA_SESSION)
-        val session = sessions[token]?.takeIf { it.animated } ?: return
+        val session = synchronized(lock) { sessions[token]?.takeIf { it.animated } } ?: return
         sdkOrNull {
             val extras = ViewAnimationManager.getViewAnimationExtras().orEmpty()
             val inWindow = SharedViewCapabilities.coordinates(extras[ViewAnimationExtras.EXTRA_BOUNDS]) == SharedViewCoordinates.WINDOW
@@ -142,9 +160,12 @@ internal object BookDetailLauncher {
     fun release(intent: Intent) = release(intent.getStringExtra(EXTRA_SESSION))
 
     private fun release(token: String?) {
-        val session = sessions.remove(token) ?: return
-        session.owner.get()?.let { owner ->
-            if (activeSources[owner] == token) activeSources.remove(owner)
+        if (token == null) return
+        synchronized(lock) {
+            val session = sessions.remove(token) ?: return
+            session.owner.get()?.let { owner ->
+                if (activeSources[owner] == token) activeSources.remove(owner)
+            }
         }
         // ROM may still own the Bitmap during the closing frames; never recycle it here.
     }
@@ -152,10 +173,10 @@ internal object BookDetailLauncher {
     private fun listener(token: String) = object : ViewAnimationListener {
         override fun onAnimationStart(animMode: Int) = Unit
         override fun onAnimationEnd(animMode: Int) {
-            if (animMode == ViewAnimationManager.ANIM_MODE_BACK) release(token)
+            if (animMode == ViewAnimationManager.ANIM_MODE_BACK) mainHandler.post { release(token) }
         }
         override fun onAnimationCancel(animMode: Int) {
-            if (animMode == ViewAnimationManager.ANIM_MODE_BACK) release(token)
+            if (animMode == ViewAnimationManager.ANIM_MODE_BACK) mainHandler.post { release(token) }
         }
     }
 

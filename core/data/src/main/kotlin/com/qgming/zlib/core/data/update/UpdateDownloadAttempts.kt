@@ -62,9 +62,12 @@ internal class UpdateDownloadAttempts {
     private fun stop(id: Long?, reason: UpdateDownloadFailure?) {
         val activeWorker = synchronized(lock) {
             val state = current.value
-            if (!state.busy || (id != null && (id == 0L || generation != id))) return
+            val canCancelReady = reason == null && id == null && state.phase == UpdateDownloadPhase.Ready
+            if (!state.busy && !canCancelReady) return
+            if (id != null && (id == 0L || generation != id)) return
             val active = worker
             worker = null
+            if (reason == null) generation += 1
             current.value = if (reason == null) UpdateDownloadState() else state.copy(phase = UpdateDownloadPhase.Failed, failure = reason)
             active
         }

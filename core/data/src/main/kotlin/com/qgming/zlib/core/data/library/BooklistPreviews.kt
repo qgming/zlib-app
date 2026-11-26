@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 class BooklistPreviews(
     private val scope: CoroutineScope,
     private val isCurrentSession: (Session) -> Boolean,
-    private val readCovers: suspend (Session, String) -> List<BooklistCover>,
+    private val readCovers: suspend (Session, String) -> List<BooklistCover>?,
 ) {
     private val requests = mutableMapOf<String, Job>()
     private val cache = mutableMapOf<String, List<BooklistCover>>()
@@ -36,7 +36,7 @@ class BooklistPreviews(
                 val covers = readCovers(session, id)
                 ensureActive()
                 requests.remove(id)
-                if (!isCurrentSession(session)) return@launch
+                if (!isCurrentSession(session) || covers == null) return@launch
                 cache[id] = covers
                 if (covers.isNotEmpty()) onLoaded(id, covers)
             }

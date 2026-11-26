@@ -48,20 +48,39 @@ fun ZlibAboutGroup(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
-fun ZlibAboutLink(title: String, onClick: () -> Unit) {
+fun ZlibAboutLink(title: String, endText: String? = null, enabled: Boolean = true, onClick: () -> Unit) {
     ArrowPreference(
         title = title,
+        endActions = {
+            if (!endText.isNullOrBlank()) {
+                Text(
+                    text = endText,
+                    style = MiuixTheme.textStyles.body2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+            }
+        },
+        enabled = enabled,
         insideMargin = PaddingValues(horizontal = 20.dp, vertical = 7.dp),
         onClick = onClick,
     )
 }
 
 @Composable
-fun ZlibAboutText(title: String, body: String) {
+fun ZlibAboutText(
+    title: String,
+    body: String,
+    markdown: Boolean = false,
+    onOpenUrl: ((String) -> Unit)? = null,
+) {
     SelectionContainer {
         Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(title, style = MiuixTheme.textStyles.title3)
-            Text(body, style = MiuixTheme.textStyles.body2.copy(lineHeight = 26.sp))
+            if (markdown) {
+                ZlibMarkdownText(markdown = body, onOpenUrl = onOpenUrl)
+            } else {
+                Text(body, style = MiuixTheme.textStyles.body2.copy(lineHeight = 26.sp))
+            }
         }
     }
 }

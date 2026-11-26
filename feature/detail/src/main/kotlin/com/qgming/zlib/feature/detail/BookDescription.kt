@@ -2,6 +2,7 @@ package com.qgming.zlib.feature.detail
 
 /** Formats only the description already returned in EAPI JSON; never loads external content. */
 internal object BookDescription {
+    private const val MAX_RAW_CHARS = 64_000
     private val hiddenContent = Regex(
         """<!--.*?-->|<(script|style|iframe|object)\b[^>]*>.*?</\1\s*>""",
         setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
@@ -16,7 +17,8 @@ internal object BookDescription {
     private val inline = setOf("b", "i", "u", "s", "sub", "sup")
 
     fun html(raw: String): String {
-        val source = raw
+        val bounded = if (raw.length > MAX_RAW_CHARS) raw.take(MAX_RAW_CHARS) else raw
+        val source = bounded
             .replace(hiddenContent, "")
             .replace("\r\n", "\n")
             .replace('\r', '\n')

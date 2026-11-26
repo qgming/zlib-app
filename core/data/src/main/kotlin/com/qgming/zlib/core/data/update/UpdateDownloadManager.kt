@@ -17,10 +17,13 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -49,6 +52,7 @@ class UpdateDownloadManager @Inject constructor(
     private val attempts = UpdateDownloadAttempts()
     val state = attempts.state
     private val fileAccess = Mutex()
+    private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var restored = false
 
     suspend fun restoreReady(): Unit = withContext(Dispatchers.IO) {
@@ -150,7 +154,17 @@ class UpdateDownloadManager @Inject constructor(
     }
 
     internal fun interrupted(id: Long) = attempts.interrupt(id)
-    fun cancel() = attempts.cancel()
+    fun cancel() {
+        val wasReady = state.value.phase == UpdateDownloadPhase.Ready
+        attempts.cancel()
+        if (wasReady) {
+            cleanupScope.launch {
+                fileAccess.withLock {
+                    if (state.value.phase == UpdateDownloadPhase.Idle) files.discardReady()
+                }
+            }
+        }
+    }
 
     fun installerFile(): File? = files.ready().takeIf { state.value.phase == UpdateDownloadPhase.Ready && it.isFile }
 }

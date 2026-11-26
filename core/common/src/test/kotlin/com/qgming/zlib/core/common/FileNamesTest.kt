@@ -30,6 +30,25 @@ class FileNamesTest {
     }
 
     @Test
+    fun `multibyte names are bounded in utf8 bytes without splitting characters`() {
+        val cjk = "书".repeat(120)
+        val name = FileNames.sanitize("$cjk.epub")
+        val base = name.substringBeforeLast('.')
+        assertEquals("epub", name.substringAfterLast('.'))
+        assert(base.toByteArray(Charsets.UTF_8).size <= 180)
+        assert(base.length == 60)
+    }
+
+    @Test
+    fun `leading dots and oversized extensions are sanitized`() {
+        assertEquals("hidden.epub", FileNames.sanitize("...hidden.epub"))
+        assertEquals("download", FileNames.sanitize(".   ."))
+        val longExt = "x".repeat(40)
+        val name = FileNames.sanitize("book.$longExt")
+        assertEquals(16, name.substringAfterLast('.').length)
+    }
+
+    @Test
     fun `extension is appended once`() {
         assertEquals("book.epub", FileNames.withExtension("book", "EPUB"))
         assertEquals("book.epub", FileNames.withExtension("book.epub", "epub"))

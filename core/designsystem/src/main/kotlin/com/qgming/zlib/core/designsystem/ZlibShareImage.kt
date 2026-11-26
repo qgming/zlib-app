@@ -27,6 +27,7 @@ import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.glass.Share
+import top.yukonga.miuix.kmp.icon.glass.Theme
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
@@ -35,6 +36,22 @@ fun ZlibShareButton(enabled: Boolean = true, onClick: () -> Unit) {
     TopBarButton(
         icon = MiuixIcons.Glass.Normal.Share,
         description = stringResource(TextR.string.text_share_action),
+        onClick = onClick,
+        glass = LocalZlibGlass.current,
+        modifier = Modifier.size(48.dp),
+        enabled = enabled,
+        tint = if (enabled) colors.onSurface else colors.onSurfaceVariantSummary,
+    )
+}
+
+@Composable
+fun ZlibShareThemeButton(dark: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
+    val colors = MiuixTheme.colorScheme
+    TopBarButton(
+        icon = MiuixIcons.Glass.Normal.Theme,
+        description = stringResource(
+            if (dark) TextR.string.text_share_theme_switch_light else TextR.string.text_share_theme_switch_dark,
+        ),
         onClick = onClick,
         glass = LocalZlibGlass.current,
         modifier = Modifier.size(48.dp),
@@ -54,6 +71,7 @@ fun ZlibShareImageContent(
     onSave: () -> Unit,
     onShare: () -> Unit,
     modifier: Modifier = Modifier,
+    canRetry: Boolean = true,
 ) {
     val colors = MiuixTheme.colorScheme
     val scroll = rememberScrollState()
@@ -82,13 +100,14 @@ fun ZlibShareImageContent(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    val failureTitle = stringResource(TextR.string.text_share_image_failed)
                     Text(
-                        stringResource(TextR.string.text_share_image_failed),
+                        failureTitle,
                         style = MiuixTheme.textStyles.title4,
                         color = colors.onSurface,
                         textAlign = TextAlign.Center,
                     )
-                    if (!error.isNullOrBlank()) {
+                    if (!error.isNullOrBlank() && error != failureTitle) {
                         Text(
                             error,
                             style = MiuixTheme.textStyles.footnote1,
@@ -96,11 +115,13 @@ fun ZlibShareImageContent(
                             textAlign = TextAlign.Center,
                         )
                     }
-                    Button(
-                        onClick = onRetry,
-                        enabled = !working,
-                        modifier = Modifier.heightIn(min = 48.dp),
-                    ) { Text(stringResource(TextR.string.text_retry), textAlign = TextAlign.Center) }
+                    if (canRetry) {
+                        Button(
+                            onClick = onRetry,
+                            enabled = !working,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) { Text(stringResource(TextR.string.text_retry), textAlign = TextAlign.Center) }
+                    }
                 }
                 else -> Image(
                     bitmap = image,

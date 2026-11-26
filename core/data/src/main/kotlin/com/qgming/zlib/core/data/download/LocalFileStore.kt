@@ -83,7 +83,9 @@ internal class SafLocalFileStore(context: Context) : LocalFileStore {
             }
             if (match != null) match.singleOrNull() else scan(file.treeUri).firstOrNull { it.uri == file.uri }
         } catch (_: FileNotFoundException) {
-            scan(file.treeUri).firstOrNull { it.uri == file.uri }
+            null
+        } catch (_: IllegalArgumentException) {
+            null
         }
     }
 
@@ -145,7 +147,11 @@ internal class SafLocalFileStore(context: Context) : LocalFileStore {
 
     override fun delete(file: LocalFile): Boolean {
         val uri = file.uri.toUri()
-        return DocumentsContract.deleteDocument(resolver, uri)
+        return try {
+            DocumentsContract.deleteDocument(resolver, uri)
+        } catch (_: FileNotFoundException) {
+            true
+        }
     }
 
     private companion object {

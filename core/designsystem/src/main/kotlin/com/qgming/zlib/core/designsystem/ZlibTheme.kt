@@ -31,6 +31,10 @@ internal val LocalBookGridColumns = staticCompositionLocalOf { BookGridColumns.A
 
 @Composable
 @ReadOnlyComposable
+fun zlibSurfaceColor(): Color = MiuixTheme.colorScheme.surface
+
+@Composable
+@ReadOnlyComposable
 internal fun zlibIsDark() = MiuixTheme.colorScheme.background.luminance() < 0.5f
 
 @Composable

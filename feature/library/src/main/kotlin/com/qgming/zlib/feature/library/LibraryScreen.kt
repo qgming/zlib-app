@@ -19,8 +19,6 @@ import com.qgming.zlib.core.designsystem.ZlibBookOpenRequest
 import com.qgming.zlib.core.designsystem.ZlibBookGrid
 import com.qgming.zlib.core.designsystem.ZlibLoading
 import com.qgming.zlib.core.designsystem.ZlibConfirmDialog
-import com.qgming.zlib.core.designsystem.ZlibGlassBottomSheet
-import com.qgming.zlib.core.designsystem.ZlibMenuAction
 import com.qgming.zlib.core.designsystem.ZlibPage
 import com.qgming.zlib.core.designsystem.ZlibToastHost
 import com.qgming.zlib.core.designsystem.ZlibStateCard
@@ -104,9 +102,9 @@ private fun RemoteBooks(
                 ZlibBookTile(
                     book = book, onClick = onOpenBook,
                     onLongClick = if (source == CloudLibrarySource.DownloadHistory) {
-                        { viewModel.showHistoryActions(book) }
+                        { viewModel.requestHistoryDeletion(book) }
                     } else null,
-                    onLongClickLabel = stringResource(TextR.string.text_more_actions),
+                    onLongClickLabel = stringResource(TextR.string.text_delete_record),
                 )
             }
         }
@@ -122,12 +120,6 @@ private fun RemoteBooks(
         }
     }
     if (source == CloudLibrarySource.DownloadHistory) {
-        ZlibGlassBottomSheet(
-            show = action.book != null && !action.confirming,
-            title = action.book?.title.orEmpty(), onDismiss = viewModel::dismissHistoryActions,
-        ) {
-            ZlibMenuAction(text = stringResource(TextR.string.text_delete_record), onClick = viewModel::requestHistoryDeletion)
-        }
         ZlibConfirmDialog(
             show = action.book != null && action.confirming,
             title = stringResource(TextR.string.text_delete_cloud_download_record),

@@ -1,5 +1,6 @@
 package com.qgming.zlib
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qgming.zlib.core.common.AppResult
@@ -29,6 +30,7 @@ import kotlinx.coroutines.flow.receiveAsFlow
 
 @HiltViewModel
 class AppViewModel @Inject constructor(
+    private val savedStateHandle: SavedStateHandle,
     private val startupCoordinator: StartupCoordinator,
     private val authRepository: AuthRepository,
     private val domainRepository: DomainRepository,
@@ -47,15 +49,17 @@ class AppViewModel @Inject constructor(
     val domainChecks = domainRepository.checks
     val domainProbing = domainRepository.probing
 
-    private val _recoveryApprovalHost = MutableStateFlow<String?>(null)
-    val recoveryApprovalHost = _recoveryApprovalHost.asStateFlow()
     private val _recoveryBusy = MutableStateFlow(false)
     val recoveryBusy = _recoveryBusy.asStateFlow()
     private val _verificationRequests = Channel<String>(Channel.BUFFERED)
     val verificationRequests = _verificationRequests.receiveAsFlow()
     private val _events = Channel<String>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
-    private var verifyingHost: String? = null
+    private var verifyingHost: String?
+        get() = savedStateHandle[KEY_VERIFYING_HOST]
+        set(value) {
+            savedStateHandle[KEY_VERIFYING_HOST] = value
+        }
     private var verificationFinishing = false
 
     private val _choosingDirectory = MutableStateFlow(false)
@@ -116,22 +120,7 @@ class AppViewModel @Inject constructor(
 
     fun chooseRecoveryHost(host: String) {
         if (_recoveryBusy.value || domainRepository.probing.value || verifyingHost != null) return
-        if (domainRepository.requiresApproval(host)) {
-            _recoveryApprovalHost.value = host
-            return
-        }
-        performRecoverySelection(host, approve = false)
-    }
-
-    fun dismissRecoveryApproval() {
-        if (!_recoveryBusy.value) _recoveryApprovalHost.value = null
-    }
-
-    fun confirmRecoveryApproval() {
-        val host = _recoveryApprovalHost.value ?: return
-        if (_recoveryBusy.value || verifyingHost != null) return
-        _recoveryApprovalHost.value = null
-        performRecoverySelection(host, approve = true)
+        performRecoverySelection(host)
     }
 
     fun probeRecoveryHost(host: String) {
@@ -150,22 +139,15 @@ class AppViewModel @Inject constructor(
         }
     }
 
-    private fun performRecoverySelection(host: String, approve: Boolean) {
+    private fun performRecoverySelection(host: String) {
         _recoveryBusy.value = true
         viewModelScope.launch {
             try {
-                if (needsVerification(host) && (approve || domainRepository.isApprovedHost(host))) {
-                    if (approve) {
-                        val result = domainRepository.approveCommunityHost(host)
-                        if (result is AppResult.Failure) {
-                            _message.value = result.error.userMessage()
-                            return@launch
-                        }
-                    }
+                if (needsVerification(host) && domainRepository.isApprovedHost(host)) {
                     requestDomainVerification(host)
                     return@launch
                 }
-                val result = if (approve) domainRepository.approveAndSelectHost(host) else domainRepository.setCurrentHost(host)
+                val result = domainRepository.setCurrentHost(host)
                 if (needsVerification(host) && domainRepository.isApprovedHost(host)) {
                     requestDomainVerification(host)
                     return@launch
@@ -203,14 +185,20 @@ class AppViewModel @Inject constructor(
         _events.trySend(appText(TextR.string.text_domain_verification_open_failed))
     }
 
-    fun completeDomainVerification(host: String?, rawCookies: String?, completed: Boolean, verifiedNetwork: Long?) {
+    fun completeDomainVerification(
+        host: String?,
+        rawCookies: String?,
+        completed: Boolean,
+        verifiedNetwork: Long?,
+        userAgent: String? = null,
+    ) {
         val expected = verifyingHost ?: return
         verifyingHost = null
         if (!completed) {
             domainVerification.clearHost(expected)
             return
         }
-        if (host != expected || !domainRepository.isApprovedHost(expected)) {
+        if (host != expected) {
             domainVerification.clearHost(expected)
             _events.trySend(appText(TextR.string.text_domain_verification_failed))
             return
@@ -219,8 +207,14 @@ class AppViewModel @Inject constructor(
         _recoveryBusy.value = true
         viewModelScope.launch {
             try {
+                domainRepository.initialize()
+                if (!domainRepository.isApprovedHost(expected)) {
+                    domainVerification.clearHost(expected)
+                    _events.send(appText(TextR.string.text_domain_verification_failed))
+                    return@launch
+                }
                 domainVerification.clearHost(expected)
-                if (rawCookies != null && !domainVerification.accept(expected, rawCookies, verifiedNetwork)) {
+                if (rawCookies != null && !domainVerification.accept(expected, rawCookies, verifiedNetwork, userAgent)) {
                     _events.send(appText(TextR.string.text_domain_verification_failed))
                     return@launch
                 }
@@ -275,5 +269,9 @@ class AppViewModel @Inject constructor(
                 _recoveryBusy.value = false
             }
         }
+    }
+
+    private companion object {
+        const val KEY_VERIFYING_HOST = "verifying_host"
     }
 }

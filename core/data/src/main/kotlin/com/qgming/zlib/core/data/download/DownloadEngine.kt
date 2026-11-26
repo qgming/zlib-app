@@ -16,6 +16,7 @@ import com.qgming.zlib.core.data.session.SessionManager
 import com.qgming.zlib.core.database.DownloadEntity
 import com.qgming.zlib.core.model.Session
 import com.qgming.zlib.core.network.DomainPolicy
+import com.qgming.zlib.core.network.DomainVerificationCookies
 import com.qgming.zlib.core.network.EapiEndpoints
 import com.qgming.zlib.core.network.EapiHeaders
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -50,6 +51,7 @@ class DownloadEngine @Inject constructor(
     private val dispatchers: AppDispatchers,
     private val allowedHosts: AllowedHostRegistry,
     private val journal: DownloadJournal,
+    private val verificationCookies: DomainVerificationCookies,
 ) {
     private val initialClient = client.newBuilder()
         .followRedirects(false)
@@ -441,17 +443,31 @@ class DownloadEngine @Inject constructor(
         null
     }
 
-    private fun fileRequest(url: HttpUrl, session: Session?, resume: ResumeDownload?): Request = Request.Builder()
+    private fun fileRequest(url: HttpUrl, session: Session?, resume: ResumeDownload?): Request {
+        val eapiTarget = session != null && allowedHosts.isAllowed(url.host)
+        val verificationCookie = if (eapiTarget) {
+            DomainVerificationCookies.sanitizeCookieHeader(verificationCookies.cookieHeaderFor(url))
+        } else {
+            null
+        }
+        val userAgent = if (verificationCookie != null) {
+            DomainVerificationCookies.sanitizeUserAgent(verificationCookies.userAgentFor(url)) ?: EapiHeaders.USER_AGENT
+        } else {
+            EapiHeaders.USER_AGENT
+        }
+        return Request.Builder()
             .url(url)
             .get()
-            .header("User-Agent", EapiHeaders.USER_AGENT)
+            .header("User-Agent", userAgent)
             .header("Accept", if (session != null) EapiHeaders.ACCEPT else "*/*")
             .header("Accept-Encoding", "identity")
             .apply {
-                if (session != null && allowedHosts.isAllowed(url.host)) {
-                    header("Cookie", session.cookieHeader)
-                    header(EapiHeaders.REMIX_USER_ID, session.remixUserId)
-                    header(EapiHeaders.REMIX_USER_KEY, session.remixUserKey)
+                if (eapiTarget) {
+                    val activeSession = checkNotNull(session)
+                    val cookies = listOfNotNull(activeSession.cookieHeader, verificationCookie).filter(String::isNotBlank)
+                    if (cookies.isNotEmpty()) header("Cookie", cookies.joinToString("; "))
+                    header(EapiHeaders.REMIX_USER_ID, activeSession.remixUserId)
+                    header(EapiHeaders.REMIX_USER_KEY, activeSession.remixUserKey)
                     header(EapiHeaders.SOURCE, EapiHeaders.SOURCE_ANDROID)
                 }
                 if (resume != null) {
@@ -460,6 +476,7 @@ class DownloadEngine @Inject constructor(
                 }
             }
             .build()
+    }
 
     private fun failed(error: AppError, code: String): DownloadOutcome =
         DownloadOutcome.Failed(error, code)

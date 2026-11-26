@@ -136,6 +136,7 @@ class BookCommentsViewModel internal constructor(
 
     private suspend fun readPages(id: String, expected: Session, dataset: Long, pageNumber: Int) {
         var number = pageNumber
+        var fetched = 0
         while (true) {
             val result = readPage(expected, id, number)
             currentCoroutineContext().ensureActive()
@@ -147,6 +148,7 @@ class BookCommentsViewModel internal constructor(
                     return
                 }
                 is AppResult.Success -> {
+                    fetched++
                     val loaded = result.value
                     val old = before.page?.comments.orEmpty()
                     val combined = (old + loaded.comments).distinctBy(BookComment::id)
@@ -155,7 +157,7 @@ class BookCommentsViewModel internal constructor(
                         nextPage = loaded.nextPage?.takeIf { it > number && combined.size > old.size },
                     )
                     val threads = CommentThreads(page.comments)
-                    val next = page.nextPage?.takeIf { needsMore(threads) }
+                    val next = page.nextPage?.takeIf { fetched < MAX_AUTO_PAGES && needsMore(threads) }
                     _state.value = before.copy(page = page, threads = threads, loading = next != null)
                     number = next ?: return
                 }
@@ -165,5 +167,6 @@ class BookCommentsViewModel internal constructor(
 
     private companion object {
         const val FIRST_PAGE = 0
+        const val MAX_AUTO_PAGES = 10
     }
 }

@@ -20,7 +20,8 @@ class I18nResourcesTest {
             val defaults = strings(File(root, "$module/src/main/res/values"))
             val english = strings(File(root, "$module/src/main/res/values-en"))
             val translated = defaults.filterValues { !it.startsWith("@string/") }
-            assertEquals(translated.keys, english.keys, module)
+            val englishTranslated = english.filterValues { !it.startsWith("@string/") }
+            assertEquals(translated.keys, englishTranslated.keys, module)
             translated.forEach { (key, value) ->
                 val text = english.getValue(key)
                 assertTrue(text.isNotBlank(), "$module:$key")

@@ -55,7 +55,8 @@ fun DownloadsScreen(
     val queue by viewModel.queue.collectAsStateWithLifecycle()
     val loadedQueue = queue
     var notice by remember { mutableStateOf<String?>(null) }
-    var failure by remember { mutableStateOf<DownloadItem?>(null) }
+    var failureId by remember { mutableStateOf<String?>(null) }
+    val failure = loadedQueue?.firstOrNull { it.id == failureId && it.state == DownloadState.FAILED }
     val directoryPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         uri?.let(viewModel::setDirectory)
     }
@@ -80,23 +81,23 @@ fun DownloadsScreen(
             }
             if (tasks.isNotEmpty()) {
                 item(key = "download-tasks") { ZlibSectionTitle(stringResource(TextR.string.text_download_tasks)) }
-                items(tasks, key = { it.id }) { item -> DownloadRow(item, viewModel, onShowFailure = { failure = item }) }
+                items(tasks, key = { it.id }) { item -> DownloadRow(item, viewModel, onShowFailure = { failureId = item.id }) }
             }
             if (records.isNotEmpty()) {
                 item(key = "download-records") { ZlibSectionTitle(stringResource(TextR.string.text_completed)) }
-                items(records, key = { it.id }) { item -> DownloadRow(item, viewModel, onShowFailure = { failure = item }) }
+                items(records, key = { it.id }) { item -> DownloadRow(item, viewModel, onShowFailure = { failureId = item.id }) }
             }
         }
-        ZlibGlassBottomSheet(show = failure != null, title = stringResource(TextR.string.text_download_incomplete), onDismiss = { failure = null }) {
+        ZlibGlassBottomSheet(show = failure != null, title = stringResource(TextR.string.text_download_incomplete), onDismiss = { failureId = null }) {
             failure?.let { item ->
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(item.error.orEmpty().errorLabel(), style = MiuixTheme.textStyles.body2)
                     when (item.error) {
-                        "session", "quota" -> ZlibMenuAction(stringResource(TextR.string.text_manage_accounts_and_quota)) { failure = null; onOpenAccount() }
-                        "domain" -> ZlibMenuAction(stringResource(TextR.string.text_switch_domain)) { failure = null; onOpenDomains() }
-                        "storage", "storage_permission" -> ZlibMenuAction(stringResource(TextR.string.text_choose_download_folder_again)) { failure = null; directoryPicker.launch(null) }
+                        "session", "quota" -> ZlibMenuAction(stringResource(TextR.string.text_manage_accounts_and_quota)) { failureId = null; onOpenAccount() }
+                        "domain" -> ZlibMenuAction(stringResource(TextR.string.text_switch_domain)) { failureId = null; onOpenDomains() }
+                        "storage", "storage_permission" -> ZlibMenuAction(stringResource(TextR.string.text_choose_download_folder_again)) { failureId = null; directoryPicker.launch(null) }
                     }
-                    if (item.error != "quota") ZlibMenuAction(stringResource(TextR.string.text_retry_download)) { failure = null; viewModel.retry(item.id) }
+                    if (item.error != "quota") ZlibMenuAction(stringResource(TextR.string.text_retry_download)) { failureId = null; viewModel.retry(item.id) }
                 }
             }
         }
@@ -134,12 +135,20 @@ private fun DownloadRow(
                     )
                 }
                 if (item.state == DownloadState.FAILED) TextButton(text = stringResource(TextR.string.text_view_details), onClick = onShowFailure)
-                item.totalBytes?.let { total ->
-                    if (progress != null && (item.state == DownloadState.DOWNLOADING || item.state == DownloadState.PAUSED)) {
+                if (item.state == DownloadState.DOWNLOADING || item.state == DownloadState.PAUSED) {
+                    val total = item.totalBytes
+                    if (total != null && progress != null) {
                         Spacer(Modifier.height(8.dp))
                         LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
                         Text(
                             "${item.bytesWritten.sizeText()} / ${total.sizeText()}",
+                            style = MiuixTheme.textStyles.footnote2,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                    } else if (item.bytesWritten > 0L) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            item.bytesWritten.sizeText(),
                             style = MiuixTheme.textStyles.footnote2,
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         )
@@ -150,7 +159,8 @@ private fun DownloadRow(
                 val primary = when (item.state) {
                     DownloadState.QUEUED, DownloadState.RESOLVING, DownloadState.DOWNLOADING -> ZlibDownloadAction.Pause
                     DownloadState.PAUSED -> ZlibDownloadAction.Resume
-                    DownloadState.FAILED, DownloadState.CANCELLED -> ZlibDownloadAction.Retry
+                    DownloadState.FAILED -> if (item.error == "quota") null else ZlibDownloadAction.Retry
+                    DownloadState.CANCELLED -> ZlibDownloadAction.Retry
                     DownloadState.COMPLETED -> null
                 }
                 if (primary != null) ZlibDownloadActionButton(primary) {

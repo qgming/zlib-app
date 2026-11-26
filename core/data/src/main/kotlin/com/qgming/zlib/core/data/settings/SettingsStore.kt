@@ -29,6 +29,8 @@ data class AppSettings(
     val discoveredHosts: Set<String> = emptySet(),
     val currentHost: String? = null,
     val lockedHost: String? = null,
+    /** Persisted host -> last measured healthy latency (ms) used to prioritize future probes. */
+    val hostLatenciesMs: Map<String, Long> = emptyMap(),
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val bookGridColumns: BookGridColumns = BookGridColumns.AUTO,
     val downloadTreeUri: String? = null,
@@ -41,6 +43,7 @@ interface SettingsStore {
     suspend fun setCustomHosts(hosts: Set<String>)
     suspend fun setDiscoveredHosts(hosts: Set<String>)
     suspend fun setLockedHost(host: String?)
+    suspend fun setHostLatenciesMs(latencies: Map<String, Long>) {}
     suspend fun setThemeMode(mode: ThemeMode)
     suspend fun setBookGridColumns(columns: BookGridColumns)
     suspend fun setDownloadTreeUri(uri: String?)
@@ -81,6 +84,13 @@ class DataStoreSettingsStore @Inject constructor(
         if (host.isNullOrBlank()) prefs.remove(LOCKED_HOST) else prefs[LOCKED_HOST] = host
     }
 
+    override suspend fun setHostLatenciesMs(latencies: Map<String, Long>) = edit { prefs ->
+        val encoded = latencies.entries
+            .mapNotNull { (host, ms) -> host.takeIf { it.isNotBlank() && ms > 0L }?.let { "$it=$ms" } }
+            .toSet()
+        if (encoded.isEmpty()) prefs.remove(HOST_LATENCIES) else prefs[HOST_LATENCIES] = encoded
+    }
+
     override suspend fun setThemeMode(mode: ThemeMode) = edit { prefs ->
         prefs[THEME_MODE] = mode.name
     }
@@ -102,16 +112,28 @@ class DataStoreSettingsStore @Inject constructor(
         discoveredHosts = this[DISCOVERED_HOSTS].orEmpty(),
         currentHost = this[CURRENT_HOST]?.takeIf { it.isNotBlank() },
         lockedHost = this[LOCKED_HOST]?.takeIf { it.isNotBlank() },
+        hostLatenciesMs = decodeHostLatencies(this[HOST_LATENCIES].orEmpty()),
         themeMode = ThemeMode.fromPreference(this[THEME_MODE]),
         bookGridColumns = BookGridColumns.fromPreference(this[BOOK_GRID_COLUMNS]),
         downloadTreeUri = this[DOWNLOAD_TREE],
     )
+
+    private fun decodeHostLatencies(entries: Set<String>): Map<String, Long> = buildMap {
+        entries.forEach { entry ->
+            val sep = entry.lastIndexOf('=')
+            if (sep <= 0 || sep >= entry.lastIndex) return@forEach
+            val host = entry.substring(0, sep)
+            val latency = entry.substring(sep + 1).toLongOrNull() ?: return@forEach
+            if (latency > 0L) put(host, latency)
+        }
+    }
 
     companion object {
         private val CUSTOM_HOSTS = stringSetPreferencesKey("custom_hosts")
         private val DISCOVERED_HOSTS = stringSetPreferencesKey("discovered_hosts")
         private val CURRENT_HOST = stringPreferencesKey("current_host")
         private val LOCKED_HOST = stringPreferencesKey("locked_host")
+        private val HOST_LATENCIES = stringSetPreferencesKey("host_latencies_ms")
         private val THEME_MODE = stringPreferencesKey("theme_mode")
         private val BOOK_GRID_COLUMNS = stringPreferencesKey("book_grid_columns")
         private val DOWNLOAD_TREE = stringPreferencesKey("download_tree")

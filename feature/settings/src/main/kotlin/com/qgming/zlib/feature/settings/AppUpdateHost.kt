@@ -49,7 +49,11 @@ fun AppUpdateHost(info: AboutAppInfo, viewModel: AboutViewModel) {
     }
     ZlibToastHost(messages)
     fun openInstaller() {
-        val file = viewModel.installerFile() ?: return
+        val file = viewModel.installerFile()
+        if (file == null) {
+            localMessages.trySend(installFailed)
+            return
+        }
         try {
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.updates", file)
             context.startActivity(Intent(Intent.ACTION_VIEW).apply {
@@ -60,6 +64,8 @@ fun AppUpdateHost(info: AboutAppInfo, viewModel: AboutViewModel) {
         } catch (_: ActivityNotFoundException) {
             localMessages.trySend(installFailed)
         } catch (_: IllegalArgumentException) {
+            localMessages.trySend(installFailed)
+        } catch (_: SecurityException) {
             localMessages.trySend(installFailed)
         }
     }
@@ -80,6 +86,8 @@ fun AppUpdateHost(info: AboutAppInfo, viewModel: AboutViewModel) {
             else try {
                 installPermission.launch(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:${context.packageName}".toUri()))
             } catch (_: ActivityNotFoundException) {
+                localMessages.trySend(installFailed)
+            } catch (_: SecurityException) {
                 localMessages.trySend(installFailed)
             }
         },

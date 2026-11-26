@@ -145,6 +145,20 @@ class BookPreviewViewModelTest {
         }
     }
 
+    @Test
+    fun `preview navigation allows standard https domains and blocks http ip localhost and custom ports`() {
+        assertEquals(true, isHttpsPreviewNavigation("https://reader.cdn.example/book/123"))
+        assertEquals(true, isHttpsPreviewNavigation("https://z-lib.gd:443/read/1"))
+        assertEquals(false, isHttpsPreviewNavigation("http://reader.cdn.example/book/123"))
+        assertEquals(false, isHttpsPreviewNavigation("https://127.0.0.1/read/1"))
+        assertEquals(false, isHttpsPreviewNavigation("https://localhost/read/1"))
+        assertEquals(false, isHttpsPreviewNavigation("https://sub.localhost/read/1"))
+        assertEquals(false, isHttpsPreviewNavigation("https://[::1]/read/1"))
+        assertEquals(false, isHttpsPreviewNavigation("https://reader.cdn.example:8443/read/1"))
+        assertEquals(false, isHttpsPreviewNavigation("https://user:pass@reader.cdn.example/read/1"))
+        assertEquals(false, isHttpsPreviewNavigation("javascript:alert(1)"))
+    }
+
     private fun withSessions(block: suspend TestScope.(SessionManager) -> Unit) = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)

@@ -18,22 +18,57 @@ import androidx.compose.ui.unit.dp
 import com.qgming.zlib.core.common.AppError
 import com.qgming.zlib.core.common.R as TextR
 import com.qgming.zlib.core.designsystem.ZlibBooklistChoice
-import com.qgming.zlib.core.designsystem.ZlibBooklistFormSubmit
 import com.qgming.zlib.core.designsystem.ZlibBooklistNameField
 import com.qgming.zlib.core.designsystem.ZlibBooklistSheetNote
 import com.qgming.zlib.core.designsystem.ZlibGlassBottomSheet
 import com.qgming.zlib.core.designsystem.ZlibLoading
-import com.qgming.zlib.core.designsystem.ZlibMenuAction
-import com.qgming.zlib.core.designsystem.ZlibNewBooklistAction
+import com.qgming.zlib.core.designsystem.ZlibLoadingStatus
+import com.qgming.zlib.core.designsystem.ZlibSheetAddButton
+import com.qgming.zlib.core.designsystem.ZlibSheetBackButton
+import com.qgming.zlib.core.designsystem.ZlibSheetCloseButton
+import com.qgming.zlib.core.designsystem.ZlibSheetConfirmButton
 import com.qgming.zlib.core.designsystem.ZlibStateCard
 import com.qgming.zlib.core.designsystem.userMessage
 
 @Composable
 internal fun BooklistPickerSheet(state: BooklistPickerState, viewModel: BooklistPickerViewModel) {
+    val busy = state.request != null
+    val canCreate = !busy && (state.needsVerification || state.title.isNotBlank())
+    val showCreateButton = !state.formOpen && state.request != PickerRequest.Load && state.loadError == null
     ZlibGlassBottomSheet(
         show = state.open,
         title = stringResource(if (state.formOpen) TextR.string.text_create_booklist else TextR.string.text_add_to_booklist),
         onDismiss = viewModel::dismiss,
+        startAction = {
+            if (state.formOpen) {
+                ZlibSheetBackButton(
+                    onClick = viewModel::backToLists,
+                    enabled = !busy,
+                    description = stringResource(TextR.string.text_back_to_booklists),
+                )
+            } else {
+                ZlibSheetCloseButton(onClick = viewModel::dismiss)
+            }
+        },
+        endAction = when {
+            state.formOpen -> ({
+                ZlibSheetConfirmButton(
+                    onClick = if (state.needsVerification) viewModel::recheck else viewModel::create,
+                    enabled = canCreate,
+                    description = stringResource(
+                        if (state.needsVerification) TextR.string.text_booklist_recheck else TextR.string.text_create_and_add,
+                    ),
+                )
+            })
+            showCreateButton -> ({
+                ZlibSheetAddButton(
+                    onClick = viewModel::showForm,
+                    enabled = !busy,
+                    description = stringResource(TextR.string.text_create_booklist),
+                )
+            })
+            else -> null
+        },
     ) {
         if (state.open) {
             when {
@@ -62,9 +97,6 @@ private fun BooklistChoices(state: BooklistPickerState, viewModel: BooklistPicke
         state = listState,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item(key = "new-booklist") {
-            ZlibNewBooklistAction(enabled = state.request == null, onClick = viewModel::showForm)
-        }
         if (state.lists.isEmpty()) {
             item(key = "empty-booklists") { ZlibBooklistSheetNote(stringResource(TextR.string.text_no_booklists)) }
         }
@@ -72,8 +104,9 @@ private fun BooklistChoices(state: BooklistPickerState, viewModel: BooklistPicke
             ZlibBooklistChoice(
                 membership = list,
                 adding = list.booklistId == state.addingList,
+                removing = list.booklistId == state.removingList,
                 enabled = state.request == null,
-                onClick = { viewModel.add(list.booklistId) },
+                onClick = { viewModel.toggle(list.booklistId) },
             )
         }
     }
@@ -84,24 +117,17 @@ private fun CreateBooklistForm(state: BooklistPickerState, viewModel: BooklistPi
     val busy = state.request != null
     Column(
         Modifier.fillMaxWidth().heightIn(max = 400.dp).verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         ZlibBooklistNameField(state.title, enabled = !busy && !state.needsVerification, onNameChange = viewModel::editTitle)
         state.createError?.let { ZlibBooklistSheetNote(it.userMessage(), isError = true) }
         if (state.needsVerification && !busy) {
             ZlibBooklistSheetNote(stringResource(TextR.string.text_booklist_create_unconfirmed), isError = true)
         }
-        val label = when {
-            state.request == PickerRequest.Create -> TextR.string.text_booklist_create_in_progress
-            state.request == PickerRequest.Verify -> TextR.string.text_booklist_check_in_progress
-            state.needsVerification -> TextR.string.text_booklist_recheck
-            else -> TextR.string.text_create_and_add
+        when (state.request) {
+            PickerRequest.Create -> ZlibLoadingStatus(stringResource(TextR.string.text_booklist_create_in_progress))
+            PickerRequest.Verify -> ZlibLoadingStatus(stringResource(TextR.string.text_booklist_check_in_progress))
+            else -> Unit
         }
-        ZlibBooklistFormSubmit(
-            label = stringResource(label),
-            enabled = !busy && (state.needsVerification || state.title.isNotBlank()),
-            onClick = if (state.needsVerification) viewModel::recheck else viewModel::create,
-        )
-        ZlibMenuAction(stringResource(TextR.string.text_back_to_booklists), enabled = !busy, onClick = viewModel::backToLists)
     }
 }

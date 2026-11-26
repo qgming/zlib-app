@@ -39,21 +39,25 @@ class SessionManager @Inject constructor(private val store: SessionStore, privat
     }
 
     suspend fun updateDomain(expected: Session, host: String) = lock.withLock {
-        if (current() == expected) {
+        if (current()?.sameCredentials(expected) == true) {
             persist(_vault.value.copy(entries = _vault.value.entries.map {
-                if (it.session == expected) it.copy(session = expected.withDomain(host)) else it
+                if (it.session.sameCredentials(expected)) it.copy(session = it.session.withDomain(host)) else it
             }))
         }
     }
 
     suspend fun updateProfile(expected: Session, profile: Account): Boolean = lock.withLock {
-        if (_vault.value.entries.none { it.session == expected } || profile.id != expected.remixUserId) return@withLock false
-        persist(_vault.value.copy(entries = _vault.value.entries.map { if (it.session == expected) it.copy(profile = profile, expired = false) else it }))
+        if (_vault.value.entries.none { it.session.sameCredentials(expected) } || profile.id != expected.remixUserId) return@withLock false
+        persist(_vault.value.copy(entries = _vault.value.entries.map {
+            if (it.session.sameCredentials(expected)) it.copy(profile = profile, expired = false) else it
+        }))
         true
     }
 
     suspend fun activate(id: String, host: String? = null, expected: Session? = current()): Boolean = lock.withLock {
-        if (current() != expected) return@withLock false
+        val currentSession = current()
+        val sameExpected = if (expected == null) currentSession == null else currentSession?.sameCredentials(expected) == true
+        if (!sameExpected) return@withLock false
         val entry = _vault.value.entries.firstOrNull { it.session.remixUserId == id && !it.expired } ?: return@withLock false
         persist(_vault.value.copy(activeId = id, entries = _vault.value.entries.map {
             if (it === entry && host != null) it.copy(session = it.session.withDomain(host)) else it
@@ -62,12 +66,15 @@ class SessionManager @Inject constructor(private val store: SessionStore, privat
     }
 
     suspend fun expire(expected: Session) = lock.withLock {
-        if (_vault.value.entries.none { it.session == expected }) return@withLock
+        if (_vault.value.entries.none { it.session.sameCredentials(expected) }) return@withLock
         persist(_vault.value.copy(
-            activeId = _vault.value.activeId.takeUnless { current() == expected },
-            entries = _vault.value.entries.map { if (it.session == expected) it.copy(expired = true) else it },
+            activeId = _vault.value.activeId.takeUnless { current()?.sameCredentials(expected) == true },
+            entries = _vault.value.entries.map { if (it.session.sameCredentials(expected)) it.copy(expired = true) else it },
         ))
     }
+
+    private fun Session.sameCredentials(other: Session): Boolean =
+        remixUserId == other.remixUserId && remixUserKey == other.remixUserKey
 
     suspend fun remove(id: String) = lock.withLock {
         val rows = _vault.value.entries.filterNot { it.session.remixUserId == id }

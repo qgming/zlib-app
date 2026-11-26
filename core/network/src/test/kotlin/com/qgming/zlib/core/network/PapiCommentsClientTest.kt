@@ -95,6 +95,25 @@ class PapiCommentsClientTest {
         assertEquals(2, server.requestCount)
     }
 
+    @Test
+    fun `text html content type carrying valid comments JSON parses cleanly`() = withServer { server, client ->
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "text/html; charset=UTF-8")
+                .setBody("""{"success":1,"commentsDisabled":false,"comments":[{"id":1,"text":"Hello"}]}"""),
+        )
+        val page = assertIs<AppResult.Success<BookCommentsPage>>(client.comments(session, "321", 0)).value
+        assertEquals(listOf("1"), page.comments.map(BookComment::id))
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "text/html; charset=UTF-8")
+                .setBody("<!doctype html><html><body>Just a moment...</body></html>"),
+        )
+        assertEquals(AppResult.Failure(AppError.DomainBlocked(DomainStatus.CHALLENGED)), client.comments(session, "321", 0))
+    }
+
     private fun withServer(block: suspend (MockWebServer, PapiCommentsClient) -> Unit) = runBlocking {
         MockWebServer().use { server ->
             val http = OkHttpClient.Builder().addInterceptor { chain ->
