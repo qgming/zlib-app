@@ -128,7 +128,7 @@ class DownloadEngine @Inject constructor(
         val resume = representation?.takeIf { offset > 0 }?.let { ResumeDownload(offset, it) }
 
         val opened = when (val opened = openFileResponse(item, resume, session)) {
-            is AppResult.Failure -> return failed(opened.error, codeFor(opened.error, DownloadCodes.INVALID))
+            is AppResult.Failure -> return failed(opened.error, codeFor(opened.error, DownloadCodes.INVALID), "download_link")
             is AppResult.Success -> opened.value
         }
 
@@ -152,10 +152,10 @@ class DownloadEngine @Inject constructor(
 
             val contentType = resp.header("Content-Type").orEmpty().lowercase()
             if (contentType.contains("text/html") || contentType.contains("json")) {
-                return failed(AppError.Parse(appText(TextR.string.text_the_download_returned_a_web_page_switch_domains_and_retry)), DownloadCodes.INVALID)
+                return failed(AppError.Parse(appText(TextR.string.text_the_download_returned_a_web_page_switch_domains_and_retry)), DownloadCodes.INVALID, "response_content_type")
             }
             if (resp.header("Content-Encoding")?.equals("identity", ignoreCase = true) == false) {
-                return failed(AppError.Parse(appText(TextR.string.text_the_download_is_not_a_valid_book_file)), DownloadCodes.INVALID)
+                return failed(AppError.Parse(appText(TextR.string.text_the_download_is_not_a_valid_book_file)), DownloadCodes.INVALID, "response_encoding")
             }
 
             val suggestedName = DownloadFileNames.finalName(
@@ -173,7 +173,7 @@ class DownloadEngine @Inject constructor(
                 contentType = contentType,
             )
             if (check is DownloadCheck.Invalid) {
-                return failed(AppError.Parse(check.reason), DownloadCodes.RANGE)
+                return failed(AppError.Parse(check.reason), DownloadCodes.RANGE, "response_range")
             }
             val append = opened.offset > 0 && check is DownloadCheck.Append
             if (!append && resp.code != 200) {
@@ -190,6 +190,7 @@ class DownloadEngine @Inject constructor(
                     return failed(
                         AppError.Server(resp.code, appText(TextR.string.text_the_download_is_not_a_valid_book_file)),
                         DownloadCodes.INVALID,
+                        "file_signature",
                     )
                 }
             }
@@ -278,16 +279,17 @@ class DownloadEngine @Inject constructor(
                 is CompletionCheck.Mismatch -> return failed(
                     AppError.Parse(appText(TextR.string.text_download_size_does_not_match_the_response_please_retry)),
                     DownloadCodes.INVALID,
+                    "transfer_length",
                 )
             }
 
             val total = expectedTotal ?: (progressBase + sessionWritten)
             val actualSize = readStatSize(part)?.takeIf { it >= 0 }
             if (actualSize != null && actualSize != total) {
-                return failed(AppError.Parse(appText(TextR.string.text_actual_file_size_does_not_match_the_download_please_retry)), DownloadCodes.INVALID)
+                return failed(AppError.Parse(appText(TextR.string.text_actual_file_size_does_not_match_the_download_please_retry)), DownloadCodes.INVALID, "stored_length")
             }
             val sha256 = fileSha256(publicationFiles(treeUri).read(partUri), total)
-                ?: return failed(AppError.Parse(appText(TextR.string.text_actual_file_size_does_not_match_the_download_please_retry)), DownloadCodes.INVALID)
+                ?: return failed(AppError.Parse(appText(TextR.string.text_actual_file_size_does_not_match_the_download_please_retry)), DownloadCodes.INVALID, "stored_read_length")
             val targetName = publication.availableName(suggestedName)
             val pending = PendingDownloadPublication(item.id, item.createdAt, treeUri, partUri, targetName, total, sha256)
             journal.update(pending)
@@ -319,12 +321,18 @@ class DownloadEngine @Inject constructor(
                     ?: return invalidLink()
                 return openAnonymousFile(target, resume)
             }
-            if (response.header("Content-Type").orEmpty().contains("json", ignoreCase = true)) {
-                val body = response.use { errorText(it) }
-                val link = if (response.code == 200) DownloadLinkParser.extract(body) else null
-                if (link == null) return AppResult.Failure(downloadHttpError(response.code, eapi = true, body = body))
-                val target = safeLink(response.request.url, link) ?: return invalidLink()
-                return openAnonymousFile(target, resume)
+            val link = try {
+                DownloadLinkParser.fromResponse(response)
+            } catch (t: Throwable) {
+                response.close()
+                throw t
+            }
+            if (link != null) {
+                response.close()
+                return when (link) {
+                    is AppResult.Failure -> link
+                    is AppResult.Success -> openAnonymousFile(link.value, resume)
+                }
             }
             AppResult.Success(first)
         } catch (io: IOException) {
@@ -478,8 +486,10 @@ class DownloadEngine @Inject constructor(
             .build()
     }
 
-    private fun failed(error: AppError, code: String): DownloadOutcome =
-        DownloadOutcome.Failed(error, code)
+    private fun failed(error: AppError, code: String, reason: String? = null): DownloadOutcome {
+        if (reason != null) SafeLog.w("Download", "rejected code=$code reason=$reason")
+        return DownloadOutcome.Failed(error, code)
+    }
 
     companion object {
         private const val MIME = "application/octet-stream"

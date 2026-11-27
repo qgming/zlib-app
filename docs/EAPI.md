@@ -165,6 +165,7 @@ GET /eapi/book/{id}/{hash}/file
   {"success":1,"file":{"downloadLink":"https://cdn.../book.epub?token=...","description":"","author":"","extension":"epub","allowDownload":true}}
   ```
   客户端必须先解析 `file.downloadLink`，再对 CDN 地址发 GET；`allowDownload=false` 或无链接视为失败。不要记录/持久化带签名的完整 URL。
+- `/file` 的 JSON 识别以有界正文为准，不依赖 `Content-Type`（兼容误标 `text/html`、`application/octet-stream` 或缺失响应头）；最多探测 64 KiB 协议正文，不消耗直接返回的文件流。有效错误 envelope 仍先映射配额／会话错误，非成功 HTTP 状态不使用其中的链接；续传的 206 片段不按 JSON 协议解析。此兼容行为由 MockWebServer 回归验证，不代表已采集本次用户登录态的错误响应。
 - 文件名优先 `Content-Disposition: filename=...`，其次 URL 末段；清洗 `../`、控制字符、Windows 非法字符。
 - 只有确认是同一资源且有强验证器时才发送 `Range: bytes=<written>-` 和 `If-Range`；206 还须验证匹配的验证器、范围及长度，200 从零写入。没有可信验证器的旧片段不能拼接（ADR-103）。
 - 错误：4xx 不重试；网络/502/503/504 指数退避最多 3 次；`daily limit` 不重试。
