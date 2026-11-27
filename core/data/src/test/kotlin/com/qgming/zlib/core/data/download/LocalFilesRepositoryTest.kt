@@ -2,12 +2,16 @@ package com.qgming.zlib.core.data.download
 
 import com.qgming.zlib.core.common.AppDispatchers
 import com.qgming.zlib.core.common.AppResult
+import com.qgming.zlib.core.common.AppError
+import com.qgming.zlib.core.common.appText
+import com.qgming.zlib.core.common.R as TextR
 import com.qgming.zlib.core.data.settings.AppSettings
 import com.qgming.zlib.core.data.settings.SettingsStore
 import com.qgming.zlib.core.model.Book
 import com.qgming.zlib.core.model.BookGridColumns
 import com.qgming.zlib.core.model.EbookFiles
 import com.qgming.zlib.core.model.LocalFile
+import com.qgming.zlib.core.model.LocalFileMetadata
 import com.qgming.zlib.core.model.ThemeMode
 import java.io.File
 import java.nio.file.Files
@@ -19,6 +23,8 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -200,8 +206,132 @@ class LocalFilesRepositoryTest {
         assertEquals("application/pdf", EbookFiles.mimeType("PDF"))
     }
 
+    @Test
+    fun `plain files appear before slow EPUB metadata and embedded display never invents a cloud book`() = runTest {
+        val metadata = FakeMetadataReader()
+        withFiles(metadata = metadata) { store, _, _, _, repository ->
+            store.files = listOf(file("unknown.epub"), file("plain.pdf").copy(extension = "pdf"))
+            val states = mutableListOf<LocalFilesState>()
+            backgroundScope.launch { repository.observeFiles().collect { states += it } }
+            runCurrent()
+            assertEquals(listOf("unknown", "plain"), states.last().files.map { it.title })
+            assertTrue(states.last().files.all { it.book == null })
+            assertEquals(1, metadata.reads)
+            // Polling the unchanged directory must not restart a slow provider read.
+            advanceTimeBy(3_001)
+            runCurrent()
+            assertEquals(1, metadata.reads)
+            assertEquals(0, metadata.cancelled)
+            metadata.gate.complete(Unit)
+            runCurrent()
+            val epub = states.last().files.first()
+            assertEquals("Embedded title", epub.title)
+            assertEquals("Embedded author", epub.authors)
+            assertEquals("file:///private/cover.webp", epub.coverUrl)
+            assertNull(epub.book)
+            assertNull(states.last().files.last().metadata)
+            advanceTimeBy(6_001)
+            runCurrent()
+            assertEquals(1, metadata.reads)
+            repository.refresh(userInitiated = true)
+            runCurrent()
+            assertEquals(1, metadata.invalidations)
+            assertEquals(2, metadata.reads)
+        }
+    }
+
+    @Test
+    fun `leaving local page cancels pending EPUB reads and a different directory cannot receive old metadata`() = runTest {
+        val metadata = FakeMetadataReader()
+        withFiles(metadata = metadata) { store, settings, _, _, repository ->
+            store.files = listOf(file("slow.epub"))
+            var state = LocalFilesState()
+            val collection = backgroundScope.launch { repository.observeFiles().collect { state = it } }
+            runCurrent()
+            assertEquals(1, metadata.reads)
+            settings.value.value = AppSettings()
+            runCurrent()
+            assertEquals(1, metadata.cancelled)
+            assertNull(state.treeUri)
+            assertTrue(state.files.isEmpty())
+            metadata.gate.complete(Unit)
+            runCurrent()
+            assertTrue(state.files.isEmpty())
+            collection.cancel()
+        }
+    }
+
+    @Test
+    fun `completed files use exact URI checks and missing or vanished provider documents have requested feedback`() = runTest {
+        withFiles { store, _, _, _, repository ->
+            val book = Book("7", "hash", "Book title", extension = "epub", localUri = "actual.epub")
+            store.files = listOf(file("actual.epub"), file("other.epub"))
+            val success = assertIs<AppResult.Success<LocalFile>>(repository.readableDownloadedFile(book, "actual.epub"))
+            assertEquals("actual.epub", success.value.uri)
+            assertEquals(book, success.value.book)
+            assertEquals(0, store.scans)
+            store.files = listOf(file("other.epub"))
+            val missing = assertIs<AppResult.Failure>(repository.readableDownloadedFile(book, "actual.epub"))
+            assertEquals(appText(TextR.string.text_local_file_not_found_may_have_been_deleted), assertIs<AppError.Storage>(missing.error).cause.message)
+            store.files = listOf(file("actual.epub"))
+            store.readFailure = java.io.FileNotFoundException("provider path must not leak")
+            val vanished = assertIs<AppResult.Failure>(repository.readable(file("actual.epub")))
+            assertEquals(appText(TextR.string.text_local_file_not_found_may_have_been_deleted), assertIs<AppError.Storage>(vanished.error).cause.message)
+            store.readFailure = SecurityException("permission revoked")
+            val denied = assertIs<AppResult.Failure>(repository.readable(file("actual.epub")))
+            assertEquals(appText(TextR.string.text_cannot_read_the_local_file_grant_folder_access_again_in_settings), assertIs<AppError.Storage>(denied.error).cause.message)
+        }
+    }
+
+    @Test
+    fun `large unchanged directories retain display metadata even after bounded reader cache eviction`() = runTest {
+        val metadata = FakeMetadataReader().apply { maxEntries = 1024; gate.complete(Unit) }
+        withFiles(metadata = metadata) { store, _, _, _, repository ->
+            store.files = (0..1024).map { file("book-$it.epub") }
+            var state = LocalFilesState()
+            backgroundScope.launch { repository.observeFiles().collect { state = it } }
+            runCurrent()
+            assertEquals(1025, metadata.reads)
+            assertEquals(1025, state.files.count { it.metadata != null })
+            advanceTimeBy(9_001)
+            runCurrent()
+            assertEquals(1025, metadata.reads)
+            assertEquals(1025, state.files.count { it.metadata != null })
+        }
+    }
+
+    @Test
+    fun `automatic events during a scan cannot swallow an explicit metadata refresh`() = runTest {
+        val metadata = FakeMetadataReader().apply { gate.complete(Unit) }
+        withFiles(metadata = metadata) { store, _, known, _, repository ->
+            store.files = listOf(file("external.epub"))
+            val scanning = CompletableDeferred<Unit>()
+            store.scanGate = scanning
+            backgroundScope.launch { repository.observeFiles().collect() }
+            runCurrent()
+            repository.refresh(userInitiated = true)
+            runCurrent()
+            known.value = listOf(Book("1", "hash", "Room changed", localUri = "elsewhere.pdf"))
+            runCurrent()
+            scanning.complete(Unit)
+            runCurrent()
+            assertEquals(1, metadata.invalidations)
+        }
+    }
+
+    @Test
+    fun `switching directory while testing readability rejects an already resolved document`() = runTest {
+        withFiles { store, settings, _, _, repository ->
+            store.files = listOf(file("old.epub"))
+            store.onRead = { settings.value.value = AppSettings(downloadTreeUri = "other") }
+            val failure = assertIs<AppResult.Failure>(repository.readable(file("old.epub")))
+            assertEquals(appText(TextR.string.text_the_download_folder_changed_select_the_file_again), assertIs<AppError.Storage>(failure.error).cause.message)
+        }
+    }
+
     private suspend fun TestScope.withFiles(
         pending: Flow<List<PendingDownloadPublication>> = MutableStateFlow(emptyList()),
+        metadata: LocalFileMetadataReader = NoLocalFileMetadataReader,
         block: suspend TestScope.(FakeStore, MemorySettings, MutableStateFlow<List<Book>>, MutableList<String>, LocalFilesRepository) -> Unit,
     ) {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -214,7 +344,7 @@ class LocalFilesRepositoryTest {
         val settings = MemorySettings()
         val known = MutableStateFlow<List<Book>>(emptyList())
         val cleared = mutableListOf<String>()
-        block(store, settings, known, cleared, LocalFilesRepository(store, settings, known, { cleared += it }, dispatchers, pending))
+        block(store, settings, known, cleared, LocalFilesRepository(store, settings, known, { cleared += it }, dispatchers, pending, metadata))
     }
 
     private fun file(uri: String) = LocalFile("tree", uri, uri.substringAfterLast('/'), "epub")
@@ -222,6 +352,9 @@ class LocalFilesRepositoryTest {
     private class FakeStore : LocalFileStore {
         var files = emptyList<LocalFile>()
         var failure: Exception? = null
+        var readFailure: Exception? = null
+        var scanGate: CompletableDeferred<Unit>? = null
+        var onRead: () -> Unit = {}
         var refuseDelete = false
         var keepAfterDelete = false
         var scans = 0
@@ -230,6 +363,7 @@ class LocalFilesRepositoryTest {
         val invalidated = MutableSharedFlow<Unit>(extraBufferCapacity = 8)
         override suspend fun scan(treeUri: String): List<LocalFile> {
             scans++
+            scanGate?.await()
             failure?.let { throw it }
             return files
         }
@@ -239,13 +373,45 @@ class LocalFilesRepositoryTest {
         }
         override suspend fun isDirectChild(file: LocalFile) = '/' !in file.uri
         override fun changes(treeUri: String): Flow<Unit> = invalidated
-        override fun isReadable(file: LocalFile) = files.any { it.uri == file.uri }
+        override fun isReadable(file: LocalFile): Boolean {
+            onRead()
+            readFailure?.let { throw it }
+            return files.any { it.uri == file.uri }
+        }
         override fun delete(file: LocalFile): Boolean {
             deletes++
             if (refuseDelete) return false
             actual?.let { if (!it.delete()) return false }
             if (!keepAfterDelete) files = files.filterNot { it.uri == file.uri }
             return true
+        }
+    }
+
+    private class FakeMetadataReader : LocalFileMetadataReader {
+        val gate = CompletableDeferred<Unit>()
+        var reads = 0
+        var cancelled = 0
+        var invalidations = 0
+        var maxEntries = Int.MAX_VALUE
+        val values = mutableMapOf<LocalFileVersion, LocalFileMetadata>()
+        override fun cached(file: LocalFile) = values[LocalFileVersion(file)]
+        override suspend fun read(file: LocalFile): LocalFileMetadata {
+            reads++
+            try {
+                gate.await()
+            } catch (cancellation: CancellationException) {
+                cancelled++
+                throw cancellation
+            }
+            return LocalFileMetadata("Embedded title", "Embedded author", "file:///private/cover.webp").also {
+                values[LocalFileVersion(file)] = it
+                while (values.size > maxEntries) values.remove(values.keys.first())
+            }
+        }
+        override fun invalidate(treeUri: String) { invalidations++; values.clear() }
+        override fun retain(treeUri: String, files: List<LocalFile>) {
+            val versions = files.map(::LocalFileVersion)
+            values.keys.removeAll { it.treeUri != treeUri || it !in versions }
         }
     }
 

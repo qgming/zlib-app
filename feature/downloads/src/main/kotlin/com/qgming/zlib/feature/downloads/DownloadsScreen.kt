@@ -21,10 +21,15 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LifecycleStartEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.qgming.zlib.core.designsystem.ZlibCard
 import com.qgming.zlib.core.designsystem.ZlibCardList
 import com.qgming.zlib.core.designsystem.ZlibDownloadAction
@@ -37,12 +42,17 @@ import com.qgming.zlib.core.designsystem.ZlibSectionTitle
 import com.qgming.zlib.core.designsystem.ZlibStateCard
 import com.qgming.zlib.core.designsystem.ZlibGlassBottomSheet
 import com.qgming.zlib.core.designsystem.ZlibMenuAction
+import com.qgming.zlib.core.designsystem.ZlibToastHost
+import com.qgming.zlib.core.designsystem.launchLocalFile
 import com.qgming.zlib.core.model.DownloadItem
 import com.qgming.zlib.core.model.DownloadState
 import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 
 @Composable
 fun DownloadsScreen(
@@ -53,25 +63,37 @@ fun DownloadsScreen(
     viewModel: DownloadsViewModel = hiltViewModel(),
 ) {
     val queue by viewModel.queue.collectAsStateWithLifecycle()
+    val feedbackGeneration by viewModel.feedbackGeneration.collectAsStateWithLifecycle()
+    val notices = remember(viewModel, feedbackGeneration) {
+        viewModel.events.filter { it.generation == feedbackGeneration && viewModel.canShowNotice(it) }
+            .onEach(viewModel::consumeNotice).map { it.message }
+    }
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val loadedQueue = queue
-    var notice by remember { mutableStateOf<String?>(null) }
     var failureId by remember { mutableStateOf<String?>(null) }
     val failure = loadedQueue?.firstOrNull { it.id == failureId && it.state == DownloadState.FAILED }
     val directoryPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         uri?.let(viewModel::setDirectory)
     }
-    LaunchedEffect(viewModel) {
-        viewModel.events.collect { notice = it }
+    LifecycleStartEffect(viewModel) {
+        viewModel.show()
+        onStopOrDispose { viewModel.hide() }
     }
+    LaunchedEffect(viewModel, lifecycleOwner, context, feedbackGeneration) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            viewModel.fileIntents.collect { event ->
+                if (viewModel.canLaunch(event)) {
+                    launchLocalFile(context, event.file)?.let { viewModel.fileLaunchFailed(it, event.generation) }
+                }
+            }
+        }
+    }
+    ZlibToastHost(notices, key = feedbackGeneration)
     val (records, tasks) = loadedQueue.orEmpty().partition { it.state == DownloadState.COMPLETED }
 
     ZlibPage(title = stringResource(TextR.string.text_download_manager), onBack = onBack, actions = { ZlibDownloadHistoryButton(onOpenHistory) }) { padding ->
         ZlibCardList(padding) {
-            notice?.let { message ->
-                item(key = "download-notice") {
-                    ZlibStateCard(appText(TextR.string.text_download_notice), message, actionLabel = appText(TextR.string.text_ok), onAction = { notice = null })
-                }
-            }
             if (loadedQueue == null) {
                 item(key = "download-loading") { ZlibLoading() }
             } else if (loadedQueue.isEmpty()) {
@@ -112,7 +134,10 @@ private fun DownloadRow(
 ) {
     val progress = item.progress
     val waiting = item.state == DownloadState.RESOLVING || (item.state == DownloadState.DOWNLOADING && progress == null)
-    ZlibCard(cornerRadius = 24.dp) {
+    ZlibCard(
+        cornerRadius = 24.dp,
+        onClick = if (item.state == DownloadState.COMPLETED) ({ viewModel.openCompleted(item.id) }) else null,
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(item.title.ifBlank { item.fileName }, style = MiuixTheme.textStyles.body2, maxLines = 2, overflow = TextOverflow.Ellipsis)

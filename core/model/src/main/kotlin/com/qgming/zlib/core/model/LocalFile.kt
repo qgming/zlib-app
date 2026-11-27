@@ -9,9 +9,16 @@ data class LocalFile(
     val sizeBytes: Long? = null,
     val modifiedAt: Long = 0,
     val book: Book? = null,
+    val metadata: LocalFileMetadata? = null,
 ) {
-    val title: String get() = book?.title?.takeIf(String::isNotBlank) ?: name.substringBeforeLast('.', name)
+    val title: String get() = metadata?.title?.takeIf(String::isNotBlank)
+        ?: book?.title?.takeIf(String::isNotBlank) ?: name.substringBeforeLast('.', name)
+    val authors: String get() = metadata?.authors?.takeIf(String::isNotBlank) ?: book?.authors.orEmpty()
+    val coverUrl: String get() = metadata?.coverUri?.takeIf(String::isNotBlank) ?: book?.coverUrl.orEmpty()
 }
+
+/** Read-only display information from the actual file, never a substitute cloud book identity. */
+data class LocalFileMetadata(val title: String? = null, val authors: String? = null, val coverUri: String? = null)
 
 object EbookFiles {
     val extensions = setOf("epub", "pdf", "mobi", "azw", "azw3", "fb2", "djvu", "djv", "txt", "rtf", "lit", "cbz", "cbr", "doc", "docx", "chm")

@@ -14,11 +14,13 @@ import com.qgming.zlib.core.common.AppError
 import com.qgming.zlib.core.common.AppResult
 import com.qgming.zlib.core.common.FileNames
 import com.qgming.zlib.core.common.SafeLog
+import com.qgming.zlib.core.data.settings.SettingsStore
 import com.qgming.zlib.core.database.DownloadEntity
 import com.qgming.zlib.core.database.DownloadStates
 import com.qgming.zlib.core.database.ZlibDatabase
 import com.qgming.zlib.core.model.Book
 import com.qgming.zlib.core.model.DownloadItem
+import com.qgming.zlib.core.model.LocalFile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -47,6 +49,8 @@ class DownloadRepository @Inject constructor(
     private val runner: DownloadRunner,
     private val dispatchers: AppDispatchers,
     private val journal: DownloadJournal,
+    private val localFiles: LocalFilesRepository,
+    private val settings: SettingsStore,
 ) {
     private val downloads = database.downloadDao()
     private val books = database.bookDao()
@@ -138,6 +142,17 @@ class DownloadRepository @Inject constructor(
     suspend fun findExistingDownload(book: Book): ExistingDownload? = withContext(dispatchers.io) {
         directoryStore.ensureLoaded()
         findExistingDownloadLocked(book)
+    }
+
+    /** Opens only the current completed task's exact local file, using the Local tab's SAF checks. */
+    suspend fun completedFile(id: String): AppResult<LocalFile> = withContext(dispatchers.io) {
+        resolveCompletedDownload(
+            id = id,
+            taskLookup = downloads::byId,
+            bookLookup = { bookId -> books.byId(bookId)?.toBook() },
+            currentTree = { settings.read().downloadTreeUri },
+            readable = localFiles::readableDownloadedFile,
+        )
     }
 
     private suspend fun findExistingDownloadLocked(book: Book): ExistingDownload? {

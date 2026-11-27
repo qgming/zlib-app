@@ -1,14 +1,8 @@
 package com.qgming.zlib.feature.library
 
 import androidx.compose.ui.res.stringResource
-import com.qgming.zlib.core.common.appText
 import com.qgming.zlib.core.common.R as TextR
 
-import android.content.ActivityNotFoundException
-import android.content.ClipData
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -16,11 +10,16 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LifecycleStartEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.qgming.zlib.core.designsystem.ZlibBookGrid
 import com.qgming.zlib.core.designsystem.ZlibConfirmDialog
 import com.qgming.zlib.core.designsystem.ZlibGlassBottomSheet
@@ -30,28 +29,32 @@ import com.qgming.zlib.core.designsystem.ZlibMenuAction
 import com.qgming.zlib.core.designsystem.ZlibStateCard
 import com.qgming.zlib.core.designsystem.ZlibToastHost
 import com.qgming.zlib.core.designsystem.fullWidthItem
-import com.qgming.zlib.core.designsystem.rememberZlibToastHostState
+import com.qgming.zlib.core.designsystem.launchLocalFile
 import com.qgming.zlib.core.designsystem.userMessage
-import com.qgming.zlib.core.model.EbookFiles
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 
 @Composable
 internal fun LocalFilesContent(padding: PaddingValues, viewModel: LocalFilesViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val action by viewModel.action.collectAsStateWithLifecycle()
-    // A directory change cancels a toast that belongs to the previous tree.
-    val toast = rememberZlibToastHostState(state.treeUri)
+    val feedbackGeneration by viewModel.feedbackGeneration.collectAsStateWithLifecycle()
+    val notices = remember(viewModel, feedbackGeneration) {
+        viewModel.events.filter { it.generation == feedbackGeneration && viewModel.canShowNotice(it) }.map { it.message }
+    }
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(viewModel) { viewModel.refresh() }
-    LaunchedEffect(viewModel, toast) { viewModel.events.collect { toast.showMessage(it) } }
-    LaunchedEffect(viewModel, context, toast) {
-        viewModel.fileIntents.collect { event ->
-            try {
-                launchFileIntent(context, event)
-            } catch (_: ActivityNotFoundException) {
-                toast.showMessage(if (event.share) appText(TextR.string.text_no_app_can_receive_this_file) else appText(TextR.string.text_no_app_can_open_this_format_please_install_a_reader))
-            } catch (_: SecurityException) {
-                toast.showMessage(appText(TextR.string.text_cannot_access_the_file_grant_folder_access_again_in_settings))
-                viewModel.refresh()
+    LifecycleStartEffect(viewModel) {
+        viewModel.show()
+        onStopOrDispose { viewModel.hide() }
+    }
+    LaunchedEffect(viewModel, context, lifecycleOwner, feedbackGeneration) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            viewModel.fileIntents.collect { event ->
+                if (viewModel.canLaunch(event)) {
+                    launchLocalFile(context, event.file, event.share)?.let { viewModel.fileLaunchFailed(it, event.generation) }
+                }
             }
         }
     }
@@ -61,7 +64,7 @@ internal fun LocalFilesContent(padding: PaddingValues, viewModel: LocalFilesView
             viewModel.dismissActions()
         }
     }
-    ZlibToastHost(toast)
+    ZlibToastHost(notices, key = feedbackGeneration)
 
     ZlibBookGrid(padding = padding, refreshing = state.refreshing, onRefresh = { viewModel.refresh(userInitiated = true) }) {
         when {
@@ -100,19 +103,4 @@ internal fun LocalFilesContent(padding: PaddingValues, viewModel: LocalFilesView
         onDismiss = viewModel::dismissActions, onConfirm = viewModel::delete,
         destructive = true, busy = action.busy,
     )
-}
-
-@Suppress("UseKtx") // Keep URI conversion on the Android API without a core-ktx dependency.
-private fun launchFileIntent(context: Context, event: LocalFileIntent) {
-    val file = event.file
-    val uri = Uri.parse(file.uri)
-    val intent = Intent(if (event.share) Intent.ACTION_SEND else Intent.ACTION_VIEW).apply {
-        if (event.share) {
-            type = EbookFiles.mimeType(file.extension)
-            putExtra(Intent.EXTRA_STREAM, uri)
-        } else setDataAndType(uri, EbookFiles.mimeType(file.extension))
-        clipData = ClipData.newRawUri(file.name, uri)
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    }
-    context.startActivity(if (event.share) Intent.createChooser(intent, appText(TextR.string.text_share, file.title)) else intent)
 }

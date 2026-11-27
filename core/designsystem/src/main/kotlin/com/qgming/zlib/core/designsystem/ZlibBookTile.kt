@@ -50,7 +50,7 @@ fun ZlibBookTile(
 @Composable
 fun ZlibLocalFileTile(file: LocalFile, onClick: () -> Unit, onLongClick: () -> Unit) {
     BookTile(
-        title = file.title, authors = file.book?.authors.orEmpty(), coverUrl = file.book?.coverUrl.orEmpty(),
+        title = file.title, authors = file.authors, coverUrl = file.coverUrl,
         onClickLabel = stringResource(TextR.string.text_open_local_file), onClick = onClick,
         onLongClickLabel = stringResource(TextR.string.text_file_actions), onLongClick = onLongClick,
     )
