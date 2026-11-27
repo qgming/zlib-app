@@ -417,3 +417,5 @@ APK 为 `app/build/release/zhishi-1.4.0-universal.apk`，5,202,010 字节，SHA-
 
 本轮发布构建未再次安装或操作设备；第 24/25 节中关于真实下载响应、Android 封面解码、不同 SAF Provider、第三方阅读器和应用内升级链路的验收边界继续保留，交由用户手动测试。
 
+全部源码已分步提交并推送 `origin/main`，构建源码提交为 `89ffb9a455935be37867cf0a59dbf8348c5913bc`，`v1.5.1` 标签指向该提交。正式 Release 于 2026-11-27 05:43:43 UTC（北京时间 13:43:43）公开，非草稿、非预发布并设为 Latest。草稿阶段已核对正文、三个附件名称、大小与 GitHub SHA-256；发布后匿名重新下载 APK、`SHA256SUMS.txt`、`v1.5.1.md` 均返回 HTTP 200，逐字节与本地一致，线上正文与 Markdown 完全一致。已有 GitHub 登录状态读取 latest 确认为 `v1.5.1`；匿名 latest API 返回 HTTP 403（rate limit exceeded，剩余额度 0），未将其标记为应用更新检查通过。
+

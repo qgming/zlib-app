@@ -284,7 +284,7 @@ ADR-054：图标源保存于 `app/artwork/zhishi.svg`，app 使用对应的 Andr
 
 ADR-070：更新日志与许可页共用设计系统 `ZlibExpandableText`，整行标题切换、正文向下展开且可复制，24dp 圆角和12dp间距。日志可比较的版本优先、按版本降序，其余标签按发布时间降序置后，按 tag 去重，仅最新一项默认展开；许可按依赖族展示离线来源与完整许可，默认全部收起，SharedView SDK单独说明发布方条款。各项展开状态由页面保存，滚动或旋转不覆盖手动选择；开源文本及来源记录见 `feature/settings/src/main/legal/README.md`。
 
-ADR-072/073/075/076/077/078/118：当前构建版本为1.5.1/code9，构建、发布资产和验证事实见 `RELEASING.md`。所有EAPI请求统一携带`source: android`，用于通过搜索端点的客户端来源校验；最近搜索以自动换行胶囊展示。设置外观组依次为主题模式、软件语言、网络格数；`ApplicationLanguages`以Android13+原生`LocaleManager.applicationLocales`为语言唯一持久来源，空列表跟随系统，zh-CN/en为显式选择，manifest声明localeConfig。系统配置重建Activity，Compose使用stringResource读取当前资源，非Compose的ViewModel事件和Repository错误通过core:common的AppText应用资源桥接；JVM默认表从同一XML构建生成。中文首页统一“发现”，英文Discover，内部路由与双击回顶不变。许可页直接显示项目及各依赖，移除介绍与单独Project attribution条目，根NOTICE仍在仓库维护。
+ADR-072/073/075/076/077/078/118：当前正式版为1.5.1/code9，构建、发布资产和验证事实见 `RELEASING.md`。所有EAPI请求统一携带`source: android`，用于通过搜索端点的客户端来源校验；最近搜索以自动换行胶囊展示。设置外观组依次为主题模式、软件语言、网络格数；`ApplicationLanguages`以Android13+原生`LocaleManager.applicationLocales`为语言唯一持久来源，空列表跟随系统，zh-CN/en为显式选择，manifest声明localeConfig。系统配置重建Activity，Compose使用stringResource读取当前资源，非Compose的ViewModel事件和Repository错误通过core:common的AppText应用资源桥接；JVM默认表从同一XML构建生成。中文首页统一“发现”，英文Discover，内部路由与双击回顶不变。许可页直接显示项目及各依赖，移除介绍与单独Project attribution条目，根NOTICE仍在仓库维护。
 
 ## 9. DI 与并发
 
