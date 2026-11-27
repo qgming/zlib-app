@@ -381,3 +381,39 @@ APK 为 `app/build/release/zhishi-1.4.0-universal.apk`，5,202,010 字节，SHA-
 - 已覆盖安装至连接真机 `4993375f`（`M332BF`），系统复核 `1.5.0` / `versionCode=8`；未自动操作应用内旧版到新版下载安装链路，线上更新下载与安装仍保留为后续用户实测项。
 - 源码提交 `6d6df48` 与标签 `v1.5.0` 已推送 `origin/main`；`v1.5.0` 正式 Release 于 2026-11-26 16:21:42 UTC（北京时间 2026-11-27 00:21:42）公开并设为 Latest，历史 Release `v1.0.0`–`v1.4.0` 正文同步替换为对应 Markdown；发布后匿名重新下载全部 3 份附件并比对 SHA-256 均与本地一致，无凭据 `releases/latest` API 返回 HTTP 200 且确认为 `v1.5.0`。
 
+## 24. 下载响应误判修复与搜索结果排版（2026-11-27）
+
+用户报告图书下载提示「文件校验失败，请重试」。排查发现该提示对应通用 `invalid`，包括协议响应、编码、文件头与落盘长度，并不单指最终文件的 SHA-256。原 `/file` 解析依赖 JSON MIME：正常 JSON 被标为 `text/html`、`application/octet-stream` 或缺失响应头时，未读取 `file.downloadLink`，随后被内容类型／文件头保护拒绝。已改为有界正文识别，合法协议对象先解析，后续仍使用独立无凭据客户端；原有 HTTPS、续传验证器、文件头、长度与交付校验继续生效。关键拒绝分支增加固定诊断原因，不记录正文、Cookie、签名链接或本机路径。
+
+新增 `DownloadLinkResponseTest` 的 10 项 MockWebServer 回归通过：误标／缺失 MIME、前导空白和 UTF-8 BOM、配额／登录错误、HTTP 503 禁跟链接、禁止下载／无链接／不安全 URL、相对链接、二进制与真实 HTML 正文不被消费、206 片段不按协议解释、直接返回的 RTF／TXT／无协议字段 JSON、超 64 KiB 协议体拒绝。测试使用合成正文，不访问真实账号。匿名核对文档内图书引用时，两个镜像返回无权限 JSON，其余连接失败，无法代表用户实际登录态响应；当前未连接真机，不能据此断言用户这次已在线复现相同原因。
+
+搜索结果按 ADR-119 在书名与作者间展示已有出版社文字，空白不占位；仅搜索使用 4dp／2dp 胶囊内边距、4dp 胶囊间距、2dp 图文间距及 14dp 图标，保留字号和自然换行。未为单纯间距增加实现镜像测试；实际屏宽、系统字号、长出版社及四项胶囊同排效果交由用户安装后手动验收。
+
+执行 `test lint :app:prepareReleaseAssets --offline --max-workers=1 --console=plain` 成功（8 分 23 秒）。当前 13 个模块共 70 个测试套件、470 项单测，失败、错误、跳过均为 0；13 份 lint 报告无 error，保留 6 条既有 warning（`EmptySuperCall`、4 条 `UnusedResources` 与 `ModifierParameter`）。正式包启用 R8 与资源裁剪，没有生成调试或独立架构 APK。
+
+本地 `app/build/release/zhishi-1.5.0-universal.apk` 为 5,651,190 字节，SHA-256 `6a562c450e8b7ff17c70244431df9447b5ec84208710cec081d5c1a6851586e6`，与 `SHA256SUMS.txt` 一致。`apksigner` 核对原证书 SHA-256 `d964fb1414f44fc8eb0f4a3c4835a5c8fb70e4527e3f039bc70b0e1ccaca032e`；包名 `com.qgming.zlib`、`1.5.0`／`versionCode=8`、minSdk 33、targetSdk 37、非 debuggable，四种 ABI 各自两份原生库、16 KB ZIP 对齐及六份离线许可字节均通过。按用户要求交付安装包供手动测试，本轮未安装／操作设备、未使用模拟器、未公开发布，同版本候选不替换线上 `v1.5.0` 资产。
+
+## 25. 已完成记录外部打开与本机 EPUB 识别（2026-11-27）
+
+按 ADR-120，下载管理已完成卡片与本机共用外部打开逻辑。打开前以精确任务引用和当前 SAF 文档核对关联、目录、可读性及待交付状态；打开后不把任务记录当成文件存在的依据。缺失文件返回“文件没有找到，可能已被删除”短 Toast，权限和目录变化保持各自提示，X 仍只移除记录。页面退出、目录／会话变化会取消在途打开并拒绝消费旧意图；本机扫描没有新增常驻订阅。
+
+本机 EPUB 先显示实际文件，再渐进补充容器指定 OPF 中的书名、作者和 EPUB 2/3 栅格封面；逐字段缺失时使用已有图书资料／文件名／经典占位封面。原文件只读，封面尺寸检查和采样解码后保存在应用私有缓存，不新增网络请求、云端引用或 Room schema。损坏、加密、无内嵌栅格封面或超限文件保留列表项并回退显示；仅 SVG 封面暂不渲染。读取按 URI、大小和修改时间失效，显式刷新可重读无可靠时间戳的 Provider；超过 1024 项的目录保留已经展示的元信息，避免缓存淘汰后反复解析。
+
+新增及扩展的回归覆盖：精确 `id:hash`／URI 与任务关联竞争、缺文件／失权、切目录与待交付隔离；EPUB2/3、命名空间与编码相对路径、XXE／DOCTYPE、越界路径、畸形 ZIP/XML 与解压限额；缓存及文件变化、损坏封面保留标题、阻塞 Provider 在取消时关闭、临时副本清理、1025 本目录轮询不重读、自动事件不吞手动刷新；本机 ViewModel 离页／换目录旧事件不回放及删除完成不恢复旧面板。解析与缓存测试使用合成文件，未以这些测试替代 Android 图片解码及第三方阅读器的真实设备验收。
+
+执行 `test lint :app:prepareReleaseAssets --offline --max-workers=1 --console=plain` 成功（6 分 56 秒）。当前 13 个模块共 74 个测试套件、518 项单测，失败、错误、跳过均为 0；13 份 lint 报告无 error，保留与上轮相同的 6 条既有 warning。构建日志保存在本地 `build/local-books-verification.log`，正式包启用 R8 和资源裁剪。
+
+唯一正式通用包 `app/build/release/zhishi-1.5.0-universal.apk` 为 5,684,494 字节，SHA-256 `fa84fd6b29934c333d1f628fc172cd60ce90fe723008f9b21301107c4ab63642`，与 `SHA256SUMS.txt` 一致。`apksigner` 验证原证书 SHA-256 `d964fb1414f44fc8eb0f4a3c4835a5c8fb70e4527e3f039bc70b0e1ccaca032e`；包名 `com.qgming.zlib`、`1.5.0`／`versionCode=8`、minSdk 33、targetSdk 37、非 debuggable、四 ABI 各两份原生库、16 KB ZIP 对齐以及六份离线许可逐字节一致均通过。按用户最新要求只打包，不安装或操作真机，不使用模拟器，不提交或公开发布；由用户手动验收外部打开、缺文件提示、实际 EPUB 内嵌书名和封面，以及此前下载与搜索修复。
+
+上述候选随后按用户追加的安装指令覆盖安装至真机 `4993375f`（`M332BF`），ADB 返回 `Success`，系统复核 `1.5.0`／`versionCode=8`，`lastUpdateTime` 为 2026-11-27 13:31:13，未清除应用数据。仅确认安装成功，未自动操作应用或将下载、封面与第三方阅读器行为记为真机通过。
+
+## 26. 1.5.1 正式包与发布验证（2026-11-27）
+
+用户明确要求将当前修复设为 `1.5.1`、编写该版本日志、提交当前全部改动并发布 GitHub。构建版本递增至 `1.5.1`／`versionCode=9`，更新正文为 `releases/v1.5.1.md`，覆盖第 24/25 节的下载响应修复、搜索出版社与紧凑胶囊、已完成记录外部打开及本机 EPUB 识别。
+
+执行 `test lint :app:prepareReleaseAssets --offline --max-workers=1 --console=plain` 成功（3 分 45 秒），本地日志为 `build/release-1.5.1.log`。74 个套件共 518 项单测全部通过（0 失败／0 错误／0 跳过），13 份当前模块 lint 报告无 error，保留相同的 6 条既有 warning。正式包启用 R8 和资源裁剪，没有生成调试包或独立架构包。
+
+唯一正式通用包 `app/build/release/zhishi-1.5.1-universal.apk` 为 5,684,494 字节，SHA-256 `8b53d7f42fae02c0d6434aa86b459f9cf58bdcb3281ff4ee3f66e09fb5c5f55e`，与 `SHA256SUMS.txt` 一致。SDK 核对包名 `com.qgming.zlib`、`1.5.1`／`versionCode=9`、minSdk 33、targetSdk 37、非 debuggable；原证书 SHA-256 `d964fb1414f44fc8eb0f4a3c4835a5c8fb70e4527e3f039bc70b0e1ccaca032e`。四 ABI 各两份原生库完整，16 KB ZIP 对齐通过，六份离线许可与仓库原文字节一致。
+
+本轮发布构建未再次安装或操作设备；第 24/25 节中关于真实下载响应、Android 封面解码、不同 SAF Provider、第三方阅读器和应用内升级链路的验收边界继续保留，交由用户手动测试。
+
