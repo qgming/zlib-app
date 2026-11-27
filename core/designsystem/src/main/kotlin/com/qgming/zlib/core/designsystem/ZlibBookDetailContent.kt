@@ -113,6 +113,7 @@ fun ZlibBookMetadataChips(
     modifier: Modifier = Modifier.padding(top = 4.dp).widthIn(max = 520.dp).fillMaxWidth(),
     horizontalArrangement: Arrangement.Horizontal = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
     chipColor: Color = MiuixTheme.colorScheme.surfaceContainer,
+    compact: Boolean = false,
 ) {
     val locale = LocalConfiguration.current.locales[0]
     val chips = remember(book, locale) { book.detailChips(locale) }
@@ -122,7 +123,7 @@ fun ZlibBookMetadataChips(
     FlowRow(
         modifier = modifier,
         horizontalArrangement = horizontalArrangement,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp),
     ) {
         chips.forEach { chip ->
             val icons = MiuixIcons.Glass.Normal
@@ -137,14 +138,14 @@ fun ZlibBookMetadataChips(
                 modifier = Modifier.widthIn(max = 224.dp)
                     .background(chipColor, PillShape)
                     .clearAndSetSemantics { contentDescription = description }
-                    .padding(horizontal = 8.dp, vertical = 3.dp),
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    .padding(horizontal = if (compact) 4.dp else 8.dp, vertical = if (compact) 2.dp else 3.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    modifier = Modifier.size(15.dp),
+                    modifier = Modifier.size(if (compact) 14.dp else 15.dp),
                     tint = colors.onSurfaceVariantActions,
                 )
                 Text(

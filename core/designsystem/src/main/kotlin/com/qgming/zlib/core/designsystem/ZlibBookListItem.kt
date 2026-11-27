@@ -73,6 +73,16 @@ fun ZlibBookListItem(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                val publisher = book.publisher.trim()
+                if (publisher.isNotEmpty()) {
+                    Text(
+                        text = publisher,
+                        style = MiuixTheme.textStyles.footnote1,
+                        color = colors.onSurfaceVariantSummary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 if (book.authors.isNotBlank()) {
                     Text(
                         text = book.authors,
@@ -85,8 +95,9 @@ fun ZlibBookListItem(
                 ZlibBookMetadataChips(
                     book = book,
                     modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.Start),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.Start),
                     chipColor = chipColor,
+                    compact = true,
                 )
             }
         }
