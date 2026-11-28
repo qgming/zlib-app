@@ -17,12 +17,14 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -32,6 +34,85 @@ import okhttp3.mockwebserver.MockWebServer
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DetailViewModelTest {
+    @Test
+    fun `direct download enqueues the exact current file once without requesting formats`() = runTest {
+        withDetail { server, _, queued, viewModel ->
+            loadDetail(server, viewModel)
+            viewModel.downloadCurrent()
+            viewModel.downloadCurrent()
+            viewModel.showFormats()
+            assertTrue(viewModel.state.value.enqueuing)
+            assertNull(viewModel.state.value.formats)
+            advanceUntilIdle()
+            val file = queued.single()
+            assertEquals("7:abc", file.ref)
+            assertEquals("epub", file.extension)
+            assertEquals(2048L, file.sizeBytes)
+            assertEquals("Test title", file.title)
+            assertEquals("Author", file.authors)
+            assertFalse(viewModel.state.value.enqueuing)
+            assertEquals(1, server.requestCount)
+        }
+    }
+
+    @Test
+    fun `direct download keeps existing file confirmation and cannot bypass an open format sheet`() = runTest {
+        val checked = mutableListOf<String>()
+        withDetail(findExisting = { checked += it.ref; ExistingDownload(it, "content://test/tree/books/document/file") }) { server, _, queued, viewModel ->
+            loadDetail(server, viewModel)
+            viewModel.downloadCurrent()
+            advanceUntilIdle()
+            assertEquals(listOf("7:abc"), checked)
+            assertEquals("7:abc", viewModel.state.value.existingSelection?.ref)
+            assertNotNull(viewModel.state.value.existing)
+            viewModel.downloadCurrent()
+            viewModel.showFormats()
+            advanceUntilIdle()
+            assertTrue(queued.isEmpty())
+            assertEquals(listOf("7:abc"), checked)
+            assertEquals(1, server.requestCount)
+
+            viewModel.dismissExisting()
+            server.enqueue(json("""{"success":1,"books":[]}"""))
+            viewModel.showFormats()
+            viewModel.downloadCurrent()
+            advanceUntilIdle()
+            assertNotNull(viewModel.state.value.formats)
+            assertTrue(queued.isEmpty())
+            assertEquals(2, server.requestCount)
+        }
+    }
+
+    @Test
+    fun `direct download rejects a stale page click after the active session changes`() = runTest {
+        withDetail { server, sessions, queued, viewModel ->
+            loadDetail(server, viewModel)
+            sessions.clear()
+            viewModel.downloadCurrent()
+            advanceUntilIdle()
+            assertTrue(queued.isEmpty())
+            assertNull(viewModel.state.value.book)
+            assertFalse(viewModel.state.value.enqueuing)
+            assertEquals(1, server.requestCount)
+        }
+    }
+
+    @Test
+    fun `switching account during existing file check prevents direct enqueue`() = runTest {
+        val check = CompletableDeferred<Unit>()
+        withDetail(findExisting = { check.await(); null }) { server, sessions, queued, viewModel ->
+            loadDetail(server, viewModel)
+            viewModel.downloadCurrent()
+            runCurrent()
+            sessions.clear()
+            check.complete(Unit)
+            advanceUntilIdle()
+            assertTrue(queued.isEmpty())
+            assertNull(viewModel.state.value.existing)
+            assertEquals(1, server.requestCount)
+        }
+    }
+
     @Test
     fun `exact existing file prompts without enqueue and redownload requires explicit choice`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -194,6 +275,7 @@ class DetailViewModelTest {
     }
 
     private suspend fun TestScope.withDetail(
+        findExisting: suspend (Book) -> ExistingDownload? = { null },
         block: suspend TestScope.(MockWebServer, SessionManager, MutableList<Book>, DetailViewModel) -> Unit,
     ) {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -214,7 +296,7 @@ class DetailViewModelTest {
                     isAllowedUrl = { it.host == server.hostName && it.port == server.port },
                 )
                 val queued = mutableListOf<Book>()
-                val viewModel = DetailViewModel(BookRepository(api), sessions, enqueue = { book ->
+                val viewModel = DetailViewModel(BookRepository(api), sessions, findExisting = findExisting, enqueue = { book ->
                     queued.add(book)
                     AppResult.Success(Unit)
                 })

@@ -22,7 +22,10 @@ data class Book(
     val categories: List<String> = emptyList(),
     val edition: String = "",
     val pages: Int? = null,
+    /** Legacy single-score snapshot for local file metadata and share images. */
     val rating: Double? = null,
+    val interestScore: Double? = null,
+    val qualityScore: Double? = null,
     val href: String = "",
     val localUri: String? = null,
     val downloadedAt: Long? = null,

@@ -49,6 +49,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import com.qgming.zlib.core.common.R as TextR
+import com.qgming.zlib.core.common.BookLanguages
 import com.qgming.zlib.core.model.Book
 import java.util.Locale
 import top.yukonga.miuix.kmp.basic.Icon
@@ -57,6 +58,7 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.glass.Data
 import top.yukonga.miuix.kmp.icon.glass.Date
 import top.yukonga.miuix.kmp.icon.glass.Document
+import top.yukonga.miuix.kmp.icon.glass.Translate
 import top.yukonga.miuix.kmp.icon.glass.StarFill
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -67,6 +69,7 @@ private val PillShape = RoundedCornerShape(percent = 50)
 internal enum class BookDetailField(val labelRes: Int) {
     Rating(TextR.string.text_rating),
     Year(TextR.string.text_publication_year),
+    Language(TextR.string.text_content_language),
     Format(TextR.string.text_current_format),
     FileSize(TextR.string.text_file_size),
 }
@@ -93,9 +96,14 @@ internal fun Book.publicationFields(): List<Pair<PublicationField, String>> =
 val Book.hasPublicationInfo: Boolean
     get() = publicationFields().isNotEmpty()
 
-internal fun Book.detailChips(locale: Locale): List<BookDetailChip> = buildList {
-    rating?.takeIf(Double::isFinite)?.let { add(BookDetailChip(BookDetailField.Rating, "%.1f".format(locale, it))) }
-    year.trim().takeIf(String::isNotEmpty)?.let { add(BookDetailChip(BookDetailField.Year, it)) }
+internal fun Book.detailChips(locale: Locale, search: Boolean = false, languageLocale: Locale = locale): List<BookDetailChip> = buildList {
+    ratings(locale)?.let { add(BookDetailChip(BookDetailField.Rating, it.text)) }
+    year.trim().takeIf { it.isNotEmpty() && it.toDoubleOrNull() != 0.0 }?.let {
+        add(BookDetailChip(BookDetailField.Year, it))
+    }
+    if (search) BookLanguages.displayName(language, languageLocale).takeIf(String::isNotEmpty)?.let {
+        add(BookDetailChip(BookDetailField.Language, it))
+    }
     extension.trim().takeIf(String::isNotEmpty)?.let { add(BookDetailChip(BookDetailField.Format, it.uppercase())) }
     sizeBytes?.takeIf { it >= 0 }?.let { add(BookDetailChip(BookDetailField.FileSize, formatBookFileSize(it, locale))) }
 }
@@ -114,9 +122,11 @@ fun ZlibBookMetadataChips(
     horizontalArrangement: Arrangement.Horizontal = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
     chipColor: Color = MiuixTheme.colorScheme.surfaceContainer,
     compact: Boolean = false,
+    search: Boolean = false,
 ) {
     val locale = LocalConfiguration.current.locales[0]
-    val chips = remember(book, locale) { book.detailChips(locale) }
+    val languageLocale = Locale.forLanguageTag(stringResource(TextR.string.text_content_language_locale))
+    val chips = remember(book, locale, search, languageLocale) { book.detailChips(locale, search, languageLocale) }
     if (chips.isEmpty()) return
 
     val colors = MiuixTheme.colorScheme
@@ -126,10 +136,15 @@ fun ZlibBookMetadataChips(
         verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp),
     ) {
         chips.forEach { chip ->
+            if (chip.field == BookDetailField.Rating) {
+                ZlibBookRatingChip(book, compact = compact, background = chipColor)
+                return@forEach
+            }
             val icons = MiuixIcons.Glass.Normal
             val icon = when (chip.field) {
                 BookDetailField.Rating -> icons.StarFill
                 BookDetailField.Year -> icons.Date
+                BookDetailField.Language -> icons.Translate
                 BookDetailField.Format -> icons.Document
                 BookDetailField.FileSize -> icons.Data
             }

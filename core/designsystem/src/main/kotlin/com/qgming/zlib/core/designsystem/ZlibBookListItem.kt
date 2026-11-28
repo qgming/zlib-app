@@ -34,7 +34,6 @@ fun ZlibBookListItem(
     val clickLabel = stringResource(TextR.string.text_view_book_details)
     val openBook = { onClick(ZlibBookOpenRequest(book, source)) }
     val chipColor = if (zlibIsDark()) colors.onSurfaceVariantSummary.copy(alpha = 0.16f) else colors.surface
-
     ZlibCard(
         modifier = modifier.semantics {
             onClick(label = clickLabel) {
@@ -98,6 +97,7 @@ fun ZlibBookListItem(
                     horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.Start),
                     chipColor = chipColor,
                     compact = true,
+                    search = true,
                 )
             }
         }

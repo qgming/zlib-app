@@ -237,7 +237,7 @@ class EapiClientTest {
                    "year":2024,"publisher":"Pub","identifier":"978-0-306-40615-7, B00X4WHP5E",
                    "categories":[{"name":"Fiction"},{"title":"Classic"}],"category":"ignored",
                    "edition":"2","pages":"320","language":"english","cover":"https://cover",
-                   "extension":"EPUB","filesize":"1234567","interestScore":"4.5",
+                   "extension":"EPUB","filesize":"1234567","interestScore":"4.5","qualityScore":3.5,
                    "href":"/book/115066162/e9f13b","description":"desc","subtitle":"sub"},
                   {"id":2,"title":"No hash"},
                   {"id":3,"hash":"","title":"Empty hash"}
@@ -276,6 +276,9 @@ class EapiClientTest {
         assertEquals(1_234_567L, book.sizeBytes)
         assertEquals(320, book.pages)
         assertEquals(4.5, book.rating)
+        assertEquals(4.5, book.interestScore)
+        assertEquals(3.5, book.qualityScore)
+        assertEquals("english", book.language)
 
         val request = server.takeRequest()
         val body = request.body.readUtf8()

@@ -6,6 +6,8 @@ import com.qgming.zlib.core.common.R as TextR
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -55,6 +57,7 @@ import com.qgming.zlib.core.designsystem.ZlibBookCommentCard
 import com.qgming.zlib.core.designsystem.ZlibBookDescriptionCard
 import com.qgming.zlib.core.designsystem.ZlibBookFavoriteButton
 import com.qgming.zlib.core.designsystem.ZlibBookMetadataChips
+import com.qgming.zlib.core.designsystem.ZlibBookDownloadButton
 import com.qgming.zlib.core.designsystem.ZlibCover
 import com.qgming.zlib.core.designsystem.ZlibGlassBottomSheet
 import com.qgming.zlib.core.designsystem.ZlibLoading
@@ -74,7 +77,6 @@ import com.qgming.zlib.core.designsystem.hasPublicationInfo
 import com.qgming.zlib.core.model.Book
 import com.qgming.zlib.core.model.EbookFiles
 import top.yukonga.miuix.kmp.basic.Button
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -176,8 +178,9 @@ fun DetailScreen(
                     fullWidthItem("detail-actions") {
                         BookActions(
                             message = notice,
-                            downloading = state.enqueuing,
-                            onDownload = viewModel::showFormats,
+                            downloading = state.enqueuing || state.formats != null || state.existing != null,
+                            onVersions = viewModel::showFormats,
+                            onDownload = viewModel::downloadCurrent,
                             onPreview = onPreview.takeIf { state.canPreview },
                         )
                     }
@@ -325,10 +328,12 @@ private fun ContributorText(authors: String, onSearch: (String) -> Unit) {
     Text(links, style = bodyStyle.copy(fontSize = (bodyStyle.fontSize.value + 1f).sp), textAlign = TextAlign.Center)
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun BookActions(
     message: String?,
     downloading: Boolean,
+    onVersions: () -> Unit,
     onDownload: () -> Unit,
     onPreview: (() -> Unit)?,
 ) {
@@ -337,18 +342,19 @@ private fun BookActions(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(
+        FlowRow(
             modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Button(
-                onClick = onDownload,
+            ZlibBookDownloadButton(
+                onVersions = onVersions,
+                onDownload = onDownload,
                 enabled = !downloading,
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColorsPrimary(),
-            ) { Text(stringResource(TextR.string.text_download_book)) }
+                modifier = Modifier.widthIn(min = 160.dp).weight(1f),
+            )
             if (onPreview != null) {
-                Button(onClick = onPreview, modifier = Modifier.weight(1f)) {
+                Button(onClick = onPreview, modifier = Modifier.widthIn(min = 160.dp).weight(1f)) {
                     Text(stringResource(TextR.string.text_book_preview))
                 }
             }

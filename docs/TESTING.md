@@ -419,3 +419,49 @@ APK 为 `app/build/release/zhishi-1.4.0-universal.apk`，5,202,010 字节，SHA-
 
 全部源码已分步提交并推送 `origin/main`，构建源码提交为 `89ffb9a455935be37867cf0a59dbf8348c5913bc`，`v1.5.1` 标签指向该提交。正式 Release 于 2026-11-27 05:43:43 UTC（北京时间 13:43:43）公开，非草稿、非预发布并设为 Latest。草稿阶段已核对正文、三个附件名称、大小与 GitHub SHA-256；发布后匿名重新下载 APK、`SHA256SUMS.txt`、`v1.5.1.md` 均返回 HTTP 200，逐字节与本地一致，线上正文与 Markdown 完全一致。已有 GitHub 登录状态读取 latest 确认为 `v1.5.1`；匿名 latest API 返回 HTTP 403（rate limit exceeded，剩余额度 0），未将其标记为应用更新检查通过。
 
+## 27. 双评分、搜索内容语言与分区下载按钮（2026-11-28）
+
+按 ADR-121，网络层分别保留兴趣评分和下载质量，搜索／详情使用同一个双评分胶囊，兴趣评分橙色、下载质量绿色，中间以“/”分隔；缺单项显示“—”，不从另一评分或旧单评分快照推断。搜索胶囊位于卡片左上方，测量胶囊实际高度并预留外部 75% 的空间，约 25% 位于卡片内。搜索正文元信息顺序为出版年份、内容语言、格式、文件大小；详情仅替换原评分胶囊。
+
+内容语言在显示层处理已知名称、ISO 代码、简繁中文、地区与多语言名称，按应用有效的中文／英文资源切换；未知名称保留原文，不改写服务端字段或语言筛选值。2026-11-28 通过允许域名 `z101.by` 匿名只读请求 `/eapi/info/languages`，返回成功的 175 个语言类别；测试夹具仅记录类别名称，补充经核对的别名后，175 类均具有中英文显示名称。此结果基于 JVM Locale 回归，不等同于所有 Android ICU 版本的实际显示验收。
+
+详情下载按钮左侧 30% 打开原版本菜单，右侧 70% 不请求 `/formats`，直接使用当前详情已确认的文件引用、格式与大小入队。新增及扩展回归覆盖独立双评分的数字／字符串、缺失、无效、非有限和零值；两页胶囊顺序、评分缺项及语言显示；直接下载精确文件且不请求版本、重复点击保护、已有文件确认、菜单互斥、会话变化及在途本机文件核对取消。网络测试使用 MockWebServer 合成响应，未使用真实账号下载。
+
+执行 `test lint :app:prepareReleaseAssets --offline --max-workers=1 --console=plain` 时，测试和 lint 全部通过，签名步骤因旧路径下的原密钥文件已不存在而停止。找到已迁移到桌面的同一密钥并核对证书指纹后，仅修正未提交的 `key.properties` 路径，再执行 `:app:prepareReleaseAssets --offline --max-workers=1 --console=plain` 成功（26 秒）。当前 13 个模块共 75 个测试套件、532 项单测全部通过，失败／错误／跳过均为 0；13 份 lint 报告无 error，保留与上轮相同的 6 条既有 warning（`EmptySuperCall`、4 条 `UnusedResources`、`ModifierParameter`）。本地日志为 `build/dual-ratings-verification.log` 与 `build/dual-ratings-release.log`。
+
+唯一正式通用 APK 为 `app/build/release/zhishi-1.5.1-universal.apk`（5,704,042 字节），SHA-256 `40a40d2be8bbec930753845a236bfd89feb9fbfb674c235a5e88d9342c4a39ee`，与 `SHA256SUMS.txt` 一致。SDK 验证原签名证书 SHA-256 `d964fb1414f44fc8eb0f4a3c4835a5c8fb70e4527e3f039bc70b0e1ccaca032e`；包名 `com.qgming.zlib`、`1.5.1`／`versionCode=9`、minSdk 33、targetSdk 37、非 debuggable。四种 ABI 各两份原生库、16 KB ZIP 对齐与六份离线许可逐字节一致均通过，构建启用 R8 与资源裁剪。
+
+本轮没有安装／操作真机或模拟器，没有递增版本、提交或公开发布。悬浮胶囊在实际浅深色、大字号和窄屏的视觉表现、Android 语言名称及分区按钮的触摸体验、真实版本列表和直接下载链路仍待用户安装后验收；同版本本地包不替换线上资产。
+
+用户随后明确要求安装到已连接真机。上述候选通过 `adb -s 4993375f install -r` 覆盖安装至 `M332BF`，返回 `Success`；系统复核 `1.5.1`／`versionCode=9`，`lastUpdateTime=2026-11-28 13:26:47`，原 `firstInstallTime` 保留为 `2026-11-21 23:42:05`，未清除应用数据。安装包 SHA-256 与上述候选一致；未向同时连接的模拟器安装，也未自动操作应用验收新界面和真实下载。
+
+## 28. 搜索结果测量崩溃修复与评分、按钮调整（2026-11-28）
+
+用户报告搜索后闪退。排查时真机 `4993375f` 已不在 ADB 设备列表，未取得该设备的崩溃堆栈；不能把后续测试写成真机复现。代码中的卡片测量把 `LazyColumn` 提供的 `Constraints.Infinity` 直接减去评分留白，得到不可编码的有限高度。在新增回归测试中，原表达式稳定抛出 `IllegalArgumentException: Can't represent a width of 1080 and height of 2147483626 in Constraints`。改为 `Constraints.offset` 后保留无界高度，两项回归均通过，覆盖列表无界高度、有限父高度、无额外留白及父容器高度不足的情况。
+
+按 ADR-122，兴趣评分数字与星形图标改为黄色，浅色为 `#D6B300`、深色为 `#FFE066`，下载质量保持绿色。详情整个分区下载按钮与预览按钮统一为 `weight(1f)` 和 160dp 最小宽度；内部仍为 30% 版本区／70% 直接下载区，触摸高度保持不变，窄屏可换成两个等宽整行按钮。此次没有为颜色和比例增加实现镜像测试。
+
+定向测试全部通过。额外将实际 `BookLanguages` 编译产物和 Kotlin 运行时打包为临时 DEX，在已运行的 Android 17／16 KB x86_64 模拟器上通过 `app_process` 执行，175 个语言类别中英文名称转换均成功；未安装或启动模拟器中的应用、未使用账号或访问网络，临时验证文件仅保存在忽略的 `build/search-runtime-smoke/`。此检查排除了该运行环境中的语言初始化异常，不能代替真机完整搜索和视觉验收。
+
+执行 `test lint :app:prepareReleaseAssets --offline --max-workers=1 --console=plain` 成功（5 分 36 秒），日志为 `build/search-crash-verification.log`。当前 13 个模块共 76 个套件、534 项单测全部通过，失败／错误／跳过均为 0；13 份当前模块 lint 报告无 error，保留相同的 6 条既有 warning（`EmptySuperCall`、4 条 `UnusedResources`、`ModifierParameter`）。正式包启用 R8 与资源裁剪，没有生成调试包或独立架构包。
+
+修复后的唯一正式通用 APK 为 `app/build/release/zhishi-1.5.1-universal.apk`（5,704,042 字节），SHA-256 为 `625d6bd4886b63e6ab2eb9f1c26e7f6184239555205768205204da9826572f47`，与 `SHA256SUMS.txt` 一致。SDK 验证原签名证书 SHA-256 `d964fb1414f44fc8eb0f4a3c4835a5c8fb70e4527e3f039bc70b0e1ccaca032e`；包名 `com.qgming.zlib`、`1.5.1`／`versionCode=9`、minSdk 33、targetSdk 37、非 debuggable。四种 ABI 各两份原生库、16 KB ZIP 对齐及六份离线许可逐字节核对均通过。
+
+构建后再次检查 ADB，仅有 `emulator-5554`，真机 `4993375f` 仍未连接，因此本轮未覆盖安装修复包，也未将真机完整搜索、黄色评分或按钮视觉标为验收通过。未向模拟器安装应用，未清除应用数据、递增版本、提交或公开发布；同版本本地候选不替换线上资产。
+
+用户随后重新连接真机并明确要求安装最新版。修复包通过 `adb -s 4993375f install -r` 成功覆盖安装至 `M332BF`；系统复核 `1.5.1`／`versionCode=9`，更新时间为 `2026-11-28 13:49:22`，首次安装时间仍为 `2026-11-21 23:42:05`，保留应用数据。设备端已安装 `base.apk` 的 SHA-256 与上述修复包完全一致，确认安装的是包含搜索崩溃修复、黄色兴趣评分与等宽按钮的最新本地构建。未向模拟器安装，未自动操作搜索或下载，业务及视觉回归仍由用户手动验收。
+
+## 29. 搜索五项普通胶囊、零年份隐藏与 1.5.2（2026-11-28）
+
+按 ADR-123 将搜索双评分并入正文胶囊的第一项，后续依次为出版年份、内容语言、格式及大小，共最多五项，缺项不占位；评分与普通搜索胶囊使用相同背景、4dp／2dp 内边距、14dp 图标及 2dp 图文间距。移除悬浮评分、阴影、卡片外留白和专用约束测量；相应测量辅助函数及其两项测试一并移除。详情双评分仍使用原尺寸，黄色兴趣评分、绿色下载质量及分区下载按钮沿用已有实现。
+
+搜索与详情共用的出版年份显示隐藏空白及数值零，保留原始字段与年份筛选值。`BookDetailContentTest` 验证搜索五项顺序及中英文语言名称，并新增两项回归覆盖空白、`0`、前后空格、`0000`、`0.0`、`-0` 和 `0.00`，确认不会误隐藏零评分及零字节文件大小；正常年份、带前导零的有效年份、年份区间与带文字年份继续原样显示。该元信息套件的 9 项测试已全部通过。
+
+构建版本改为 `1.5.2`／`versionCode=10`，更新日志为 `releases/v1.5.2.md`，按已发布 `1.5.1` 之后的最终功能编写；README 与发布说明区分本地构建和线上已发布版本。
+
+执行 `test lint :app:prepareReleaseAssets --offline --max-workers=1 --console=plain` 成功（5 分 55 秒），日志为 `build/release-1.5.2.log`。当前 13 个模块共 75 个测试套件、534 项单测全部通过，失败／错误／跳过均为 0；13 份当前模块 lint 报告无 error，仍为相同的 6 条既有 warning（`EmptySuperCall`、4 条 `UnusedResources`、`ModifierParameter`）。正式包启用 R8 与资源裁剪，未生成调试或独立架构 APK。
+
+唯一正式通用 APK 为 `app/build/release/zhishi-1.5.2-universal.apk`，5,704,046 字节，SHA-256 `236819aaf87d4365fd2f9afde110f4660d45c9a482335fb10f0daec2225672a3`，与 `SHA256SUMS.txt` 一致。SDK 复核包名 `com.qgming.zlib`、`1.5.2`／`versionCode=10`、minSdk 33、targetSdk 37、非 debuggable；原签名证书 SHA-256 `d964fb1414f44fc8eb0f4a3c4835a5c8fb70e4527e3f039bc70b0e1ccaca032e`，四种 ABI 各两份原生库、16 KB ZIP 对齐及六份离线许可逐字节核验均通过。
+
+构建前后 ADB 均仅识别 `emulator-5554`，真机 `4993375f` 未连接，本轮没有安装或操作设备，未提交或公开发布。五胶囊在窄屏／大字号／浅深色下的视觉以及真实搜索、下载链路不以单测及打包结果代替设备验收。
+

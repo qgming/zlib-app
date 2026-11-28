@@ -13,6 +13,35 @@ import kotlinx.serialization.json.put
 class BookMapperTest {
 
     @Test
+    fun `scores map independently from numeric and string fields and language stays raw`() {
+        val book = BookMapper.fromJson(buildJsonObject {
+            put("id", 1); put("hash", "abc123")
+            put("interestScore", "4.5"); put("qualityScore", 3.0)
+            put("language", "traditional chinese")
+        })!!
+        assertEquals(4.5, book.interestScore)
+        assertEquals(3.0, book.qualityScore)
+        assertEquals("traditional chinese", book.language)
+    }
+
+    @Test
+    fun `missing invalid and negative scores never fall back to the other score`() {
+        for (invalid in listOf("NaN", "Infinity", "-1", "invalid", "")) {
+            val book = BookMapper.fromJson(buildJsonObject {
+                put("id", 1); put("hash", "abc123")
+                put("interestScore", invalid); put("qualityScore", "4.0")
+            })!!
+            assertNull(book.interestScore, invalid)
+            assertEquals(4.0, book.qualityScore)
+        }
+        val book = BookMapper.fromJson(buildJsonObject {
+            put("id", 1); put("hash", "abc123"); put("interestScore", 0)
+        })!!
+        assertEquals(0.0, book.interestScore)
+        assertNull(book.qualityScore)
+    }
+
+    @Test
     fun `hash path traversal is rejected`() {
         val obj = buildJsonObject {
             put("id", "1")

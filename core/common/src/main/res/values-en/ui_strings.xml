@@ -329,6 +329,13 @@
     <string name="text_add_to_favorites">"Add to favorites"</string>
     <string name="text_remove_from_favorites">"Remove from favorites"</string>
     <string name="text_rating">"Rating"</string>
+    <string name="text_interest_rating">"Interest rating"</string>
+    <string name="text_download_quality">"Download quality"</string>
+    <string name="text_rating_unavailable">"Not rated"</string>
+    <string name="text_content_language">"Content language"</string>
+    <string name="text_content_language_locale">"en"</string>
+    <string name="text_all_versions">"All versions"</string>
+    <string name="text_download_current_file">"Download current file"</string>
     <string name="text_file_size">"File size"</string>
     <string name="text_publication_information">"Publication information"</string>
     <string name="text_publisher">"Publisher"</string>

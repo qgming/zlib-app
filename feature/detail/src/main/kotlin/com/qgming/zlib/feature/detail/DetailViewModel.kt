@@ -134,7 +134,7 @@ class DetailViewModel internal constructor(
     fun showFormats() {
         if (resetSession()) return
         val book = _state.value.book ?: return
-        if (_state.value.enqueuing || _state.value.formats?.loading == true) return
+        if (_state.value.enqueuing || _state.value.existing != null || _state.value.formats?.loading == true) return
         val current = book.currentFormat()
         formatRequest?.cancel()
         val requestGeneration = ++formatGeneration
@@ -165,19 +165,30 @@ class DetailViewModel internal constructor(
         val state = _state.value
         val book = state.book ?: return
         val menu = state.formats ?: return
-        if (menu.loading || state.enqueuing) return
+        if (menu.loading || state.enqueuing || state.existing != null) return
         val format = menu.options.firstOrNull { it.ref == ref } ?: return
+        // The selected file has its own reference. Do not reuse the detail file's hash/size.
+        enqueueFile(book.copy(
+            id = format.id, hash = format.hash, extension = format.extension, sizeBytes = format.sizeBytes,
+            localUri = null, downloadedAt = null, historyDate = null,
+        ))
+    }
+
+    fun downloadCurrent() {
+        if (resetSession()) return
+        val state = _state.value
+        val book = state.book ?: return
+        if (state.enqueuing || state.existing != null || state.formats != null) return
+        enqueueFile(book.copy(localUri = null, downloadedAt = null, historyDate = null))
+    }
+
+    private fun enqueueFile(selected: Book) {
         val requestGeneration = generation
         val requestSession = sessions.current()
         dismissFormats()
         _state.update { it.copy(enqueuing = true) }
         downloadRequest = viewModelScope.launch {
             if (sessions.current() != requestSession) return@launch
-            // The selected file has its own reference. Do not reuse the detail file's hash/size.
-            val selected = book.copy(
-                id = format.id, hash = format.hash, extension = format.extension, sizeBytes = format.sizeBytes,
-                localUri = null, downloadedAt = null, historyDate = null,
-            )
             val existing = findExisting(selected)
             if (generation != requestGeneration || sessions.current() != requestSession) return@launch
             if (existing != null) {
@@ -188,7 +199,7 @@ class DetailViewModel internal constructor(
             if (generation != requestGeneration || sessions.current() != requestSession) return@launch
             _state.update { it.copy(enqueuing = false) }
             _events.send(when (result) {
-                is AppResult.Success -> appText(TextR.string.text_added_to_the_download_queue, format.extension.uppercase())
+                is AppResult.Success -> appText(TextR.string.text_added_to_the_download_queue, selected.extension.uppercase())
                 is AppResult.Failure -> result.error.userMessage()
             })
         }

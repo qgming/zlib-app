@@ -329,6 +329,13 @@
     <string name="text_add_to_favorites">"添加收藏"</string>
     <string name="text_remove_from_favorites">"取消收藏"</string>
     <string name="text_rating">"评分"</string>
+    <string name="text_interest_rating">"兴趣评分"</string>
+    <string name="text_download_quality">"下载质量"</string>
+    <string name="text_rating_unavailable">"暂无评分"</string>
+    <string name="text_content_language">"内容语言"</string>
+    <string name="text_content_language_locale">"zh-CN"</string>
+    <string name="text_all_versions">"全部版本"</string>
+    <string name="text_download_current_file">"下载当前文件"</string>
     <string name="text_file_size">"文件大小"</string>
     <string name="text_publication_information">"出版信息"</string>
     <string name="text_publisher">"出版社"</string>

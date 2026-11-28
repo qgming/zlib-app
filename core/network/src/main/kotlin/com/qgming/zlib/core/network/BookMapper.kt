@@ -49,6 +49,8 @@ internal object BookMapper {
             obj.stringOrNull("category")?.trim()?.takeIf(String::isNotEmpty)?.let(::listOf).orEmpty()
         }
 
+        val interestScore = obj.doubleOrNull("interestScore")?.takeIf { it.isFinite() && it >= 0 }
+        val qualityScore = obj.doubleOrNull("qualityScore")?.takeIf { it.isFinite() && it >= 0 }
         return Book(
             id = id,
             hash = hash,
@@ -67,7 +69,9 @@ internal object BookMapper {
             categories = categories.distinct(),
             edition = obj.stringOrNull("edition").orEmpty(),
             pages = obj.intOrNull("pages"),
-            rating = obj.doubleOrNull("interestScore") ?: obj.doubleOrNull("qualityScore"),
+            rating = interestScore ?: qualityScore,
+            interestScore = interestScore,
+            qualityScore = qualityScore,
             href = obj.stringOrNull("href").orEmpty(),
         )
     }
