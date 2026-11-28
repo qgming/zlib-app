@@ -47,6 +47,7 @@
 
 前往 **[GitHub Releases](https://github.com/qgming/zlib-app/releases/latest)** 下载正式版 APK。最低支持 **Android 13**，无需 Google Play 服务。
 
+当前正式版为 **[v1.5.2](https://github.com/qgming/zlib-app/releases/tag/v1.5.2)**，可直接下载 **[通用 APK](https://github.com/qgming/zlib-app/releases/download/v1.5.2/zhishi-1.5.2-universal.apk)**。完整变化见 [1.5.2 更新日志](docs/releases/v1.5.2.md)。
 
 ## 核心功能
 
@@ -166,7 +167,7 @@ SHA256SUMS.txt
 日常打包统一使用以上正式通用版任务，只生成一个签名 APK，不附带调试包或独立架构包。
 
 发布时同步递增 `appVersionName` / `appVersionCode`，使用对应的 `vMAJOR.MINOR.PATCH` 标签创建正式 Release，
-填写真实更新日志并上传上述资产。当前本地构建为 1.5.2 / versionCode=10，更新内容见 [1.5.2 更新日志](docs/releases/v1.5.2.md)；已发布正式版仍为 1.5.1 / versionCode=9。包名和原签名保持一致。具体校验与发布流程见 [发布说明](docs/RELEASING.md)。
+填写真实更新日志并上传上述资产。当前正式版为 1.5.2 / versionCode=10，高于 1.5.1 的 9，包名和原签名保持一致；[1.5.2 更新日志](docs/releases/v1.5.2.md)与线上正文一致。具体校验与发布流程见 [发布说明](docs/RELEASING.md)。
 正式构建启用 R8 优化和资源裁剪，通用包包含全部四种架构。
 
 ## 文档

@@ -463,5 +463,7 @@ APK 为 `app/build/release/zhishi-1.4.0-universal.apk`，5,202,010 字节，SHA-
 
 唯一正式通用 APK 为 `app/build/release/zhishi-1.5.2-universal.apk`，5,704,046 字节，SHA-256 `236819aaf87d4365fd2f9afde110f4660d45c9a482335fb10f0daec2225672a3`，与 `SHA256SUMS.txt` 一致。SDK 复核包名 `com.qgming.zlib`、`1.5.2`／`versionCode=10`、minSdk 33、targetSdk 37、非 debuggable；原签名证书 SHA-256 `d964fb1414f44fc8eb0f4a3c4835a5c8fb70e4527e3f039bc70b0e1ccaca032e`，四种 ABI 各两份原生库、16 KB ZIP 对齐及六份离线许可逐字节核验均通过。
 
-构建前后 ADB 均仅识别 `emulator-5554`，真机 `4993375f` 未连接，本轮没有安装或操作设备，未提交或公开发布。五胶囊在窄屏／大字号／浅深色下的视觉以及真实搜索、下载链路不以单测及打包结果代替设备验收。
+构建前后 ADB 均仅识别 `emulator-5554`，真机 `4993375f` 未连接，构建阶段没有安装或操作设备，当时未提交或公开发布。五胶囊在窄屏／大字号／浅深色下的视觉以及真实搜索、下载链路不以单测及打包结果代替设备验收。
+
+用户随后明确授权全部 Git 提交并发布最新版 Release。功能提交 `d132677` 与构建源码提交 `c636ff8e8eae5dbe4695da11783ae8bae4382eb5` 已推送 `origin/main`，`v1.5.2` 标签指向构建源码提交；2026-11-28 06:10:39 UTC（北京时间 14:10:39）正式公开并设为 Latest，非草稿、非预发布。草稿阶段核对唯一通用 APK、`SHA256SUMS.txt`、`v1.5.2.md` 的名称、大小与 GitHub SHA-256；公开后无凭据重新下载三份附件均为 HTTP 200，逐字节与本地一致，线上正文与 Markdown 完全一致。已有 GitHub 登录状态读取 latest 确认为 `v1.5.2`；匿名 latest API 返回 HTTP 403，明确为 rate limit exceeded、剩余额度 0，未标记为应用更新检查通过。验证文件保存于忽略的 `build/release-1.5.2-publication/`，本次发布没有安装或操作设备，也未将公开下载成功视为应用内更新链路及真实业务验收。
 
