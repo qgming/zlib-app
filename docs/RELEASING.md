@@ -7,6 +7,8 @@
 `app/build.gradle.kts` 的 `appVersionName` 使用 SemVer，`appVersionCode` 每次公开发布递增。
 Git 标签为 `v<appVersionName>`，例如 `v1.0.0`。同一版本的所有架构与通用包使用相同 versionCode，便于互相覆盖安装和后续更新。
 
+当前本地构建已按用户要求推进至 `1.5.2`（`versionCode=10`），更新日志为 `docs/releases/v1.5.2.md`；尚未公开发布。
+
 当前正式版为 `1.5.1`（`versionCode=9`），于 2026-11-27 13:43:43（北京时间，UTC 为 05:43:43）发布为 `v1.5.1` 并设为 Latest，标签指向构建源码提交 `89ffb9a455935be37867cf0a59dbf8348c5913bc`。用户明确授权设置版本、编写日志、提交当前全部改动及正式发布；更新正文为 `docs/releases/v1.5.1.md`，线上正文与文件完全一致。草稿资产与发布后的公开下载均已核验，不替换此前版本资产。
 
 上一正式版为 `1.5.0`（`versionCode=8`），于 2026-11-27 00:21:42（北京时间，UTC 为 2026-11-26 16:21:42）发布为 `v1.5.0`，标签指向构建源码提交 `6d6df48`；仓库内历史版本 `v1.0.0`–`v1.4.0` 的更新正文均已重写为 Markdown 并同步更新至线上对应 Release。此前正式版 `v1.4.0`（`versionCode=7`）于 2026-11-25 16:51:49（北京时间，UTC 为 2026-11-25 08:51:49）发布，标签指向 `32fd44ba0be5d72c72f63d23a05668925d7546c9`。更早版本：`v1.3.1`（`versionCode=6`）指向 `e173ac2f9ea90dec8278ad031cbfe2d8090cf6fa`，`v1.3.0`（`versionCode=5`）指向 `d236ad8036b500f292799bedc4e4bb864a66451e`，`v1.2.0`（`versionCode=4`）指向 `5784a9862152041539a65b3506852e0dabcc2222`，`v1.1.0`（`versionCode=3`）指向 `6c1ccb2103990b4d8fe8fed4dc8eeed4102b96ac`。
@@ -163,4 +165,29 @@ ADR-105/106 的本地构建仅生成 `app/build/release/zhishi-1.4.0-universal.a
 - 当前全部源码分步提交为下载响应修复 `12cda64`、搜索排版 `5132a6e`、本机文件与 EPUB 功能 `6ad855a`、版本及日志 `89ffb9a455935be37867cf0a59dbf8348c5913bc`，均已推送 `origin/main`；`v1.5.1` 标签指向版本提交。
 - 2026-11-27 05:43:43 UTC（北京时间 13:43:43）正式发布 `https://github.com/qgming/zlib-app/releases/tag/v1.5.1`，非草稿、非预发布，已设为 Latest。三个附件为唯一 `zhishi-1.5.1-universal.apk`（5,684,494 字节）、`SHA256SUMS.txt`（93 字节）及 `v1.5.1.md`（1,690 字节）。草稿阶段核对完整正文、名称、大小及 GitHub SHA-256，公开后匿名重新下载三个附件均为 HTTP 200，逐字节与本地一致；线上正文与仓库 Markdown 完全一致。
 - 已有 GitHub 登录状态读取 latest 确认为 `v1.5.1`；无凭据 latest API 返回 HTTP 403，明确为 rate limit exceeded 且剩余额度为 0，不记为客户端更新检查成功。公开附件下载成功不能代替真实应用内检查更新、下载安装及业务交互验收。
+
+## 双评分、搜索语言与分区下载本地候选（2026-11-28）
+
+- 按 ADR-121 实现搜索／详情双评分胶囊、搜索左上悬浮评分及随应用中文／英文显示的内容语言；详情下载按钮左侧 30% 查看版本，右侧 70% 直接下载当前详情文件，沿用已有文件提示与队列保护。
+- 全量测试和 lint 通过：75 个套件共 532 项单测，失败、错误、跳过均为 0；13 份当前模块 lint 报告无 error，保留 6 条既有 warning。首次完整任务在签名阶段因原密钥旧路径不存在而停止；核对桌面密钥证书与线上原证书一致、修正本机未提交配置后，`:app:prepareReleaseAssets --offline --max-workers=1 --console=plain` 成功。未构建调试包或独立架构包。
+- 唯一正式通用包 `app/build/release/zhishi-1.5.1-universal.apk` 为 5,704,042 字节，SHA-256 `40a40d2be8bbec930753845a236bfd89feb9fbfb674c235a5e88d9342c4a39ee`，与 `SHA256SUMS.txt` 一致；包名 `com.qgming.zlib`、`1.5.1`／`versionCode=9`、minSdk 33、targetSdk 37、非 debuggable。原签名证书 SHA-256 `d964fb1414f44fc8eb0f4a3c4835a5c8fb70e4527e3f039bc70b0e1ccaca032e`、四种 ABI 各两份原生库、16 KB ZIP 对齐及六份离线许可字节均已核验。
+- 本轮仅生成本地候选，没有安装设备、递增版本、提交或公开发布，不替换线上同名资产。实际字号、主题和屏宽下的视觉与点击体验、Android 语言名称以及真实下载链路待用户手动验收，详见 `TESTING.md` 第 27 节。
+
+用户随后追加真机安装指令，候选已覆盖安装至 `4993375f`（`M332BF`），ADB 返回 `Success`，系统复核 `1.5.1`／`versionCode=9`、更新时间 `2026-11-28 13:26:47`；未清除应用数据，未安装模拟器或自动验收业务交互。
+
+## 搜索崩溃、黄色评分与等宽下载按钮本地候选（2026-11-28）
+
+- 按 ADR-122 修复悬浮评分预留空间时破坏 `Constraints.Infinity` 的搜索列表测量异常；新增回归先复现原表达式抛错，再确认修复后通过。兴趣评分数字和星形图标改为黄色，整个分区下载按钮与预览按钮等宽，内部保留 30%／70% 两个操作区。
+- `test lint :app:prepareReleaseAssets --offline --max-workers=1 --console=plain` 成功（5 分 36 秒）；76 个套件共 534 项单测全部通过，13 份当前模块 lint 报告无 error，保留相同的 6 条既有 warning。正式包启用 R8 与资源裁剪，未生成调试或独立架构 APK。
+- 唯一正式通用包 `app/build/release/zhishi-1.5.1-universal.apk` 为 5,704,042 字节，SHA-256 `625d6bd4886b63e6ab2eb9f1c26e7f6184239555205768205204da9826572f47`，与 `SHA256SUMS.txt` 一致。包名 `com.qgming.zlib`、`1.5.1`／`versionCode=9`、minSdk 33、targetSdk 37、非调试；原签名证书 SHA-256 `d964fb1414f44fc8eb0f4a3c4835a5c8fb70e4527e3f039bc70b0e1ccaca032e`、四 ABI 原生库、16 KB ZIP 对齐及六份许可资产字节均已核对。
+- 真机 `4993375f` 在排查与构建完成后均未出现在 ADB 设备列表，因此修复包尚未覆盖安装；未向模拟器安装应用。临时 Android 语言转换检查成功不能代替完整搜索及视觉回归，详见 `TESTING.md` 第 28 节。本轮未递增版本、提交或公开发布，同版本候选不替换线上资产。
+
+用户随后重新连接真机并授权安装最新版，修复包已成功覆盖安装至 `4993375f`（`M332BF`），ADB 返回 `Success`。系统复核 `1.5.1`／`versionCode=9`、更新时间 `2026-11-28 13:49:22`，保留原有数据；设备端已安装 APK 的 SHA-256 与本节候选一致。未向模拟器安装或自动验收搜索、下载及视觉效果。
+
+## 1.5.2 搜索胶囊与双评分本地构建（2026-11-28）
+
+- 用户要求将搜索评分并入首个普通胶囊，共最多五项，并隐藏为 0 的出版年份，版本设置为 `1.5.2`。构建版本为 `1.5.2`／`versionCode=10`，更新日志为 `docs/releases/v1.5.2.md`，汇总已发布 1.5.1 之后最终保留的双评分、内容语言、分区下载按钮和搜索修复；已取消的悬浮评分不作为新版功能。
+- `test lint :app:prepareReleaseAssets --offline --max-workers=1 --console=plain` 成功（5 分 55 秒）；75 个套件共 534 项单测全部通过，13 份当前模块 lint 报告无 error，保留相同的 6 条既有 warning。正式构建启用 R8 与资源裁剪，未生成调试或独立架构 APK。
+- 唯一正式通用包 `app/build/release/zhishi-1.5.2-universal.apk` 为 5,704,046 字节，SHA-256 `236819aaf87d4365fd2f9afde110f4660d45c9a482335fb10f0daec2225672a3`，与 `SHA256SUMS.txt` 一致。包名 `com.qgming.zlib`、`1.5.2`／`versionCode=10`、minSdk 33、targetSdk 37、非调试；原签名证书 SHA-256 `d964fb1414f44fc8eb0f4a3c4835a5c8fb70e4527e3f039bc70b0e1ccaca032e`、四 ABI 各两份原生库、16 KB ZIP 对齐及六份离线许可字节核验通过。
+- 本轮只完成本地构建与日志，未提交或公开发布；真机未连接，没有向设备安装或操作应用。线上正式版仍为 1.5.1，设备视觉和真实业务验收边界见 `TESTING.md` 第 29 节。
 
